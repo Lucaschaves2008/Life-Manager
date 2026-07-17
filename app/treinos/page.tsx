@@ -43,8 +43,9 @@ export default async function Page({
 }: {
   searchParams: Promise<{ tab?: string; novo?: string }>;
 }) {
-  const { tab: tabParam } = await searchParams;
-  const tab = tabParam ?? "visao";
+  const { tab: tabParam, novo } = await searchParams;
+  // "+ Novo → Treino" cai direto na musculação, onde a execução acontece
+  const tab = novo === "1" ? tabParam ?? "musculacao" : tabParam ?? "visao";
   const hoje = nowSP();
 
   return (
