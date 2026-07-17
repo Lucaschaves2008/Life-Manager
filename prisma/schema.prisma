@@ -1,0 +1,363 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+// ---------- Finanças ----------
+
+model Account {
+  id           String        @id @default(cuid())
+  nome         String
+  tipo         String // "corrente" | "poupanca" | "carteira"
+  cor          String
+  saldoInicial Int           @default(0) // centavos
+  criadoEm     DateTime      @default(now())
+  transactions Transaction[]
+}
+
+model Category {
+  id             String        @id @default(cuid())
+  nome           String
+  emoji          String
+  cor            String
+  tipo           String // "despesa" | "receita"
+  orcamentoMensal Int? // centavos
+  transactions   Transaction[]
+}
+
+model Card {
+  id           String        @id @default(cuid())
+  nome         String
+  bandeira     String // "Visa" | "Mastercard" | ...
+  limite       Int // centavos
+  fechamento   Int // dia do mês
+  vencimento   Int // dia do mês
+  cor          String        @default("#6B96D6")
+  transactions Transaction[]
+}
+
+model Transaction {
+  id           String    @id @default(cuid())
+  tipo         String // "despesa" | "receita" | "transferencia"
+  valor        Int // centavos, sempre positivo
+  data         DateTime
+  descricao    String
+  tags         String    @default("[]") // JSON string[]
+  recorrente   Boolean   @default(false)
+  // parcelamento
+  parcelaGrupo String? // agrupa parcelas da mesma compra
+  parcelaNum   Int?
+  parcelaTotal Int?
+  paga         Boolean   @default(true)
+  account      Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accountId    String
+  category     Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  categoryId   String?
+  card         Card?     @relation(fields: [cardId], references: [id], onDelete: SetNull)
+  cardId       String?
+  // transferência: conta destino
+  contraAccountId String?
+  criadoEm     DateTime  @default(now())
+
+  @@index([data])
+  @@index([categoryId])
+}
+
+model Subscription {
+  id         String  @id @default(cuid())
+  nome       String
+  emoji      String  @default("💳")
+  valor      Int // centavos
+  diaCobranca Int
+  status     String  @default("ativa") // "ativa" | "pausada"
+  criadoEm   DateTime @default(now())
+  valorAnterior Int? // para insight de aumento
+}
+
+// ---------- Investimentos ----------
+
+model Asset {
+  id          String          @id @default(cuid())
+  nome        String
+  classe      String // "Renda Fixa" | "Tesouro" | "Ações" | "FIIs" | "Cripto" | "Fundos"
+  instituicao String
+  cor         String
+  criadoEm    DateTime        @default(now())
+  movements   AssetMovement[]
+}
+
+model AssetMovement {
+  id      String   @id @default(cuid())
+  tipo    String // "aporte" | "resgate" | "atualizacao"
+  valor   Int // centavos: aporte/resgate = valor movimentado; atualizacao = novo valor TOTAL do ativo
+  data    DateTime
+  nota    String?
+  asset   Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  assetId String
+
+  @@index([data])
+}
+
+// ---------- Dieta ----------
+
+model Food {
+  id        String     @id @default(cuid())
+  nome      String
+  // valores por 100g
+  kcal100   Float?
+  prot100   Float?
+  carb100   Float?
+  gord100   Float?
+  // valores por porção
+  porcaoNome String? // ex.: "1 unidade", "1 scoop"
+  porcaoG    Float? // gramas da porção
+  mealItems MealItem[]
+}
+
+model Diet {
+  id       String  @id @default(cuid())
+  nome     String
+  ativa    Boolean @default(false)
+  metaKcal Int     @default(2200)
+  metaProt Int     @default(160) // g
+  metaCarb Int     @default(220) // g
+  metaGord Int     @default(60) // g
+  meals    Meal[]
+}
+
+model Meal {
+  id      String     @id @default(cuid())
+  nome    String // "Café da manhã", "Almoço"...
+  horario String? // "07:30"
+  ordem   Int        @default(0)
+  diet    Diet       @relation(fields: [dietId], references: [id], onDelete: Cascade)
+  dietId  String
+  items   MealItem[]
+}
+
+model MealItem {
+  id         String @id @default(cuid())
+  quantidade Float // gramas ou nº de porções
+  unidade    String @default("g") // "g" | "porcao"
+  meal       Meal   @relation(fields: [mealId], references: [id], onDelete: Cascade)
+  mealId     String
+  food       Food   @relation(fields: [foodId], references: [id], onDelete: Cascade)
+  foodId     String
+}
+
+model DietDayLog {
+  id                 String   @id @default(cuid())
+  data               DateTime @unique // meia-noite UTC do dia
+  refeicoesCumpridas String   @default("[]") // JSON mealId[]
+  extras             String   @default("[]") // JSON {nome,kcal,prot,carb,gord}[]
+  aguaMl             Int      @default(0)
+  notas              String?
+}
+
+model WeightLog {
+  id      String   @id @default(cuid())
+  data    DateTime
+  pesoKg  Float
+  cintura Float?
+  braco   Float?
+}
+
+// ---------- Treinos ----------
+
+model Routine {
+  id        String            @id @default(cuid())
+  nome      String // "Ficha A"
+  foco      String? // "Peito e tríceps"
+  ordem     Int               @default(0)
+  exercises RoutineExercise[]
+  sessions  WorkoutSession[]
+}
+
+model RoutineExercise {
+  id           String   @id @default(cuid())
+  nome         String
+  grupoMuscular String // "Peito" | "Costas" | "Pernas" | ...
+  series       Int
+  repsAlvo     String // "8-12"
+  cargaAtual   Float    @default(0) // kg
+  descansoSeg  Int      @default(90)
+  observacao   String?
+  ordem        Int      @default(0)
+  routine      Routine  @relation(fields: [routineId], references: [id], onDelete: Cascade)
+  routineId    String
+  setLogs      SetLog[]
+}
+
+model WorkoutSession {
+  id         String   @id @default(cuid())
+  data       DateTime
+  duracaoMin Int      @default(0)
+  concluida  Boolean  @default(true)
+  notas      String?
+  routine    Routine? @relation(fields: [routineId], references: [id], onDelete: SetNull)
+  routineId  String?
+  setLogs    SetLog[]
+
+  @@index([data])
+}
+
+model SetLog {
+  id         String          @id @default(cuid())
+  serie      Int
+  reps       Int
+  cargaKg    Float
+  session    WorkoutSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionId  String
+  exercise   RoutineExercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+  exerciseId String
+}
+
+model Run {
+  id       String   @id @default(cuid())
+  data     DateTime
+  km       Float
+  segundos Int
+  tipo     String // "Leve" | "Moderado" | "Intervalado" | "Longão"
+  sensacao Int      @default(3) // 1-5
+  notas    String?
+
+  @@index([data])
+}
+
+// ---------- Estudos ----------
+
+model StudySession {
+  id           String        @id @default(cuid())
+  subject      String
+  startedAt    DateTime
+  endedAt      DateTime
+  totalSeconds Int          @default(0)
+  netSeconds   Int          @default(0)
+  targetMinutes Int?
+  rating       Int          @default(0)
+  notes        String?
+  createdAt    DateTime     @default(now())
+  pauses       StudyPause[]
+  marks        StudyMark[]
+
+  @@index([startedAt])
+}
+
+model StudyPause {
+  id           String       @id @default(cuid())
+  startedAt    DateTime
+  endedAt      DateTime?
+  durationSec  Int          @default(0)
+  session      StudySession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionId    String
+}
+
+model StudyMark {
+  id           String       @id @default(cuid())
+  timestamp    DateTime
+  label        String
+  session      StudySession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionId    String
+}
+
+// ---------- Agenda ----------
+
+model Calendar {
+  id       String  @id @default(cuid())
+  nome     String
+  cor      String
+  readonly Boolean @default(false)
+  visivel  Boolean @default(true)
+  ordem    Int     @default(0)
+  events   Event[]
+}
+
+model Event {
+  id          String      @id @default(cuid())
+  titulo      String
+  inicio      DateTime
+  fim         DateTime
+  diaInteiro  Boolean     @default(false)
+  // recorrência simples serializada: {freq:"daily"|"weekly"|"monthly"|"yearly", byday?:number[], until?:string}
+  rrule       String?
+  // datas (ISO yyyy-MM-dd) excluídas da série (edição/exclusão de ocorrência única)
+  exdates     String      @default("[]")
+  local       String?
+  descricao   String?
+  tags        String      @default("[]") // JSON string[]
+  lembreteMin Int? // null = sem lembrete; 0 = na hora
+  calendar    Calendar    @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+  calendarId  String
+  notes       EventNote[]
+
+  @@index([inicio])
+}
+
+model EventNote {
+  id       String   @id @default(cuid())
+  texto    String
+  criadoEm DateTime @default(now())
+  event    Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventId  String
+}
+
+model Holiday {
+  id   String   @id @default(cuid())
+  data DateTime
+  nome String
+  ano  Int
+
+  @@unique([data, nome])
+  @@index([ano])
+}
+
+// ---------- Geral ----------
+
+model Goal {
+  id     String  @id @default(cuid())
+  titulo String
+  mes    String // "2026-07"
+  feito  Boolean @default(false)
+  ordem  Int     @default(0)
+}
+
+model Setting {
+  key   String @id
+  value String
+}
+
+model StudySession {
+  id            String      @id @default(cuid())
+  subject       String
+  startedAt     DateTime
+  endedAt       DateTime?
+  totalSeconds  Int         @default(0)
+  netSeconds    Int         @default(0)
+  targetMinutes Int?
+  rating        Int?
+  notes         String?
+  pauses        StudyPause[]
+  marks         StudyMark[]
+  createdAt     DateTime    @default(now())
+}
+
+model StudyPause {
+  id            String       @id @default(cuid())
+  sessionId     String
+  session       StudySession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  startedAt     DateTime
+  endedAt       DateTime?
+  durationSec   Int          @default(0)
+}
+
+model StudyMark {
+  id            String       @id @default(cuid())
+  sessionId     String
+  session       StudySession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  timestamp     DateTime
+  label         String
+}
