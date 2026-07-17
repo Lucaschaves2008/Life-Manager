@@ -329,35 +329,3 @@ model Setting {
   key   String @id
   value String
 }
-
-model StudySession {
-  id            String      @id @default(cuid())
-  subject       String
-  startedAt     DateTime
-  endedAt       DateTime?
-  totalSeconds  Int         @default(0)
-  netSeconds    Int         @default(0)
-  targetMinutes Int?
-  rating        Int?
-  notes         String?
-  pauses        StudyPause[]
-  marks         StudyMark[]
-  createdAt     DateTime    @default(now())
-}
-
-model StudyPause {
-  id            String       @id @default(cuid())
-  sessionId     String
-  session       StudySession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  startedAt     DateTime
-  endedAt       DateTime?
-  durationSec   Int          @default(0)
-}
-
-model StudyMark {
-  id            String       @id @default(cuid())
-  sessionId     String
-  session       StudySession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  timestamp     DateTime
-  label         String
-}
