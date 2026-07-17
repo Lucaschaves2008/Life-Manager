@@ -7,6 +7,7 @@ import { GoalsChecklist } from "@/components/caverna/goals-checklist";
 import { Heatmap } from "@/components/caverna/heatmap";
 import { HeroInsight } from "@/components/caverna/hero-insight";
 import { HeroMoney } from "@/components/caverna/hero-money";
+import { Relogio } from "@/components/caverna/relogio";
 import { StatCard } from "@/components/caverna/stat-card";
 import { VariationBadge } from "@/components/caverna/variation-badge";
 import { RitmoChart } from "@/components/charts/ritmo-chart";
@@ -58,12 +59,15 @@ export default async function HomePage() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Greeting */}
-      <header className="card-in pt-2">
-        <h1 className="display text-[40px] leading-none text-paper md:text-[52px]">
-          Fala, Lucas.
-        </h1>
-        <p className="mt-2.5 text-[14px] text-mist">{fullDate(agora)}</p>
+      {/* Greeting + relógio */}
+      <header className="card-in flex items-end justify-between gap-6 pt-2">
+        <div>
+          <h1 className="display text-[40px] leading-none text-paper md:text-[52px]">
+            Fala, Lucas.
+          </h1>
+          <p className="mt-2.5 text-[14px] text-mist">{fullDate(agora)}</p>
+        </div>
+        <Relogio dataLonga={fullDate(agora)} />
       </header>
 
       {/* Hero-Insight + Streak */}

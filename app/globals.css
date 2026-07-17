@@ -253,6 +253,95 @@ body {
   animation: skeleton-pulse 1.6s ease-in-out infinite;
 }
 
+/* ---------- Flip clock (3.5.12) ---------- */
+/* O tamanho é dirigido pelo font-size do .flip-panel: tudo abaixo é em em. */
+
+.flip-panel {
+  --flip-h: 1.34em;
+  position: relative;
+  width: 1.5em;
+  height: var(--flip-h);
+  border-radius: 0.14em;
+  perspective: 500px;
+  background: var(--color-elevated);
+}
+
+.flip-half {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 50%;
+  overflow: hidden;
+  display: flex;
+  justify-content: center;
+  background: var(--color-elevated);
+  backface-visibility: hidden;
+}
+
+/* O span tem a altura CHEIA do painel e centraliza o dígito nele; cada metade
+   recorta a sua parte. É isso que faz o dígito nascer colado na dobradiça. */
+.flip-half > span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--flip-h);
+  width: 100%;
+  line-height: 1;
+  /* compensa o vão do descendente: sem isso o número fica alto no painel */
+  padding-top: 0.06em;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--color-paper);
+  font-variant-numeric: tabular-nums;
+}
+
+.flip-half-top {
+  top: 0;
+  align-items: flex-start;
+  border-radius: 0.16em 0.16em 0 0;
+  /* a dobradiça: fenda escura no meio do painel */
+  border-bottom: 1px solid var(--color-bg);
+  transform-origin: bottom;
+}
+
+.flip-half-bottom {
+  bottom: 0;
+  align-items: flex-end;
+  border-radius: 0 0 0.16em 0.16em;
+  transform-origin: top;
+}
+
+/* metades animadas ficam por cima das estáticas */
+.flip-anim-top,
+.flip-anim-bottom {
+  z-index: 2;
+}
+.flip-anim-top {
+  animation: flip-top 260ms ease-in both;
+}
+.flip-anim-bottom {
+  animation: flip-bottom 260ms ease-out 260ms both;
+}
+
+@keyframes flip-top {
+  from { transform: rotateX(0deg); }
+  to { transform: rotateX(-90deg); }
+}
+@keyframes flip-bottom {
+  from { transform: rotateX(90deg); }
+  to { transform: rotateX(0deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flip-anim-top,
+  .flip-anim-bottom {
+    animation: none;
+  }
+  .flip-anim-top {
+    display: none;
+  }
+}
+
 /* hover padrão de card: borda clareia, nada de scale/sombra */
 .card-hover {
   transition: border-color 200ms ease;
