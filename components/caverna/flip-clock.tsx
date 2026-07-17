@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
  * conforme a metade velha tomba) e a de baixo segura o valor ANTIGO até a
  * nova descer por cima.
  */
-function FlipPanel({ value, label }: { value: string; label?: string }) {
+export function FlipPanel({ value, label }: { value: string; label?: string }) {
   const [estado, setEstado] = useState({
     atual: value,
     anterior: value,
@@ -119,6 +119,71 @@ export function FlipClock({
       {segundos && (
         <FlipPanel value={segundo} label={labels ? "segundos" : undefined} />
       )}
+    </div>
+  );
+}
+
+function dois(n: number) {
+  return String(Math.floor(Math.abs(n))).padStart(2, "0");
+}
+
+/** Separador ":" entre painéis, na mesma escala. */
+function Separador() {
+  return (
+    <span
+      className="flex h-[1.34em] items-center justify-center font-bold leading-none text-steel"
+      style={{ width: "0.4em" }}
+      aria-hidden
+    >
+      :
+    </span>
+  );
+}
+
+export type FlipTimeProps = {
+  /** total de segundos decorridos */
+  segundos: number;
+  /** font-size do painel — comanda todo o tamanho do cronômetro */
+  size?: string;
+  labels?: boolean;
+  /** mostra o painel de horas mesmo com 0h */
+  sempreHoras?: boolean;
+  className?: string;
+};
+
+/**
+ * Cronômetro em painéis flip: HH MM SS a partir de um total de segundos.
+ * O painel de horas some quando ainda não passou de 1h (a menos de `sempreHoras`).
+ */
+export function FlipTime({
+  segundos,
+  size = "64px",
+  labels = false,
+  sempreHoras = false,
+  className,
+}: FlipTimeProps) {
+  const total = Math.max(0, Math.floor(segundos));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const mostraHoras = sempreHoras || h > 0;
+
+  return (
+    <div
+      className={cn("flex items-start", className)}
+      style={{ fontSize: size, gap: "0.12em" }}
+      role="timer"
+      aria-label={`${h}h ${m}min ${s}s`}
+    >
+      {mostraHoras && (
+        <>
+          <FlipPanel value={dois(h)} label={labels ? "horas" : undefined} />
+          <Separador />
+        </>
+      )}
+      <FlipPanel value={dois(m)} label={labels ? "min" : undefined} />
+      <Separador />
+      <FlipPanel value={dois(s)} label={labels ? "seg" : undefined} />
     </div>
   );
 }

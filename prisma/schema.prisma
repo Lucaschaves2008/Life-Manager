@@ -234,9 +234,9 @@ model StudySession {
   id           String        @id @default(cuid())
   subject      String
   startedAt    DateTime
-  endedAt      DateTime
-  totalSeconds Int          @default(0)
-  netSeconds   Int          @default(0)
+  endedAt      DateTime? // null = sessão em andamento
+  totalSeconds Int          @default(0) // tempo bruto (parede) ao finalizar
+  netSeconds   Int          @default(0) // tempo líquido (bruto − pausas) ao finalizar
   targetMinutes Int?
   rating       Int          @default(0)
   notes        String?
@@ -252,6 +252,7 @@ model StudyPause {
   startedAt    DateTime
   endedAt      DateTime?
   durationSec  Int          @default(0)
+  label        String? // "almoço", "descanso"... renomeável depois
   session      StudySession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   sessionId    String
 }

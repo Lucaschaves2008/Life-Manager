@@ -1,15 +1,8 @@
 import type { Metadata } from "next";
 import { GeistSans } from "geist/font/sans";
-import { Instrument_Serif } from "next/font/google";
 import { Toaster } from "sonner";
 import "./globals.css";
 import { AppShell } from "@/components/shell/app-shell";
-
-const instrument = Instrument_Serif({
-  weight: "400",
-  subsets: ["latin"],
-  variable: "--font-instrument",
-});
 
 export const metadata: Metadata = {
   title: "LC · Lucas Chaves",
@@ -22,10 +15,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html
-      lang="pt-BR"
-      className={`${GeistSans.variable} ${instrument.variable}`}
-    >
+    <html lang="pt-BR" className={GeistSans.variable}>
       <body>
         <AppShell>{children}</AppShell>
         <Toaster

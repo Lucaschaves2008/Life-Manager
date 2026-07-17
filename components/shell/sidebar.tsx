@@ -111,31 +111,18 @@ export function Sidebar({
 
   return (
     <div className="flex h-full flex-col px-2.5 py-5">
-      <div
-        className={cn(
-          "flex items-center px-3",
-          collapsed ? "justify-center px-0" : "justify-between"
-        )}
-      >
+      <div className="relative flex items-center justify-center px-3">
         <Link
           href="/"
-          className={cn(
-            "inline-flex items-center gap-3 rounded-[14px] px-2 py-2 transition-colors hover:bg-surface-2",
-            collapsed ? "justify-center px-0" : ""
-          )}
+          className="inline-flex items-center justify-center rounded-[14px] px-2 py-2 transition-colors hover:bg-surface-2"
         >
           <LcLogo className={collapsed ? "h-7" : "h-8"} />
-          {!collapsed && (
-            <span className="text-[11px] uppercase tracking-[0.24em] text-steel">
-              Lucas Chaves
-            </span>
-          )}
         </Link>
         {onToggle && (
           <button
             onClick={onToggle}
             aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
-            className="rounded-lg p-1.5 text-steel transition-colors hover:bg-surface-2 hover:text-mist"
+            className="absolute right-2 rounded-lg p-1.5 text-steel transition-colors hover:bg-surface-2 hover:text-mist"
           >
             {collapsed ? (
               <PanelLeftOpen className="h-4.5 w-4.5" strokeWidth={1.5} />

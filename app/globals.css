@@ -3,7 +3,6 @@
 @theme {
   /* ---- Tipografia ---- */
   --font-sans: var(--font-geist-sans), "Inter", system-ui, sans-serif;
-  --font-serif: var(--font-instrument), Georgia, serif;
 
   /* ---- Raios ---- */
   --radius-card: 20px;
@@ -172,10 +171,9 @@ body {
   font-weight: 500;
 }
 
-/* título de página / greeting em serif */
+/* título de página / greeting */
 .display {
-  font-family: var(--font-serif);
-  font-weight: 400;
+  font-weight: 600;
   letter-spacing: -0.02em;
 }
 
