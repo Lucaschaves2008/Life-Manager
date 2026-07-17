@@ -46,7 +46,7 @@ function PillTabsInner({
             className={cn(
               "inline-flex h-8.5 items-center gap-1.5 rounded-full border px-4 text-[13px] transition-colors duration-200",
               active
-                ? "border-[rgba(62,224,143,.25)] bg-mint-soft text-mint"
+                ? "border-[rgba(13,110,253,.25)] bg-mint-soft text-mint"
                 : "border-stroke text-mist hover:border-[rgba(143,169,205,.22)] hover:text-ice"
             )}
           >

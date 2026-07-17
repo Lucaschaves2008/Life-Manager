@@ -4,7 +4,7 @@ import {
   categoriasComparadas,
   resumoDoMes,
 } from "@/lib/data/financas";
-import { mediaKcal7d, streakCaverna } from "@/lib/data/home";
+import { mediaKcal7d, streakLC } from "@/lib/data/home";
 import {
   insightAssinatura,
   insightCategoriaDisparou,
@@ -74,7 +74,7 @@ export async function insightDoDia(ref: Date = new Date()): Promise<Insight> {
   const [financeiros, kcal7d, streak, dieta, resumo] = await Promise.all([
     insightsFinanceiros(ref),
     mediaKcal7d(ref),
-    streakCaverna(ref),
+    streakLC(ref),
     db.diet.findFirst({ where: { ativa: true } }),
     resumoDoMes(ref),
   ]);

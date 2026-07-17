@@ -8,11 +8,11 @@ import { useEffect, useRef, useState } from "react";
  */
 export function NumberTicker({
   value,
-  format,
+  format = (v: number) => new Intl.NumberFormat("pt-BR").format(Math.round(v)),
   duration = 1200,
 }: {
   value: number;
-  format: (v: number) => string;
+  format?: (v: number) => string;
   duration?: number;
 }) {
   const [display, setDisplay] = useState(0);

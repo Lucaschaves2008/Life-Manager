@@ -1,8 +1,8 @@
 import { cn } from "@/lib/utils";
 
 /**
- * Card base do Caverna: superfície #0B111E, borda 1px stroke, raio 20px, padding 24px.
- * `destaque` = o ÚNICO card menta-soft permitido por seção.
+ * Card base da LC: superfície #0B111E, borda 1px stroke, raio 20px, padding 24px.
+ * `destaque` = o ÚNICO card brand-soft permitido por seção.
  */
 export function Card({
   className,
@@ -15,7 +15,7 @@ export function Card({
       className={cn(
         "rounded-[20px] border p-6 card-hover",
         destaque
-          ? "border-[rgba(62,224,143,.25)] bg-mint-soft"
+          ? "border-[rgba(13,110,253,.25)] bg-mint-soft"
           : "border-stroke bg-surface",
         className
       )}

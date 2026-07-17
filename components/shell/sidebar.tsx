@@ -15,6 +15,7 @@ import {
   TrendingUp,
   Wallet,
 } from "lucide-react";
+import { LcLogo } from "@/components/shell/lc-logo";
 import { cn } from "@/lib/utils";
 
 type NavItem = {
@@ -116,11 +117,20 @@ export function Sidebar({
           collapsed ? "justify-center px-0" : "justify-between"
         )}
       >
-        {!collapsed && (
-          <Link href="/" className="display text-[19px] tracking-[0.08em] text-paper">
-            CAVERNA
-          </Link>
-        )}
+        <Link
+          href="/"
+          className={cn(
+            "inline-flex items-center gap-3 rounded-[14px] px-2 py-2 transition-colors hover:bg-surface-2",
+            collapsed ? "justify-center px-0" : ""
+          )}
+        >
+          <LcLogo className={collapsed ? "h-7" : "h-8"} />
+          {!collapsed && (
+            <span className="text-[11px] uppercase tracking-[0.24em] text-steel">
+              Lucas Chaves
+            </span>
+          )}
+        </Link>
         {onToggle && (
           <button
             onClick={onToggle}

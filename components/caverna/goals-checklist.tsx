@@ -21,7 +21,13 @@ export type GoalItem = {
 };
 
 /** Checklist de metas (3.5.8) com CRUD e undo na exclusão. */
-export function GoalsChecklist({ goals }: { goals: GoalItem[] }) {
+export function GoalsChecklist({
+  goals,
+  mes: mesProp,
+}: {
+  goals: GoalItem[];
+  mes?: string;
+}) {
   const [, startTransition] = useTransition();
   const [optimistic, apply] = useOptimistic(
     goals,
@@ -41,7 +47,8 @@ export function GoalsChecklist({ goals }: { goals: GoalItem[] }) {
   const [adding, setAdding] = useState(false);
   const [titulo, setTitulo] = useState("");
 
-  const mes = goals[0]?.mes ?? new Date().toISOString().slice(0, 7);
+  const mes =
+    mesProp ?? goals[0]?.mes ?? new Date().toISOString().slice(0, 7);
 
   return (
     <div className="flex flex-col gap-1">

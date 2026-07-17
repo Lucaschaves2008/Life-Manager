@@ -1,6 +1,6 @@
-# BRIEF DOS MÓDULOS — Caverna
+# BRIEF DOS MÓDULOS — LC
 
-Você está construindo UM módulo do "Caverna", um life-manager pessoal dark premium
+Você está construindo UM módulo do LC, um life-manager pessoal dark premium
 (single-user, sem login, pt-BR). Leia este arquivo INTEIRO antes de escrever código.
 
 ## Regras inegociáveis
@@ -82,7 +82,7 @@ Você está construindo UM módulo do "Caverna", um life-manager pessoal dark pr
   `insightDoDia`, `insightFinanceiroPrincipal`, `insightsFinanceiros`.
 - `utils.ts`: `cn`, `parseJSON`.
 - `lib/data/home.ts`: `getSetting(key, fallback)`, `eventosDeHoje`, `treinosDaSemana`, `kcalHoje`,
-  `mediaKcal7d`, `streakCaverna`, `proximoEvento`.
+  `mediaKcal7d`, `streakLC`, `proximoEvento`.
 - `lib/data/financas.ts`: `resumoDoMes`, `ritmoDeGastos`, `categoriasComparadas`, `somaDespesas`.
 
 ## Dados

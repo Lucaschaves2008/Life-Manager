@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 100" width="160" height="100">
+  <rect width="160" height="100" rx="22" fill="#05070d" />
+  <g transform="skewX(-10) translate(6 4) scale(0.92)">
+    <path d="M22 12 L38 6 V54 H80 L74 68 H16 Z" fill="#f4f8fe" />
+    <path d="M124 6 H88 A31 31 0 0 0 88 68 H124 L112 54 H90 A17 17 0 0 1 90 20 H112 Z" fill="#f4f8fe" />
+    <rect x="96" y="44" width="7" height="9" rx="1.5" fill="#4e6a9c" />
+    <rect x="107" y="37" width="7" height="16" rx="1.5" fill="#8fa9cd" />
+    <rect x="118" y="30" width="7" height="23" rx="1.5" fill="#0d6efd" />
+  </g>
+</svg>

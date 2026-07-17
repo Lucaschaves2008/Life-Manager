@@ -17,7 +17,7 @@ export function SelectTrigger({
     <SelectPrimitive.Trigger
       className={cn(
         "flex h-9.5 w-full items-center justify-between gap-2 rounded-[14px] border border-stroke bg-surface-2 px-3.5 text-left text-[13.5px] text-ice",
-        "transition-colors duration-200 focus:border-[rgba(62,224,143,.4)] focus:outline-none data-[placeholder]:text-steel",
+        "transition-colors duration-200 focus:border-[rgba(13,110,253,.4)] focus:outline-none data-[placeholder]:text-steel",
         className
       )}
       {...props}

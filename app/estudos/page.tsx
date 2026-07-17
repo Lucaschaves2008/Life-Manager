@@ -24,7 +24,7 @@ type StudyMark = {
   label: string;
 };
 
-const SUBJECT_OPTIONS = ["Inglês", "Programação", "Leitura", "Matemática", "Projeto Caverna"];
+const SUBJECT_OPTIONS = ["Inglês", "Programação", "Leitura", "Matemática", "Projeto LC"];
 const TARGET_OPTIONS = [
   { label: "Livre", minutes: null },
   { label: "30 min", minutes: 30 },
@@ -59,7 +59,7 @@ export default function EstudosPage() {
   }, []);
 
   useEffect(() => {
-    document.title = status === "running" ? `⏱ ${formatClock(elapsedMs)} — Caverna` : "Estudos — Caverna";
+    document.title = status === "running" ? `⏱ ${formatClock(elapsedMs)} — LC` : "Estudos — LC";
   }, [elapsedMs, status]);
 
   useEffect(() => {

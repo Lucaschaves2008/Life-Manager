@@ -14,7 +14,7 @@ import {
   eventosDeHoje,
   kcalHoje,
   proximoEvento,
-  streakCaverna,
+  streakLC,
   treinosDaSemana,
 } from "@/lib/data/home";
 import { resumoDoMes, ritmoDeGastos } from "@/lib/data/financas";
@@ -46,7 +46,7 @@ export default async function HomePage() {
     eventosDeHoje(agora),
     treinosDaSemana(agora),
     kcalHoje(agora),
-    streakCaverna(agora),
+    streakLC(agora),
     proximoEvento(agora),
     db.goal.findMany({
       where: { mes: monthKeySP(agora) },
@@ -108,7 +108,7 @@ export default async function HomePage() {
         </Card>
 
         <Card className="flex flex-col xl:col-span-4">
-          <CardLabel>Streak Caverna</CardLabel>
+          <CardLabel>Streak LC</CardLabel>
           <div className="mt-4 flex items-center gap-3">
             <Flame className="h-9 w-9 text-mint" strokeWidth={1.5} />
             <div>
@@ -116,7 +116,7 @@ export default async function HomePage() {
                 {streak.streak}
               </p>
               <p className="mt-1 text-[12.5px] text-mist">
-                dias seguidos no mínimo caverna
+                dias seguidos no mínimo LC
               </p>
             </div>
           </div>
@@ -261,7 +261,7 @@ export default async function HomePage() {
           {eventos.length === 0 ? (
             <EmptyState
               icon={CalendarX2}
-              title="Nada na agenda de hoje. Dia livre pra caverna."
+              title="Nada na agenda de hoje. Aproveite para recarregar."
             />
           ) : (
             <ul className="mt-4 flex flex-col">

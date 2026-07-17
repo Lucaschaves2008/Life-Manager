@@ -63,7 +63,7 @@ export const studySeedSessions: StudySeedSession[] = [
     marks: [],
   },
   {
-    subject: "Projeto Caverna",
+    subject: "Projeto LC",
     startedAt: "2026-07-16T21:00:00.000Z",
     endedAt: "2026-07-16T23:00:00.000Z",
     totalSeconds: 7200,

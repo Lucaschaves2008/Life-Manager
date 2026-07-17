@@ -146,7 +146,7 @@ export function insightStreakTreino(input: {
     return null;
   return {
     id: "streak-recorde",
-    headline: "Streak recorde. O modo caverna tá pago.",
+    headline: "Streak recorde. O modo LC tá pago.",
     paragrafo: `${NOME}, você está há ${input.streakAtual} dias seguidos cumprindo o mínimo — seu recorde anterior era ${input.recordeAnterior}. Não quebra a corrente hoje.`,
     severidade: "info",
     modulo: "treinos",

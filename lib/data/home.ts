@@ -179,7 +179,7 @@ export async function mediaKcal7d(ref: Date = new Date()): Promise<number> {
   return total / logs.length;
 }
 
-// ---------- Streak Caverna ----------
+// ---------- Streak LC ----------
 
 export type StreakData = {
   streak: number;
@@ -192,7 +192,7 @@ export type StreakData = {
  * Streak: dias consecutivos cumprindo o mínimo
  * (≥1 treino registrado OU diário de dieta preenchido no dia).
  */
-export async function streakCaverna(ref: Date = new Date()): Promise<StreakData> {
+export async function streakLC(ref: Date = new Date()): Promise<StreakData> {
   const inicio = subDays(spStartOfDay(ref), 180);
   const [sessoes, corridas, diarios] = await Promise.all([
     db.workoutSession.findMany({

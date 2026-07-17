@@ -26,7 +26,7 @@ export type StudySessionRecord = {
   createdAt: string;
 };
 
-const STORAGE_KEY = "caverna.studySessions";
+const STORAGE_KEY = "lc.studySessions";
 
 export function readStudySessions(): StudySessionRecord[] {
   if (typeof window === "undefined") return [];

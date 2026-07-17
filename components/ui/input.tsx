@@ -10,7 +10,7 @@ export const Input = forwardRef<
       ref={ref}
       className={cn(
         "h-9.5 w-full rounded-[14px] border border-stroke bg-surface-2 px-3.5 text-[13.5px] text-ice placeholder:text-steel",
-        "transition-colors duration-200 focus:border-[rgba(62,224,143,.4)] focus:outline-none",
+        "transition-colors duration-200 focus:border-[rgba(13,110,253,.4)] focus:outline-none",
         className
       )}
       {...props}
@@ -27,7 +27,7 @@ export const Textarea = forwardRef<
       ref={ref}
       className={cn(
         "min-h-20 w-full rounded-[14px] border border-stroke bg-surface-2 px-3.5 py-2.5 text-[13.5px] text-ice placeholder:text-steel",
-        "transition-colors duration-200 focus:border-[rgba(62,224,143,.4)] focus:outline-none",
+        "transition-colors duration-200 focus:border-[rgba(13,110,253,.4)] focus:outline-none",
         className
       )}
       {...props}

@@ -6,8 +6,8 @@ type Size = "sm" | "md" | "icon";
 
 const variants: Record<Variant, string> = {
   primary:
-    "bg-mint text-[#05270f] font-medium hover:brightness-110 active:brightness-95",
-  soft: "bg-mint-soft text-mint border border-[rgba(62,224,143,.25)] hover:bg-[rgba(62,224,143,.18)]",
+    "bg-mint text-[var(--color-bg)] font-medium hover:brightness-110 active:brightness-95",
+  soft: "bg-mint-soft text-mint border border-[rgba(13,110,253,.25)] hover:bg-[rgba(13,110,253,.18)]",
   ghost: "text-mist hover:bg-surface-2 hover:text-ice",
   outline:
     "border border-stroke text-ice bg-transparent hover:border-[rgba(143,169,205,.22)] hover:bg-surface-2/50",

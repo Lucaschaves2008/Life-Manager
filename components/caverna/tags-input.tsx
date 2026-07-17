@@ -28,7 +28,7 @@ export function TagsInput({
     <div
       className={cn(
         "flex min-h-9.5 flex-wrap items-center gap-1.5 rounded-[14px] border border-stroke bg-surface-2 px-2.5 py-1.5",
-        "focus-within:border-[rgba(62,224,143,.4)]",
+        "focus-within:border-[rgba(13,110,253,.4)]",
         className
       )}
     >

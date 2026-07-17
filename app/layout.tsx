@@ -12,8 +12,8 @@ const instrument = Instrument_Serif({
 });
 
 export const metadata: Metadata = {
-  title: "Caverna",
-  description: "Modo caverna: finanças, investimentos, dieta, treinos e agenda.",
+  title: "LC · Lucas Chaves",
+  description: "Painel premium pessoal para finanças, investimentos, dieta, treinos e agenda.",
 };
 
 export default function RootLayout({

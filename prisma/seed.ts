@@ -1,5 +1,5 @@
 /**
- * Seed do Caverna — dados realistas em pt-BR (junho/julho 2026).
+ * Seed do LC — dados realistas em pt-BR (junho/julho 2026).
  * Roda com: npm run db:seed
  */
 import { PrismaClient } from "@prisma/client";
@@ -15,7 +15,7 @@ const sp = (mes: number, dia: number, h = 12, min = 0, ano = 2026) =>
 const spDay = (mes: number, dia: number, ano = 2026) => sp(mes, dia, 0, 0, ano);
 
 async function main() {
-  console.log("🕳️  Semeando o Caverna...");
+  console.log("🌊  Semeando os dados LC...");
 
   // limpar tudo (ordem respeita FKs)
   await db.setLog.deleteMany();
@@ -74,13 +74,13 @@ async function main() {
     });
 
   const telecom = await cat("Telecomunicação", "🏠", "#FF6B6B", "despesa", r(300));
-  const mercado = await cat("Mercado", "🛒", "#3EE08F", "despesa", r(900));
+  const mercado = await cat("Mercado", "🛒", "#0d6efd", "despesa", r(900));
   const transporte = await cat("Transporte", "🚗", "#6B96D6", "despesa", r(400));
   const ifood = await cat("iFood", "🍔", "#F5B14C", "despesa", r(300));
   const lazer = await cat("Lazer", "🎮", "#A78BDB", "despesa", r(250));
   const saude = await cat("Saúde", "💊", "#4EC9C0", "despesa", r(300));
   const estudos = await cat("Estudos", "📚", "#4E6A9C", "despesa", r(200));
-  const salario = await cat("Salário", "💼", "#3EE08F", "receita");
+  const salario = await cat("Salário", "💼", "#0d6efd", "receita");
   const rendimentos = await cat("Rendimentos", "📈", "#4EC9C0", "receita");
 
   // ---------- Assinaturas ----------
@@ -213,7 +213,7 @@ async function main() {
 
   // ---------- Investimentos ----------
   const cdb = await db.asset.create({
-    data: { nome: "CDB 110% CDI", classe: "Renda Fixa", instituicao: "Inter", cor: "#3EE08F" },
+    data: { nome: "CDB 110% CDI", classe: "Renda Fixa", instituicao: "Inter", cor: "#0d6efd" },
   });
   const selic = await db.asset.create({
     data: { nome: "Tesouro Selic 2029", classe: "Tesouro", instituicao: "Tesouro Direto", cor: "#4EC9C0" },
@@ -491,7 +491,7 @@ async function main() {
 
   // ---------- Agenda ----------
   const calPessoal = await db.calendar.create({ data: { nome: "Pessoal", cor: "#6B96D6", ordem: 0 } });
-  const calTreinos = await db.calendar.create({ data: { nome: "Treinos", cor: "#3EE08F", ordem: 1 } });
+  const calTreinos = await db.calendar.create({ data: { nome: "Treinos", cor: "#0d6efd", ordem: 1 } });
   const calDieta = await db.calendar.create({ data: { nome: "Dieta", cor: "#F5B14C", ordem: 2 } });
   const calFinancas = await db.calendar.create({ data: { nome: "Finanças", cor: "#FF6B6B", ordem: 3 } });
   const calEstudos = await db.calendar.create({ data: { nome: "Estudos", cor: "#4EC9C0", ordem: 4 } });

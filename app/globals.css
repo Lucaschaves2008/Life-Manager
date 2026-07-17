@@ -1,7 +1,22 @@
 @import "tailwindcss";
 
 @theme {
-  /* ---- Neutros (escala navy) ---- */
+  /* ---- Tipografia ---- */
+  --font-sans: var(--font-geist-sans), "Inter", system-ui, sans-serif;
+  --font-serif: var(--font-instrument), Georgia, serif;
+
+  /* ---- Raios ---- */
+  --radius-card: 20px;
+  --radius-inner: 12px;
+  --radius-field: 14px;
+
+  /* ---- Easing ---- */
+  --ease-lc: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* ---- Sombras (apenas popover/modal) ---- */
+  --shadow-pop: 0 16px 48px rgba(0, 0, 0, 0.5);
+
+  /* ---- Dark mode palette ---- */
   --color-bg: #05070d;
   --color-surface: #0b111e;
   --color-surface-2: #101a2e;
@@ -13,44 +28,30 @@
   --color-ice: #dce7f5;
   --color-paper: #f4f8fe;
 
-  /* ---- Acento (escasso) ---- */
-  --color-mint: #3ee08f;
-  --color-mint-soft: rgba(62, 224, 143, 0.12);
-
-  /* ---- Semânticas ---- */
+  /* ---- Accent palette ---- */
+  --color-brand: #0d6efd;
+  --color-brand-soft: rgba(13, 110, 253, 0.14);
+  --color-mint: var(--color-brand);
+  --color-mint-soft: var(--color-brand-soft);
   --color-coral: #ff6b6b;
   --color-coral-soft: rgba(255, 107, 107, 0.12);
   --color-amber: #f5b14c;
   --color-amber-soft: rgba(245, 177, 76, 0.12);
 
   /* ---- Cores de agenda/categorias ---- */
-  --color-cal-mint: #3ee08f;
+  --color-cal-brand: #0d6efd;
+  --color-cal-mint: var(--color-brand);
   --color-cal-blue: #6b96d6;
   --color-cal-amber: #f5b14c;
   --color-cal-coral: #ff6b6b;
   --color-cal-teal: #4ec9c0;
   --color-cal-lilac: #a78bdb;
-
-  /* ---- Tipografia ---- */
-  --font-sans: var(--font-geist-sans), "Inter", system-ui, sans-serif;
-  --font-serif: var(--font-instrument), Georgia, serif;
-
-  /* ---- Raios ---- */
-  --radius-card: 20px;
-  --radius-inner: 12px;
-  --radius-field: 14px;
-
-  /* ---- Easing ---- */
-  --ease-caverna: cubic-bezier(0.16, 1, 0.3, 1);
-
-  /* ---- Sombras (apenas popover/modal) ---- */
-  --shadow-pop: 0 16px 48px rgba(0, 0, 0, 0.5);
 }
 
 :root {
   color-scheme: dark;
   /* aliases usados fora do Tailwind (gráficos, estilos inline) */
-  --cal-mint: #3ee08f;
+  --cal-mint: var(--color-brand);
   --cal-blue: #6b96d6;
   --cal-amber: #f5b14c;
   --cal-coral: #ff6b6b;
@@ -59,7 +60,51 @@
   --grid-line: rgba(143, 169, 205, 0.06);
   --stroke-soft: rgba(143, 169, 205, 0.1);
   --stroke-hover: rgba(143, 169, 205, 0.22);
-  --mint-border: rgba(62, 224, 143, 0.25);
+  --mint-border: rgba(13, 110, 253, 0.25);
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  --color-bg: #f7f9fc;
+  --color-surface: #ffffff;
+  --color-surface-2: #edf2fb;
+  --color-elevated: #e2ebfa;
+  --color-stroke: rgba(52, 71, 103, 0.12);
+  --color-navy: #1d3d72;
+  --color-steel: #4c6a95;
+  --color-mist: #5f718f;
+  --color-ice: #0f172a;
+  --color-paper: #020617;
+  --color-brand-soft: rgba(13, 110, 253, 0.16);
+  --color-coral-soft: rgba(255, 107, 107, 0.14);
+  --color-amber-soft: rgba(245, 177, 76, 0.14);
+  --grid-line: rgba(52, 71, 103, 0.08);
+  --stroke-soft: rgba(52, 71, 103, 0.09);
+  --stroke-hover: rgba(52, 71, 103, 0.16);
+  --mint-border: rgba(13, 110, 253, 0.18);
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    color-scheme: light;
+    --color-bg: #f7f9fc;
+    --color-surface: #ffffff;
+    --color-surface-2: #edf2fb;
+    --color-elevated: #e2ebfa;
+    --color-stroke: rgba(52, 71, 103, 0.12);
+    --color-navy: #1d3d72;
+    --color-steel: #4c6a95;
+    --color-mist: #5f718f;
+    --color-ice: #0f172a;
+    --color-paper: #020617;
+    --color-mint-soft: var(--color-brand-soft);
+    --color-coral-soft: rgba(255, 107, 107, 0.14);
+    --color-amber-soft: rgba(245, 177, 76, 0.14);
+    --grid-line: rgba(52, 71, 103, 0.08);
+    --stroke-soft: rgba(52, 71, 103, 0.09);
+    --stroke-hover: rgba(52, 71, 103, 0.16);
+    --mint-border: rgba(13, 110, 253, 0.18);
+  }
 }
 
 * {
@@ -84,12 +129,12 @@ body {
 }
 
 ::selection {
-  background: rgba(62, 224, 143, 0.25);
+  background: rgba(13, 110, 253, 0.25);
   color: var(--color-paper);
 }
 
 :focus-visible {
-  outline: 2px solid var(--color-mint);
+  outline: 2px solid var(--color-brand);
   outline-offset: 2px;
   border-radius: 4px;
 }
@@ -148,12 +193,12 @@ body {
 }
 
 .card-in {
-  animation: card-in 480ms var(--ease-caverna) both;
+  animation: card-in 480ms var(--ease-lc) both;
 }
 
 /* stagger de 50ms para grades de cards */
 .stagger > * {
-  animation: card-in 480ms var(--ease-caverna) both;
+  animation: card-in 480ms var(--ease-lc) both;
 }
 .stagger > *:nth-child(1) { animation-delay: 0ms; }
 .stagger > *:nth-child(2) { animation-delay: 50ms; }

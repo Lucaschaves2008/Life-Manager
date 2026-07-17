@@ -8,9 +8,11 @@ import {
   CalendarPlus,
   Dumbbell,
   Menu,
+  Moon,
   PiggyBank,
   Plus,
   ReceiptText,
+  Sun,
   UtensilsCrossed,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -35,7 +37,7 @@ const titles: [string, string][] = [
 
 function pageTitle(pathname: string): string {
   const found = titles.find(([href]) => pathname.startsWith(href));
-  return found ? found[1] : "Painel Caverna";
+  return found ? found[1] : "Painel LC";
 }
 
 const novoItems = [
@@ -48,11 +50,30 @@ const novoItems = [
 
 export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
   const pathname = usePathname();
-  // data renderizada apenas no cliente para evitar mismatch de hidratação na virada do dia
   const [hoje, setHoje] = useState<string>("");
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+
   useEffect(() => {
     setHoje(fullDate(nowSP()));
+
+    const savedTheme = window.localStorage.getItem("life-manager-theme");
+    const initialTheme =
+      savedTheme === "light" || savedTheme === "dark"
+        ? savedTheme
+        : window.matchMedia("(prefers-color-scheme: dark)").matches
+        ? "dark"
+        : "light";
+
+    setTheme(initialTheme);
+    document.documentElement.dataset.theme = initialTheme;
   }, []);
+
+  function toggleTheme() {
+    const nextTheme = theme === "dark" ? "light" : "dark";
+    setTheme(nextTheme);
+    document.documentElement.dataset.theme = nextTheme;
+    window.localStorage.setItem("life-manager-theme", nextTheme);
+  }
 
   return (
     <header className="sticky top-0 z-30 border-b border-stroke bg-bg/85 backdrop-blur-md">
@@ -71,6 +92,19 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
           <span className="hidden text-[13px] text-mist md:block" suppressHydrationWarning>
             {hoje}
           </span>
+
+          <button
+            type="button"
+            onClick={toggleTheme}
+            aria-label={`Ativar modo ${theme === "dark" ? "claro" : "noturno"}`}
+            className="rounded-full p-2 text-mist transition-colors hover:bg-surface-2 hover:text-ice"
+          >
+            {theme === "dark" ? (
+              <Sun className="h-5 w-5" strokeWidth={1.5} />
+            ) : (
+              <Moon className="h-5 w-5" strokeWidth={1.5} />
+            )}
+          </button>
 
           <Link
             href="/agenda"

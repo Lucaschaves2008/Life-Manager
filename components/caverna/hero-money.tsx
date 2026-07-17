@@ -1,3 +1,5 @@
+"use client";
+
 import { splitBRL } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { NumberTicker } from "@/components/caverna/number-ticker";
@@ -37,7 +39,6 @@ export function HeroMoney({
       {ticker ? (
         <NumberTicker
           value={parseFloat(inteiro.replace(/\./g, ""))}
-          format={(v) => new Intl.NumberFormat("pt-BR").format(Math.round(v))}
         />
       ) : (
         <span>{inteiro}</span>
