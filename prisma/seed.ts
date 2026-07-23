@@ -17,35 +17,46 @@ const spDay = (mes: number, dia: number, ano = 2026) => sp(mes, dia, 0, 0, ano);
 async function main() {
   console.log("🌊  Semeando os dados LC...");
 
-  // limpar tudo (ordem respeita FKs)
-  await db.setLog.deleteMany();
-  await db.workoutSession.deleteMany();
-  await db.routineExercise.deleteMany();
-  await db.routine.deleteMany();
-  await db.run.deleteMany();
-  await db.mealItem.deleteMany();
-  await db.meal.deleteMany();
-  await db.diet.deleteMany();
-  await db.food.deleteMany();
-  await db.dietDayLog.deleteMany();
-  await db.weightLog.deleteMany();
-  await db.eventNote.deleteMany();
-  await db.event.deleteMany();
-  await db.calendar.deleteMany();
-  await db.holiday.deleteMany();
-  await db.assetMovement.deleteMany();
-  await db.asset.deleteMany();
-  await db.transaction.deleteMany();
-  await db.subscription.deleteMany();
-  await db.card.deleteMany();
-  await db.category.deleteMany();
-  await db.account.deleteMany();
-  await db.goal.deleteMany();
-  await db.setting.deleteMany();
+  const admin = await db.profile.findUnique({
+    where: { email: "lucas.chaves@providence.solutions" },
+  });
+  if (!admin) {
+    throw new Error(
+      "Conta lucas.chaves@providence.solutions não encontrada em Profile — crie o usuário no Supabase Auth antes de rodar o seed."
+    );
+  }
+  const userId = admin.id;
+
+  // limpar tudo (ordem respeita FKs) — apenas os dados deste usuário
+  await db.setLog.deleteMany({ where: { userId } });
+  await db.workoutSession.deleteMany({ where: { userId } });
+  await db.routineExercise.deleteMany({ where: { userId } });
+  await db.routine.deleteMany({ where: { userId } });
+  await db.run.deleteMany({ where: { userId } });
+  await db.mealItem.deleteMany({ where: { userId } });
+  await db.meal.deleteMany({ where: { userId } });
+  await db.diet.deleteMany({ where: { userId } });
+  await db.food.deleteMany({ where: { userId } });
+  await db.dietDayLog.deleteMany({ where: { userId } });
+  await db.weightLog.deleteMany({ where: { userId } });
+  await db.eventNote.deleteMany({ where: { userId } });
+  await db.event.deleteMany({ where: { userId } });
+  await db.calendar.deleteMany({ where: { userId } });
+  await db.assetMovement.deleteMany({ where: { userId } });
+  await db.asset.deleteMany({ where: { userId } });
+  await db.transaction.deleteMany({ where: { userId } });
+  await db.subscription.deleteMany({ where: { userId } });
+  await db.card.deleteMany({ where: { userId } });
+  await db.category.deleteMany({ where: { userId } });
+  await db.account.deleteMany({ where: { userId } });
+  await db.goal.deleteMany({ where: { userId } });
+  await db.setting.deleteMany({ where: { userId } });
+  // Holiday é compartilhado entre usuários — não é apagado aqui.
 
   // ---------- Contas ----------
   const inter = await db.account.create({
     data: {
+      userId,
       nome: "Inter",
       tipo: "corrente",
       cor: "#F5B14C",
@@ -54,6 +65,7 @@ async function main() {
   });
   const carteira = await db.account.create({
     data: {
+      userId,
       nome: "Carteira",
       tipo: "poupanca",
       cor: "#6B96D6",
@@ -70,7 +82,7 @@ async function main() {
     orcamentoMensal?: number
   ) =>
     db.category.create({
-      data: { nome, emoji, cor, tipo, orcamentoMensal },
+      data: { userId, nome, emoji, cor, tipo, orcamentoMensal },
     });
 
   const telecom = await cat("Telecomunicação", "🏠", "#FF6B6B", "despesa", r(300));
@@ -86,9 +98,9 @@ async function main() {
   // ---------- Assinaturas ----------
   await db.subscription.createMany({
     data: [
-      { nome: "Spotify", emoji: "🎧", valor: r(21.9), diaCobranca: 10, status: "ativa" },
-      { nome: "Netflix", emoji: "🎬", valor: r(44.9), diaCobranca: 15, status: "ativa", valorAnterior: r(39.9) },
-      { nome: "Academia Panobianco", emoji: "🏋️", valor: r(129.9), diaCobranca: 5, status: "ativa" },
+      { userId, nome: "Spotify", emoji: "🎧", valor: r(21.9), diaCobranca: 10, status: "ativa" },
+      { userId, nome: "Netflix", emoji: "🎬", valor: r(44.9), diaCobranca: 15, status: "ativa", valorAnterior: r(39.9) },
+      { userId, nome: "Academia Panobianco", emoji: "🏋️", valor: r(129.9), diaCobranca: 5, status: "ativa" },
     ],
   });
 
@@ -194,6 +206,7 @@ async function main() {
   for (const tx of txs) {
     await db.transaction.create({
       data: {
+        userId,
         tipo: tx.tipo,
         valor: tx.valor,
         data: tx.data,
@@ -213,20 +226,20 @@ async function main() {
 
   // ---------- Investimentos ----------
   const cdb = await db.asset.create({
-    data: { nome: "CDB 110% CDI", classe: "Renda Fixa", instituicao: "Inter", cor: "#0d6efd" },
+    data: { userId, nome: "CDB 110% CDI", classe: "Renda Fixa", instituicao: "Inter", cor: "#0d6efd" },
   });
   const selic = await db.asset.create({
-    data: { nome: "Tesouro Selic 2029", classe: "Tesouro", instituicao: "Tesouro Direto", cor: "#4EC9C0" },
+    data: { userId, nome: "Tesouro Selic 2029", classe: "Tesouro", instituicao: "Tesouro Direto", cor: "#4EC9C0" },
   });
   const fii = await db.asset.create({
-    data: { nome: "HGLG11", classe: "FIIs", instituicao: "XP Investimentos", cor: "#6B96D6" },
+    data: { userId, nome: "HGLG11", classe: "FIIs", instituicao: "XP Investimentos", cor: "#6B96D6" },
   });
   const btc = await db.asset.create({
-    data: { nome: "Bitcoin", classe: "Cripto", instituicao: "Binance", cor: "#F5B14C" },
+    data: { userId, nome: "Bitcoin", classe: "Cripto", instituicao: "Binance", cor: "#F5B14C" },
   });
 
   // aportes mensais (fev→jul) + atualização de valor no fim de cada mês
-  const movimentos: { assetId: string; tipo: string; valor: number; data: Date }[] = [];
+  const movimentos: { userId: string; assetId: string; tipo: string; valor: number; data: Date }[] = [];
   const plano = [
     { asset: cdb, aporte: 500, curva: [505, 1022, 1551, 2094, 2652, 3228] },
     { asset: selic, aporte: 300, curva: [302, 610, 923, 1243, 1570, 1905] },
@@ -237,6 +250,7 @@ async function main() {
     for (let i = 0; i < 6; i++) {
       const mes = 2 + i; // fev..jul
       movimentos.push({
+        userId,
         assetId: asset.id,
         tipo: "aporte",
         valor: r(aporte),
@@ -245,6 +259,7 @@ async function main() {
       // atualização de valor total: fim do mês (julho: dia 15, mês corrente)
       const diaAtt = mes === 7 ? 15 : 28;
       movimentos.push({
+        userId,
         assetId: asset.id,
         tipo: "atualizacao",
         valor: r(curva[i]),
@@ -257,24 +272,25 @@ async function main() {
 
   // ---------- Dieta ----------
   const foods = {
-    ovo: await db.food.create({ data: { nome: "Ovo inteiro", kcal100: 143, prot100: 12.6, carb100: 0.7, gord100: 9.5, porcaoNome: "1 unidade", porcaoG: 50 } }),
-    aveia: await db.food.create({ data: { nome: "Aveia em flocos", kcal100: 389, prot100: 16.9, carb100: 66.3, gord100: 6.9 } }),
-    banana: await db.food.create({ data: { nome: "Banana prata", kcal100: 89, prot100: 1.1, carb100: 22.8, gord100: 0.3, porcaoNome: "1 unidade", porcaoG: 70 } }),
-    whey: await db.food.create({ data: { nome: "Whey protein", kcal100: 400, prot100: 80, carb100: 8, gord100: 6, porcaoNome: "1 scoop", porcaoG: 30 } }),
-    arroz: await db.food.create({ data: { nome: "Arroz branco cozido", kcal100: 128, prot100: 2.5, carb100: 28.1, gord100: 0.2 } }),
-    feijao: await db.food.create({ data: { nome: "Feijão carioca cozido", kcal100: 76, prot100: 4.8, carb100: 13.6, gord100: 0.5 } }),
-    frango: await db.food.create({ data: { nome: "Peito de frango grelhado", kcal100: 165, prot100: 31, carb100: 0, gord100: 3.6 } }),
-    batataDoce: await db.food.create({ data: { nome: "Batata-doce cozida", kcal100: 86, prot100: 1.6, carb100: 20.1, gord100: 0.1 } }),
-    azeite: await db.food.create({ data: { nome: "Azeite de oliva", kcal100: 884, prot100: 0, carb100: 0, gord100: 100, porcaoNome: "1 colher", porcaoG: 13 } }),
-    paoIntegral: await db.food.create({ data: { nome: "Pão integral", kcal100: 253, prot100: 12, carb100: 43, gord100: 3.5, porcaoNome: "1 fatia", porcaoG: 30 } }),
-    iogurte: await db.food.create({ data: { nome: "Iogurte natural desnatado", kcal100: 42, prot100: 4.7, carb100: 5.6, gord100: 0.2 } }),
-    tilapia: await db.food.create({ data: { nome: "Filé de tilápia", kcal100: 96, prot100: 20.1, carb100: 0, gord100: 1.7 } }),
-    brocolis: await db.food.create({ data: { nome: "Brócolis cozido", kcal100: 35, prot100: 2.4, carb100: 7.2, gord100: 0.4 } }),
-    castanha: await db.food.create({ data: { nome: "Castanha-de-caju", kcal100: 570, prot100: 18.5, carb100: 29.1, gord100: 46.3 } }),
+    ovo: await db.food.create({ data: { userId, nome: "Ovo inteiro", kcal100: 143, prot100: 12.6, carb100: 0.7, gord100: 9.5, porcaoNome: "1 unidade", porcaoG: 50 } }),
+    aveia: await db.food.create({ data: { userId, nome: "Aveia em flocos", kcal100: 389, prot100: 16.9, carb100: 66.3, gord100: 6.9 } }),
+    banana: await db.food.create({ data: { userId, nome: "Banana prata", kcal100: 89, prot100: 1.1, carb100: 22.8, gord100: 0.3, porcaoNome: "1 unidade", porcaoG: 70 } }),
+    whey: await db.food.create({ data: { userId, nome: "Whey protein", kcal100: 400, prot100: 80, carb100: 8, gord100: 6, porcaoNome: "1 scoop", porcaoG: 30 } }),
+    arroz: await db.food.create({ data: { userId, nome: "Arroz branco cozido", kcal100: 128, prot100: 2.5, carb100: 28.1, gord100: 0.2 } }),
+    feijao: await db.food.create({ data: { userId, nome: "Feijão carioca cozido", kcal100: 76, prot100: 4.8, carb100: 13.6, gord100: 0.5 } }),
+    frango: await db.food.create({ data: { userId, nome: "Peito de frango grelhado", kcal100: 165, prot100: 31, carb100: 0, gord100: 3.6 } }),
+    batataDoce: await db.food.create({ data: { userId, nome: "Batata-doce cozida", kcal100: 86, prot100: 1.6, carb100: 20.1, gord100: 0.1 } }),
+    azeite: await db.food.create({ data: { userId, nome: "Azeite de oliva", kcal100: 884, prot100: 0, carb100: 0, gord100: 100, porcaoNome: "1 colher", porcaoG: 13 } }),
+    paoIntegral: await db.food.create({ data: { userId, nome: "Pão integral", kcal100: 253, prot100: 12, carb100: 43, gord100: 3.5, porcaoNome: "1 fatia", porcaoG: 30 } }),
+    iogurte: await db.food.create({ data: { userId, nome: "Iogurte natural desnatado", kcal100: 42, prot100: 4.7, carb100: 5.6, gord100: 0.2 } }),
+    tilapia: await db.food.create({ data: { userId, nome: "Filé de tilápia", kcal100: 96, prot100: 20.1, carb100: 0, gord100: 1.7 } }),
+    brocolis: await db.food.create({ data: { userId, nome: "Brócolis cozido", kcal100: 35, prot100: 2.4, carb100: 7.2, gord100: 0.4 } }),
+    castanha: await db.food.create({ data: { userId, nome: "Castanha-de-caju", kcal100: 570, prot100: 18.5, carb100: 29.1, gord100: 46.3 } }),
   };
 
   const diet = await db.diet.create({
     data: {
+      userId,
       nome: "Cutting 2.200 kcal",
       ativa: true,
       metaKcal: 2200,
@@ -291,11 +307,12 @@ async function main() {
     items: { food: { id: string }; quantidade: number; unidade?: string }[]
   ) => {
     const meal = await db.meal.create({
-      data: { nome, horario, ordem, dietId: diet.id },
+      data: { userId, nome, horario, ordem, dietId: diet.id },
     });
     for (const it of items) {
       await db.mealItem.create({
         data: {
+          userId,
           mealId: meal.id,
           foodId: it.food.id,
           quantidade: it.quantidade,
@@ -344,6 +361,7 @@ async function main() {
           : mealIds.slice(0, 4 + (dia % 2)); // 4 ou 5 refeições
     await db.dietDayLog.create({
       data: {
+        userId,
         data: spDay(7, dia),
         refeicoesCumpridas: JSON.stringify(cumpre),
         extras:
@@ -362,6 +380,7 @@ async function main() {
   for (let i = 0; i < pesos.length; i++) {
     await db.weightLog.create({
       data: {
+        userId,
         data: spDay(7, diasPeso[i]),
         pesoKg: pesos[i],
         cintura: i % 2 === 0 ? 88 - i * 0.3 : null,
@@ -371,9 +390,9 @@ async function main() {
   console.log("🥗 Dieta ativa + 10 diários + 8 pesos");
 
   // ---------- Treinos ----------
-  const fichaA = await db.routine.create({ data: { nome: "Ficha A", foco: "Peito, ombro e tríceps", ordem: 0 } });
-  const fichaB = await db.routine.create({ data: { nome: "Ficha B", foco: "Costas e bíceps", ordem: 1 } });
-  const fichaC = await db.routine.create({ data: { nome: "Ficha C", foco: "Pernas e panturrilha", ordem: 2 } });
+  const fichaA = await db.routine.create({ data: { userId, nome: "Ficha A", foco: "Peito, ombro e tríceps", ordem: 0 } });
+  const fichaB = await db.routine.create({ data: { userId, nome: "Ficha B", foco: "Costas e bíceps", ordem: 1 } });
+  const fichaC = await db.routine.create({ data: { userId, nome: "Ficha C", foco: "Pernas e panturrilha", ordem: 2 } });
 
   const mkEx = (
     routineId: string,
@@ -387,7 +406,7 @@ async function main() {
     observacao?: string
   ) =>
     db.routineExercise.create({
-      data: { routineId, nome, grupoMuscular, series, repsAlvo, cargaAtual, descansoSeg, ordem, observacao },
+      data: { userId, routineId, nome, grupoMuscular, series, repsAlvo, cargaAtual, descansoSeg, ordem, observacao },
     });
 
   const supino = await mkEx(fichaA.id, "Supino reto barra", "Peito", 4, "8-10", 62.5, 120, 0, "Escápulas retraídas, pausa no peito");
@@ -455,13 +474,14 @@ async function main() {
     const vez = vezesFicha[s.ficha.id] ?? 0;
     vezesFicha[s.ficha.id] = vez + 1;
     const session = await db.workoutSession.create({
-      data: { data: s.data, duracaoMin: s.dur, routineId: s.ficha.id, concluida: true },
+      data: { userId, data: s.data, duracaoMin: s.dur, routineId: s.ficha.id, concluida: true },
     });
     for (const cfg of exsByFicha[s.ficha.id]) {
       const carga = cfg.base + cfg.inc * vez;
       for (let serie = 1; serie <= cfg.series; serie++) {
         await db.setLog.create({
           data: {
+            userId,
             sessionId: session.id,
             exerciseId: cfg.ex.id,
             serie,
@@ -485,20 +505,21 @@ async function main() {
     { data: sp(7, 14, 6, 30), km: 5.0, segundos: 30 * 60 + 5, tipo: "Moderado", sensacao: 4 },
   ];
   for (const run of runs) {
-    await db.run.create({ data: { ...run, notas: run.notas ?? null } });
+    await db.run.create({ data: { ...run, userId, notas: run.notas ?? null } });
   }
   console.log("🏋️ 3 fichas + 10 sessões + 8 corridas");
 
   // ---------- Agenda ----------
-  const calPessoal = await db.calendar.create({ data: { nome: "Pessoal", cor: "#6B96D6", ordem: 0 } });
-  const calTreinos = await db.calendar.create({ data: { nome: "Treinos", cor: "#0d6efd", ordem: 1 } });
-  const calDieta = await db.calendar.create({ data: { nome: "Dieta", cor: "#F5B14C", ordem: 2 } });
-  const calFinancas = await db.calendar.create({ data: { nome: "Finanças", cor: "#FF6B6B", ordem: 3 } });
-  const calEstudos = await db.calendar.create({ data: { nome: "Estudos", cor: "#4EC9C0", ordem: 4 } });
-  await db.calendar.create({ data: { nome: "Feriados no Brasil", cor: "#A78BDB", readonly: true, ordem: 5 } });
+  const calPessoal = await db.calendar.create({ data: { userId, nome: "Pessoal", cor: "#6B96D6", ordem: 0 } });
+  const calTreinos = await db.calendar.create({ data: { userId, nome: "Treinos", cor: "#0d6efd", ordem: 1 } });
+  const calDieta = await db.calendar.create({ data: { userId, nome: "Dieta", cor: "#F5B14C", ordem: 2 } });
+  const calFinancas = await db.calendar.create({ data: { userId, nome: "Finanças", cor: "#FF6B6B", ordem: 3 } });
+  const calEstudos = await db.calendar.create({ data: { userId, nome: "Estudos", cor: "#4EC9C0", ordem: 4 } });
+  await db.calendar.create({ data: { userId, nome: "Feriados no Brasil", cor: "#A78BDB", readonly: true, ordem: 5 } });
 
   const ingles = await db.event.create({
     data: {
+      userId,
       titulo: "INGLÊS",
       inicio: sp(6, 5, 10),
       fim: sp(6, 5, 11),
@@ -512,6 +533,7 @@ async function main() {
   });
   await db.eventNote.create({
     data: {
+      userId,
       eventId: ingles.id,
       texto: "Aula de sexta passada foi sobre phrasal verbs — revisar antes da próxima.",
       criadoEm: sp(7, 10, 11, 15),
@@ -520,6 +542,7 @@ async function main() {
 
   await db.event.create({
     data: {
+      userId,
       titulo: "Todo Mundo em Pânico · Kinoplex",
       inicio: sp(7, 16, 18, 50),
       fim: sp(7, 16, 21, 0),
@@ -532,6 +555,7 @@ async function main() {
 
   await db.event.create({
     data: {
+      userId,
       titulo: "Aniversário pai",
       inicio: spDay(7, 21),
       fim: spDay(7, 21),
@@ -544,6 +568,7 @@ async function main() {
 
   await db.event.create({
     data: {
+      userId,
       titulo: "Treino · Musculação",
       inicio: sp(6, 1, 18),
       fim: sp(6, 1, 19, 30),
@@ -555,6 +580,7 @@ async function main() {
 
   await db.event.create({
     data: {
+      userId,
       titulo: "Corrida leve",
       inicio: sp(6, 6, 7),
       fim: sp(6, 6, 8),
@@ -565,6 +591,7 @@ async function main() {
 
   await db.event.create({
     data: {
+      userId,
       titulo: "Prep de refeições da semana",
       inicio: sp(7, 19, 16),
       fim: sp(7, 19, 18),
@@ -575,6 +602,7 @@ async function main() {
 
   await db.event.create({
     data: {
+      userId,
       titulo: "Vencimento fatura Inter",
       inicio: spDay(7, 20),
       fim: spDay(7, 20),
@@ -627,22 +655,22 @@ async function main() {
   // ---------- Metas do mês ----------
   await db.goal.createMany({
     data: [
-      { titulo: "Aportar R$ 1.400 nos investimentos", mes: "2026-07", feito: true, ordem: 0 },
-      { titulo: "Correr 40 km no mês", mes: "2026-07", feito: false, ordem: 1 },
-      { titulo: "Ler 2 livros", mes: "2026-07", feito: true, ordem: 2 },
-      { titulo: "Fechar julho abaixo de R$ 3.000", mes: "2026-07", feito: false, ordem: 3 },
+      { userId, titulo: "Aportar R$ 1.400 nos investimentos", mes: "2026-07", feito: true, ordem: 0 },
+      { userId, titulo: "Correr 40 km no mês", mes: "2026-07", feito: false, ordem: 1 },
+      { userId, titulo: "Ler 2 livros", mes: "2026-07", feito: true, ordem: 2 },
+      { userId, titulo: "Fechar julho abaixo de R$ 3.000", mes: "2026-07", feito: false, ordem: 3 },
     ],
   });
 
   // ---------- Metas configuráveis ----------
   await db.setting.createMany({
     data: [
-      { key: "meta_agua_ml", value: "3000" },
-      { key: "meta_treinos_mes", value: "16" },
-      { key: "meta_treinos_semana", value: "4" },
-      { key: "meta_km_mes", value: "40" },
-      { key: "peso_alvo_kg", value: "78" },
-      { key: "nome_usuario", value: "Lucas" },
+      { userId, key: "meta_agua_ml", value: "3000" },
+      { userId, key: "meta_treinos_mes", value: "16" },
+      { userId, key: "meta_treinos_semana", value: "4" },
+      { userId, key: "meta_km_mes", value: "40" },
+      { userId, key: "peso_alvo_kg", value: "78" },
+      { userId, key: "nome_usuario", value: "Lucas" },
     ],
   });
 

@@ -5,17 +5,19 @@ import { usePathname } from "next/navigation";
 import {
   BookOpen,
   CalendarDays,
+  ChevronLeft,
   Dumbbell,
   LayoutDashboard,
-  PanelLeftClose,
-  PanelLeftOpen,
+  ListChecks,
   Salad,
-  Settings,
+  ShieldCheck,
+  Swords,
   Target,
   TrendingUp,
   Wallet,
 } from "lucide-react";
 import { LcLogo } from "@/components/shell/lc-logo";
+import { AccountMenu } from "@/components/shell/account-menu";
 import { cn } from "@/lib/utils";
 
 type NavItem = {
@@ -35,11 +37,12 @@ const modulos: NavItem[] = [
   { href: "/treinos", label: "Treinos", icon: Dumbbell },
   { href: "/agenda", label: "Agenda", icon: CalendarDays },
   { href: "/estudos", label: "Estudos", icon: BookOpen },
+  { href: "/checklist", label: "Checklist", icon: ListChecks },
 ];
 
 const extras: NavItem[] = [
   { href: "/metas", label: "Metas", icon: Target },
-  { href: "/configuracoes", label: "Configurações", icon: Settings },
+  { href: "/desafios", label: "Desafios", icon: Swords },
 ];
 
 function NavLink({
@@ -80,14 +83,22 @@ export function Sidebar({
   collapsed,
   onToggle,
   onNavigate,
+  isSuperAdmin = false,
+  user,
 }: {
   collapsed: boolean;
   onToggle?: () => void;
   onNavigate?: () => void;
+  isSuperAdmin?: boolean;
+  user: { nome: string | null; email: string; avatarUrl: string | null };
 }) {
   const pathname = usePathname();
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
+
+  const adminItems: NavItem[] = isSuperAdmin
+    ? [{ href: "/admin", label: "Admin", icon: ShieldCheck }]
+    : [];
 
   const group = (label: string, items: NavItem[]) => (
     <div className="flex flex-col gap-0.5">
@@ -110,33 +121,53 @@ export function Sidebar({
   );
 
   return (
-    <div className="flex h-full flex-col px-2.5 py-5">
-      <div className="relative flex items-center justify-center px-3">
+    <div className="relative flex h-full flex-col">
+      {/* 65px = h-16 da topbar + borda, para a linha divisória ser contínua na tela */}
+      <div
+        className={cn(
+          "flex h-[65px] shrink-0 items-center border-b border-stroke",
+          collapsed ? "justify-center px-2" : "px-5"
+        )}
+      >
         <Link
           href="/"
-          className="inline-flex items-center justify-center rounded-[14px] px-2 py-2 transition-colors hover:bg-surface-2"
+          className="inline-flex items-center transition-opacity hover:opacity-80"
         >
-          <LcLogo className={collapsed ? "h-7" : "h-8"} />
+          <LcLogo className="h-7 shrink-0" />
         </Link>
-        {onToggle && (
-          <button
-            onClick={onToggle}
-            aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
-            className="absolute right-2 rounded-lg p-1.5 text-steel transition-colors hover:bg-surface-2 hover:text-mist"
-          >
-            {collapsed ? (
-              <PanelLeftOpen className="h-4.5 w-4.5" strokeWidth={1.5} />
-            ) : (
-              <PanelLeftClose className="h-4.5 w-4.5" strokeWidth={1.5} />
-            )}
-          </button>
-        )}
       </div>
 
-      <nav className="mt-4 flex flex-1 flex-col">
+      {onToggle && (
+        <button
+          onClick={onToggle}
+          aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
+          className="absolute -right-3.5 top-[88px] z-10 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full border border-stroke bg-surface text-steel shadow-sm transition-colors hover:text-ice"
+        >
+          <ChevronLeft
+            className={cn(
+              "h-4 w-4 transition-transform duration-300",
+              collapsed && "rotate-180"
+            )}
+            strokeWidth={2}
+          />
+        </button>
+      )}
+
+      <nav className="flex flex-1 flex-col px-2.5 pb-5">
         {group("Painel", painel)}
         {group("Módulos", modulos)}
-        <div className="mt-auto">{group("", extras)}</div>
+        {isSuperAdmin && group("Administração", adminItems)}
+        <div className="mt-auto">
+          {group("", extras)}
+          <div className="mt-1 border-t border-stroke pt-2">
+            <AccountMenu
+              nome={user.nome}
+              email={user.email}
+              avatarUrl={user.avatarUrl}
+              collapsed={collapsed}
+            />
+          </div>
+        </div>
       </nav>
     </div>
   );

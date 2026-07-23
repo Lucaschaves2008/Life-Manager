@@ -9,7 +9,8 @@
     "lint": "eslint",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
-    "db:reset": "prisma db push --force-reset && tsx prisma/seed.ts"
+    "db:reset": "echo '⛔ db:reset APAGA o banco remoto inteiro. Se tiver certeza, use: npm run db:reset:confirmo' && exit 1",
+    "db:reset:confirmo": "prisma db push --force-reset && tsx prisma/seed.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -25,6 +26,8 @@
     "@radix-ui/react-switch": "^1.3.3",
     "@radix-ui/react-tabs": "^1.1.17",
     "@radix-ui/react-tooltip": "^1.2.12",
+    "@supabase/ssr": "^0.12.3",
+    "@supabase/supabase-js": "^2.110.7",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "date-fns": "^4.4.0",
@@ -34,6 +37,7 @@
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "recharts": "^3.9.2",
+    "server-only": "^0.0.1",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.6.0"
   },

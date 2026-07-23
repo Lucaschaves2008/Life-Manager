@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Footprints, Pencil, Plus, Trash2 } from "lucide-react";
+import { ExternalLink, Footprints, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Textarea } from "@/components/ui/input";
@@ -24,7 +24,7 @@ import {
   updateRun,
   type CorridaInput,
 } from "@/app/actions/treinos";
-import { formatDuracao, formatPace } from "@/lib/data/treinos";
+import { formatDuracao, formatPace } from "@/lib/data/treinos-format";
 import { cn } from "@/lib/utils";
 
 export type CorridaView = {
@@ -36,6 +36,7 @@ export type CorridaView = {
   tipo: string;
   sensacao: number;
   notas: string | null;
+  stravaLink: string | null;
 };
 
 const tipos = ["Leve", "Moderado", "Intervalado", "Longão"];
@@ -62,6 +63,7 @@ export function CorridaClient({
   const [tipo, setTipo] = useState("Leve");
   const [sensacao, setSensacao] = useState(3);
   const [notas, setNotas] = useState("");
+  const [stravaLink, setStravaLink] = useState("");
 
   const abrirNovo = params.get("novo") === "1";
   useEffect(() => {
@@ -83,6 +85,7 @@ export function CorridaClient({
     setTipo(corrida?.tipo ?? "Leve");
     setSensacao(corrida?.sensacao ?? 3);
     setNotas(corrida?.notas ?? "");
+    setStravaLink(corrida?.stravaLink ?? "");
     setAberto(true);
   }
 
@@ -103,6 +106,7 @@ export function CorridaClient({
       tipo,
       sensacao,
       notas,
+      stravaLink: stravaLink.trim() || null,
     };
     startSalvar(async () => {
       if (editandoId) {
@@ -147,7 +151,23 @@ export function CorridaClient({
             <tbody>
               {corridas.map((c) => (
                 <Tr key={c.id}>
-                  <Td className="tabular text-mist">{c.dataLabel}</Td>
+                  <Td className="tabular text-mist">
+                    <span className="flex items-center gap-1.5">
+                      {c.dataLabel}
+                      {c.stravaLink && (
+                        <a
+                          href={c.stravaLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          aria-label="Ver no Strava"
+                          className="text-steel transition-colors hover:text-mint"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.5} />
+                        </a>
+                      )}
+                    </span>
+                  </Td>
                   <Td right>
                     {c.km.toLocaleString("pt-BR", {
                       minimumFractionDigits: 1,
@@ -200,6 +220,8 @@ export function CorridaClient({
                                       tipo: removida.tipo,
                                       sensacao: removida.sensacao,
                                       notas: removida.notas,
+                                      stravaLink: removida.stravaLink,
+                                      runSessionId: removida.runSessionId,
                                     }),
                                 },
                               });
@@ -311,6 +333,16 @@ export function CorridaClient({
                 value={notas}
                 onChange={(e) => setNotas(e.target.value)}
                 className="min-h-16"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="run-strava">Link do Strava</Label>
+              <Input
+                id="run-strava"
+                value={stravaLink}
+                onChange={(e) => setStravaLink(e.target.value)}
+                placeholder="https://www.strava.com/activities/…"
               />
             </div>
 

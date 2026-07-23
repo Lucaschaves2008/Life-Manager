@@ -7,6 +7,7 @@ import { StatCard } from "@/components/caverna/stat-card";
 import { HorasChart } from "@/components/estudos/horas-chart";
 import { dashboardEstudos, formatHoras } from "@/lib/data/estudos";
 import { fullDate, nowSP } from "@/lib/dates";
+import { getCurrentUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -25,8 +26,9 @@ const coresAssunto = [
 ];
 
 export default async function EstudosDashboardPage() {
+  const user = await getCurrentUser();
   const hoje = nowSP();
-  const dash = await dashboardEstudos(hoje);
+  const dash = await dashboardEstudos(user.id, hoje);
 
   const totalSegAssunto = dash.porAssunto.reduce((s, a) => s + a.segundos, 0);
   const semDados = totalSegAssunto === 0;

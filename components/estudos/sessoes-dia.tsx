@@ -8,7 +8,8 @@ import {
   renomearPausa,
   renomearSessao,
 } from "@/app/actions/estudos";
-import { formatHoras, type PausaView, type SessaoView } from "@/lib/data/estudos";
+import { formatHoras } from "@/lib/data/estudos-format";
+import type { PausaView, SessaoView } from "@/lib/data/estudos";
 import { cn } from "@/lib/utils";
 
 function hhmm(iso: string): string {

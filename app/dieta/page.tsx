@@ -31,6 +31,7 @@ import {
 import { mediaKcal7d } from "@/lib/data/home";
 import { dayKeySP, mediumDate, nowSP } from "@/lib/dates";
 import { db } from "@/lib/db";
+import { getCurrentUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +47,7 @@ export default async function Page({
 }: {
   searchParams: Promise<{ tab?: string; novo?: string }>;
 }) {
+  const user = await getCurrentUser();
   const { tab: tabParam } = await searchParams;
   const tab = tabParam ?? "hoje";
   const hoje = nowSP();
@@ -53,20 +55,20 @@ export default async function Page({
   return (
     <div className="flex flex-col gap-6">
       <PillTabs tabs={tabs} param="tab" />
-      {tab === "hoje" && <Hoje hoje={hoje} />}
-      {tab === "plano" && <Plano />}
-      {tab === "alimentos" && <Alimentos />}
-      {tab === "metricas" && <Metricas hoje={hoje} />}
+      {tab === "hoje" && <Hoje userId={user.id} hoje={hoje} />}
+      {tab === "plano" && <Plano userId={user.id} />}
+      {tab === "alimentos" && <Alimentos userId={user.id} />}
+      {tab === "metricas" && <Metricas userId={user.id} hoje={hoje} />}
     </div>
   );
 }
 
-async function Hoje({ hoje }: { hoje: Date }) {
+async function Hoje({ userId, hoje }: { userId: string; hoje: Date }) {
   const [dia, aderencia, streak, media7] = await Promise.all([
-    diaDaDieta(hoje),
-    aderencia7d(hoje),
-    streakDieta(hoje),
-    mediaKcal7d(hoje),
+    diaDaDieta(userId, hoje),
+    aderencia7d(userId, hoje),
+    streakDieta(userId, hoje),
+    mediaKcal7d(userId, hoje),
   ]);
 
   const pctKcal =
@@ -151,33 +153,48 @@ async function Hoje({ hoje }: { hoje: Date }) {
   );
 }
 
-async function Plano() {
+async function Plano({ userId }: { userId: string }) {
   const [dietas, alimentos] = await Promise.all([
     db.diet.findMany({
+      where: { userId },
       orderBy: { nome: "asc" },
       include: {
         meals: {
           orderBy: { ordem: "asc" },
-          include: { items: { include: { food: true } } },
+          include: {
+            options: {
+              orderBy: { ordem: "asc" },
+              include: { items: { include: { food: true } } },
+            },
+          },
         },
       },
     }),
-    db.food.findMany({ orderBy: { nome: "asc" } }),
+    db.food.findMany({ where: { userId }, orderBy: { nome: "asc" } }),
   ]);
 
   const view: DietaView[] = dietas.map((d) => {
-    const refeicoes = d.meals.map((m) => ({
-      id: m.id,
-      nome: m.nome,
-      horario: m.horario,
-      macros: macrosDaRefeicao(m.items),
-      itens: m.items.map((i) => ({
-        id: i.id,
-        nome: i.food.nome,
-        quantidade: i.quantidade,
-        unidade: i.unidade,
-      })),
-    }));
+    const refeicoes = d.meals.map((m) => {
+      const opcoes = m.options.map((o) => ({
+        id: o.id,
+        nome: o.nome,
+        macros: macrosDaRefeicao(o.items),
+        itens: o.items.map((i) => ({
+          id: i.id,
+          nome: i.food.nome,
+          quantidade: i.quantidade,
+          unidade: i.unidade,
+        })),
+      }));
+      // preview da refeição = 1ª opção (referência do plano montado)
+      return {
+        id: m.id,
+        nome: m.nome,
+        horario: m.horario,
+        macros: opcoes[0]?.macros ?? macrosZero,
+        opcoes,
+      };
+    });
     return {
       id: d.id,
       nome: d.nome,
@@ -205,8 +222,9 @@ async function Plano() {
   );
 }
 
-async function Alimentos() {
+async function Alimentos({ userId }: { userId: string }) {
   const alimentos = await db.food.findMany({
+    where: { userId },
     orderBy: { nome: "asc" },
     include: { _count: { select: { mealItems: true } } },
   });
@@ -236,10 +254,14 @@ async function Alimentos() {
   );
 }
 
-async function Metricas({ hoje }: { hoje: Date }) {
+async function Metricas({ userId, hoje }: { userId: string; hoje: Date }) {
   const [{ pontos, atual, variacao30d, alvo }, registros] = await Promise.all([
-    evolucaoPeso(hoje),
-    db.weightLog.findMany({ orderBy: { data: "desc" }, take: 40 }),
+    evolucaoPeso(userId, hoje),
+    db.weightLog.findMany({
+      where: { userId },
+      orderBy: { data: "desc" },
+      take: 40,
+    }),
   ]);
 
   const view: RegistroPeso[] = registros.map((r) => ({

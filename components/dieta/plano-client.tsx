@@ -21,22 +21,35 @@ import {
   addItem,
   ativarDieta,
   createDieta,
+  createOption,
   createRefeicao,
   deleteDieta,
   deleteItem,
+  deleteOption,
   deleteRefeicao,
   duplicarDieta,
+  duplicarOption,
   updateDieta,
+  updateOption,
   type DietaInput,
 } from "@/app/actions/dieta";
 import type { Macros } from "@/lib/data/dieta";
+
+const MAX_OPCOES = 4;
+
+export type OpcaoView = {
+  id: string;
+  nome: string;
+  macros: Macros;
+  itens: { id: string; nome: string; quantidade: number; unidade: string }[];
+};
 
 export type RefeicaoView = {
   id: string;
   nome: string;
   horario: string | null;
   macros: Macros;
-  itens: { id: string; nome: string; quantidade: number; unidade: string }[];
+  opcoes: OpcaoView[];
 };
 
 export type DietaView = {
@@ -73,11 +86,15 @@ export function PlanoClient({
   const [detalhe, setDetalhe] = useState<DietaView | null>(null);
   const [novaRefeicao, setNovaRefeicao] = useState({ nome: "", horario: "" });
   const [novoItem, setNovoItem] = useState<{
-    mealId: string;
+    optionId: string;
     foodId: string;
     quantidade: string;
     unidade: string;
   } | null>(null);
+  // opção sendo renomeada (id → texto do input)
+  const [editandoOpcao, setEditandoOpcao] = useState<{ id: string; nome: string } | null>(
+    null
+  );
 
   function abrirDieta(dieta: DietaView | null) {
     setEditandoId(dieta?.id ?? null);
@@ -244,7 +261,7 @@ export function PlanoClient({
                   <Input
                     id={`dieta-${campo.chave}`}
                     type="number"
-                    min={0}
+                    min={campo.chave === "metaKcal" ? 1 : 0}
                     value={form[campo.chave] as number}
                     onChange={(e) =>
                       setForm({ ...form, [campo.chave]: Number(e.target.value) || 0 })
@@ -258,7 +275,7 @@ export function PlanoClient({
               <Button
                 variant="primary"
                 onClick={salvarDieta}
-                disabled={!form.nome.trim() || pending}
+                disabled={!form.nome.trim() || !(form.metaKcal > 0) || pending}
               >
                 {pending ? "Salvando…" : "Salvar"}
               </Button>
@@ -315,133 +332,243 @@ export function PlanoClient({
                         </button>
                       </div>
                     </div>
-                    <p className="tabular mt-0.5 text-[11.5px] text-steel">
-                      {Math.round(r.macros.kcal)} kcal · P {Math.round(r.macros.prot)}g ·
-                      C {Math.round(r.macros.carb)}g · G {Math.round(r.macros.gord)}g
+                    <p className="mt-0.5 text-[11px] text-steel">
+                      {r.opcoes.length}{" "}
+                      {r.opcoes.length === 1 ? "opção" : "opções"} · você escolhe qual
+                      comeu no dia
                     </p>
 
-                    <div className="mt-3 flex flex-col">
-                      {r.itens.map((i) => (
+                    <div className="mt-3 flex flex-col gap-3">
+                      {r.opcoes.map((o) => (
                         <div
-                          key={i.id}
-                          className="group flex items-center gap-2 border-b border-stroke py-1.5 text-[12.5px] last:border-0"
+                          key={o.id}
+                          className="rounded-[11px] border border-stroke bg-surface-1 p-3"
                         >
-                          <span className="tabular text-steel">
-                            {i.quantidade.toLocaleString("pt-BR", {
-                              maximumFractionDigits: 0,
-                            })}
-                            {i.unidade === "g" ? " g" : "×"}
-                          </span>
-                          <span className="flex-1 text-mist">{i.nome}</span>
-                          <button
-                            aria-label="Remover alimento"
-                            onClick={() =>
-                              startTransition(async () => {
-                                await deleteItem(i.id);
-                                setDetalhe(null);
-                              })
-                            }
-                            className="rounded-md p-1 text-steel opacity-0 transition-opacity hover:text-coral group-hover:opacity-100"
-                          >
-                            <Trash2 className="h-3 w-3" strokeWidth={1.5} />
-                          </button>
+                          <div className="flex items-center justify-between gap-2">
+                            {editandoOpcao?.id === o.id ? (
+                              <Input
+                                aria-label="Nome da opção"
+                                value={editandoOpcao.nome}
+                                autoFocus
+                                onChange={(e) =>
+                                  setEditandoOpcao({ id: o.id, nome: e.target.value })
+                                }
+                                onBlur={() =>
+                                  startTransition(async () => {
+                                    await updateOption(o.id, editandoOpcao.nome);
+                                    setEditandoOpcao(null);
+                                  })
+                                }
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") e.currentTarget.blur();
+                                }}
+                                className="h-7 text-[12.5px]"
+                              />
+                            ) : (
+                              <button
+                                onClick={() => setEditandoOpcao({ id: o.id, nome: o.nome })}
+                                className="flex items-center gap-1.5 text-[12.5px] text-ice hover:text-paper"
+                              >
+                                {o.nome}
+                                <Pencil className="h-3 w-3 text-steel" strokeWidth={1.5} />
+                              </button>
+                            )}
+                            <div className="flex items-center gap-1">
+                              <span className="tabular text-[11px] text-steel">
+                                {Math.round(o.macros.kcal)} kcal
+                              </span>
+                              <DotsMenu
+                                items={[
+                                  {
+                                    label: "Duplicar opção",
+                                    icon: Copy,
+                                    onSelect: () =>
+                                      startTransition(async () => {
+                                        if (r.opcoes.length >= MAX_OPCOES) {
+                                          toast.error(
+                                            `Máximo de ${MAX_OPCOES} opções por refeição`
+                                          );
+                                          return;
+                                        }
+                                        await duplicarOption(o.id);
+                                        setDetalhe(null);
+                                        toast.success("Opção duplicada");
+                                      }),
+                                  },
+                                  ...(r.opcoes.length > 1
+                                    ? [
+                                        {
+                                          label: "Excluir opção",
+                                          icon: Trash2,
+                                          destructive: true,
+                                          onSelect: () =>
+                                            startTransition(async () => {
+                                              await deleteOption(o.id);
+                                              setDetalhe(null);
+                                              toast.success("Opção excluída");
+                                            }),
+                                        },
+                                      ]
+                                    : []),
+                                ]}
+                              />
+                            </div>
+                          </div>
+                          <p className="tabular mt-0.5 text-[10.5px] text-steel">
+                            P {Math.round(o.macros.prot)}g · C {Math.round(o.macros.carb)}g
+                            · G {Math.round(o.macros.gord)}g
+                          </p>
+
+                          <div className="mt-2 flex flex-col">
+                            {o.itens.map((i) => (
+                              <div
+                                key={i.id}
+                                className="group flex items-center gap-2 border-b border-stroke py-1.5 text-[12.5px] last:border-0"
+                              >
+                                <span className="tabular text-steel">
+                                  {i.quantidade.toLocaleString("pt-BR", {
+                                    maximumFractionDigits: 0,
+                                  })}
+                                  {i.unidade === "g" ? " g" : "×"}
+                                </span>
+                                <span className="flex-1 text-mist">{i.nome}</span>
+                                <button
+                                  aria-label="Remover alimento"
+                                  onClick={() =>
+                                    startTransition(async () => {
+                                      await deleteItem(i.id);
+                                      setDetalhe(null);
+                                    })
+                                  }
+                                  className="rounded-md p-1 text-steel opacity-0 transition-opacity hover:text-coral group-hover:opacity-100"
+                                >
+                                  <Trash2 className="h-3 w-3" strokeWidth={1.5} />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+
+                          {novoItem?.optionId === o.id ? (
+                            <div className="mt-2.5 flex flex-col gap-2.5">
+                              <Select
+                                value={novoItem.foodId}
+                                onValueChange={(v) =>
+                                  setNovoItem({ ...novoItem, foodId: v })
+                                }
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Escolher alimento" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {alimentos.map((a) => (
+                                    <SelectItem key={a.id} value={a.id}>
+                                      {a.nome}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <div className="flex gap-2">
+                                <Input
+                                  aria-label="Quantidade"
+                                  inputMode="decimal"
+                                  value={novoItem.quantidade}
+                                  onChange={(e) =>
+                                    setNovoItem({
+                                      ...novoItem,
+                                      quantidade: e.target.value,
+                                    })
+                                  }
+                                  placeholder="120"
+                                  className="tabular"
+                                />
+                                <Select
+                                  value={novoItem.unidade}
+                                  onValueChange={(v) =>
+                                    setNovoItem({ ...novoItem, unidade: v })
+                                  }
+                                >
+                                  <SelectTrigger className="w-[130px]">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="g">gramas</SelectItem>
+                                    <SelectItem value="porcao">porções</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div className="flex gap-2">
+                                <Button
+                                  variant="primary"
+                                  size="sm"
+                                  disabled={
+                                    !novoItem.foodId ||
+                                    !(Number(novoItem.quantidade.replace(",", ".")) > 0) ||
+                                    pending
+                                  }
+                                  onClick={() =>
+                                    startSalvar(async () => {
+                                      await addItem(
+                                        o.id,
+                                        novoItem.foodId,
+                                        Number(novoItem.quantidade.replace(",", ".")),
+                                        novoItem.unidade
+                                      );
+                                      setNovoItem(null);
+                                      setDetalhe(null);
+                                      toast.success("Alimento adicionado");
+                                    })
+                                  }
+                                >
+                                  Adicionar
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setNovoItem(null)}
+                                >
+                                  Cancelar
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <Button
+                              variant="dashed"
+                              size="sm"
+                              className="mt-2.5 w-full"
+                              onClick={() =>
+                                setNovoItem({
+                                  optionId: o.id,
+                                  foodId: "",
+                                  quantidade: "",
+                                  unidade: "g",
+                                })
+                              }
+                            >
+                              <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
+                              Adicionar alimento
+                            </Button>
+                          )}
                         </div>
                       ))}
-                    </div>
 
-                    {novoItem?.mealId === r.id ? (
-                      <div className="mt-3 flex flex-col gap-2.5">
-                        <Select
-                          value={novoItem.foodId}
-                          onValueChange={(v) => setNovoItem({ ...novoItem, foodId: v })}
+                      {r.opcoes.length < MAX_OPCOES && (
+                        <Button
+                          variant="soft"
+                          size="sm"
+                          className="w-full"
+                          onClick={() =>
+                            startTransition(async () => {
+                              await createOption(r.id, `Opção ${r.opcoes.length + 1}`);
+                              setDetalhe(null);
+                              toast.success("Opção adicionada");
+                            })
+                          }
                         >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Escolher alimento" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {alimentos.map((a) => (
-                              <SelectItem key={a.id} value={a.id}>
-                                {a.nome}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <div className="flex gap-2">
-                          <Input
-                            aria-label="Quantidade"
-                            inputMode="decimal"
-                            value={novoItem.quantidade}
-                            onChange={(e) =>
-                              setNovoItem({ ...novoItem, quantidade: e.target.value })
-                            }
-                            placeholder="120"
-                            className="tabular"
-                          />
-                          <Select
-                            value={novoItem.unidade}
-                            onValueChange={(v) =>
-                              setNovoItem({ ...novoItem, unidade: v })
-                            }
-                          >
-                            <SelectTrigger className="w-[130px]">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="g">gramas</SelectItem>
-                              <SelectItem value="porcao">porções</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="primary"
-                            size="sm"
-                            disabled={
-                              !novoItem.foodId || !Number(novoItem.quantidade) || pending
-                            }
-                            onClick={() =>
-                              startSalvar(async () => {
-                                await addItem(
-                                  r.id,
-                                  novoItem.foodId,
-                                  Number(novoItem.quantidade.replace(",", ".")),
-                                  novoItem.unidade
-                                );
-                                setNovoItem(null);
-                                setDetalhe(null);
-                                toast.success("Alimento adicionado");
-                              })
-                            }
-                          >
-                            Adicionar
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setNovoItem(null)}
-                          >
-                            Cancelar
-                          </Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <Button
-                        variant="dashed"
-                        size="sm"
-                        className="mt-3 w-full"
-                        onClick={() =>
-                          setNovoItem({
-                            mealId: r.id,
-                            foodId: "",
-                            quantidade: "",
-                            unidade: "g",
-                          })
-                        }
-                      >
-                        <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
-                        Adicionar alimento
-                      </Button>
-                    )}
+                          <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
+                          Nova opção ({r.opcoes.length}/{MAX_OPCOES})
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 ))}
 

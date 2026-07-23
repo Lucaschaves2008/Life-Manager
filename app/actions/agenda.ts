@@ -1,11 +1,14 @@
 "use server";
 
 import { subDays } from "date-fns";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { db } from "@/lib/db";
+import { requireUser } from "@/lib/auth";
+import { tagUsuario } from "@/lib/cache-tags";
 import { parseJSON } from "@/lib/utils";
 
-function revalidar() {
+function revalidar(userId: string) {
+  revalidateTag(tagUsuario(userId, "agenda"));
   revalidatePath("/agenda");
   revalidatePath("/");
 }
@@ -55,9 +58,20 @@ function dados(input: EventoInput) {
   };
 }
 
+/** Garante que a agenda pertence ao usuário antes de gravar eventos nela. */
+async function validarCalendario(calendarId: string, userId: string) {
+  const cal = await db.calendar.findFirst({
+    where: { id: calendarId, userId },
+    select: { id: true },
+  });
+  if (!cal) throw new Error("Recurso não encontrado.");
+}
+
 export async function createEvent(input: EventoInput) {
-  await db.event.create({ data: dados(input) });
-  revalidar();
+  const { id: userId } = await requireUser();
+  await validarCalendario(input.calendarId, userId);
+  await db.event.create({ data: { ...dados(input), userId } });
+  revalidar(userId);
 }
 
 /**
@@ -71,23 +85,25 @@ export async function updateEvent(
   modo: "todos" | "unica" | "seguintes" = "todos",
   dayKeyOriginal?: string
 ) {
-  const original = await db.event.findUnique({ where: { id } });
+  const { id: userId } = await requireUser();
+  const original = await db.event.findFirst({ where: { id, userId } });
   if (!original) return;
+  await validarCalendario(input.calendarId, userId);
 
   if (modo === "todos" || !original.rrule || !dayKeyOriginal) {
-    await db.event.update({ where: { id }, data: dados(input) });
-    revalidar();
+    await db.event.update({ where: { id, userId }, data: dados(input) });
+    revalidar(userId);
     return;
   }
 
   if (modo === "unica") {
     const exdates = parseJSON<string[]>(original.exdates, []);
     await db.event.update({
-      where: { id },
+      where: { id, userId },
       data: { exdates: JSON.stringify([...exdates, dayKeyOriginal]) },
     });
-    await db.event.create({ data: { ...dados(input), rrule: null } });
-    revalidar();
+    await db.event.create({ data: { ...dados(input), userId, rrule: null } });
+    revalidar(userId);
     return;
   }
 
@@ -95,11 +111,11 @@ export async function updateEvent(
   const rrule = parseJSON<Record<string, unknown>>(original.rrule, {});
   const until = subDays(new Date(`${dayKeyOriginal}T12:00:00-03:00`), 1);
   await db.event.update({
-    where: { id },
+    where: { id, userId },
     data: { rrule: JSON.stringify({ ...rrule, until: until.toISOString() }) },
   });
-  await db.event.create({ data: dados(input) });
-  revalidar();
+  await db.event.create({ data: { ...dados(input), userId } });
+  revalidar(userId);
 }
 
 export async function deleteEvent(
@@ -107,16 +123,17 @@ export async function deleteEvent(
   modo: "todos" | "unica" | "seguintes" = "todos",
   dayKey?: string
 ) {
-  const evento = await db.event.findUnique({ where: { id } });
+  const { id: userId } = await requireUser();
+  const evento = await db.event.findFirst({ where: { id, userId } });
   if (!evento) return null;
 
   if (modo === "unica" && evento.rrule && dayKey) {
     const exdates = parseJSON<string[]>(evento.exdates, []);
     await db.event.update({
-      where: { id },
+      where: { id, userId },
       data: { exdates: JSON.stringify([...exdates, dayKey]) },
     });
-    revalidar();
+    revalidar(userId);
     return null;
   }
 
@@ -124,15 +141,15 @@ export async function deleteEvent(
     const rrule = parseJSON<Record<string, unknown>>(evento.rrule, {});
     const until = subDays(new Date(`${dayKey}T12:00:00-03:00`), 1);
     await db.event.update({
-      where: { id },
+      where: { id, userId },
       data: { rrule: JSON.stringify({ ...rrule, until: until.toISOString() }) },
     });
-    revalidar();
+    revalidar(userId);
     return null;
   }
 
-  await db.event.delete({ where: { id } });
-  revalidar();
+  await db.event.delete({ where: { id, userId } });
+  revalidar(userId);
   return evento;
 }
 
@@ -149,62 +166,79 @@ export async function restoreEvent(dados: {
   lembreteMin: number | null;
   calendarId: string;
 }) {
-  await db.event.create({ data: dados });
-  revalidar();
+  const { id: userId } = await requireUser();
+  await validarCalendario(dados.calendarId, userId);
+  await db.event.create({ data: { ...dados, userId } });
+  revalidar(userId);
 }
 
 export async function duplicateEvent(id: string) {
-  const evento = await db.event.findUnique({ where: { id } });
+  const { id: userId } = await requireUser();
+  const evento = await db.event.findFirst({ where: { id, userId } });
   if (!evento) return;
   const { id: _id, ...resto } = evento;
-  await db.event.create({ data: { ...resto, titulo: `${evento.titulo} (cópia)` } });
-  revalidar();
+  await db.event.create({
+    data: { ...resto, userId, titulo: `${evento.titulo} (cópia)` },
+  });
+  revalidar(userId);
 }
 
 // ---------- Agendas ----------
 
 export async function createCalendar(nome: string, cor: string) {
-  const total = await db.calendar.count();
-  await db.calendar.create({ data: { nome, cor, ordem: total } });
-  revalidar();
+  const { id: userId } = await requireUser();
+  const total = await db.calendar.count({ where: { userId } });
+  await db.calendar.create({ data: { nome, cor, ordem: total, userId } });
+  revalidar(userId);
 }
 
 export async function updateCalendar(id: string, nome: string, cor: string) {
-  const cal = await db.calendar.findUnique({ where: { id } });
+  const { id: userId } = await requireUser();
+  const cal = await db.calendar.findFirst({ where: { id, userId } });
   if (cal?.readonly) return;
-  await db.calendar.update({ where: { id }, data: { nome, cor } });
-  revalidar();
+  await db.calendar.update({ where: { id, userId }, data: { nome, cor } });
+  revalidar(userId);
 }
 
 export async function deleteCalendar(id: string) {
-  const cal = await db.calendar.findUnique({ where: { id } });
+  const { id: userId } = await requireUser();
+  const cal = await db.calendar.findFirst({ where: { id, userId } });
   if (cal?.readonly) return;
-  await db.calendar.delete({ where: { id } });
-  revalidar();
+  await db.calendar.delete({ where: { id, userId } });
+  revalidar(userId);
 }
 
 export async function toggleCalendarVisivel(id: string, visivel: boolean) {
-  await db.calendar.update({ where: { id }, data: { visivel } });
-  revalidar();
+  const { id: userId } = await requireUser();
+  await db.calendar.update({ where: { id, userId }, data: { visivel } });
+  revalidar(userId);
 }
 
 // ---------- Notas do evento ----------
 
 export async function addEventNote(eventId: string, texto: string) {
+  const { id: userId } = await requireUser();
   if (!texto.trim()) return;
-  await db.eventNote.create({ data: { eventId, texto: texto.trim() } });
-  revalidar();
+  const evento = await db.event.findFirst({
+    where: { id: eventId, userId },
+    select: { id: true },
+  });
+  if (!evento) throw new Error("Recurso não encontrado.");
+  await db.eventNote.create({ data: { eventId, texto: texto.trim(), userId } });
+  revalidar(userId);
 }
 
 export async function deleteEventNote(id: string) {
-  await db.eventNote.delete({ where: { id } });
-  revalidar();
+  const { id: userId } = await requireUser();
+  await db.eventNote.delete({ where: { id, userId } });
+  revalidar(userId);
 }
 
 /** Notas de um evento (usado pelo popover de detalhe). */
 export async function getEventNotes(eventId: string) {
+  const { id: userId } = await requireUser();
   const notas = await db.eventNote.findMany({
-    where: { eventId },
+    where: { userId, eventId },
     orderBy: { criadoEm: "desc" },
   });
   return notas.map((n) => ({

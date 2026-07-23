@@ -11,6 +11,7 @@ import { Input, Label, Textarea } from "@/components/ui/input";
 import { EmptyState } from "@/components/caverna/empty-state";
 import {
   addExtra,
+  escolherOpcao,
   removeExtra,
   setAgua,
   setNotas,
@@ -19,13 +20,24 @@ import {
 import type { DiaDaDieta, ExtraLog } from "@/lib/data/dieta";
 import { cn } from "@/lib/utils";
 
-const COPO_ML = 250;
-
 export function RefeicoesClient({ dia }: { dia: DiaDaDieta }) {
   const [, startTransition] = useTransition();
-  const [cumpridas, setCumpridas] = useState<string[]>(dia.cumpridas);
+  // escolha otimista por refeição: mealId → optionId (ou null = não comida)
+  const [escolhas, setEscolhas] = useState<Record<string, string | null>>(() =>
+    Object.fromEntries(dia.refeicoes.map((r) => [r.id, r.escolhaId]))
+  );
 
-  useEffect(() => setCumpridas(dia.cumpridas), [dia.cumpridas]);
+  useEffect(() => {
+    setEscolhas(Object.fromEntries(dia.refeicoes.map((r) => [r.id, r.escolhaId])));
+  }, [dia.refeicoes]);
+
+  function escolher(mealId: string, optionId: string | null) {
+    setEscolhas((atual) => ({ ...atual, [mealId]: optionId }));
+    startTransition(() => {
+      if (optionId === null) void toggleRefeicaoCumprida(dia.data, mealId);
+      else void escolherOpcao(dia.data, mealId, optionId);
+    });
+  }
 
   if (dia.refeicoes.length === 0) {
     return (
@@ -40,27 +52,32 @@ export function RefeicoesClient({ dia }: { dia: DiaDaDieta }) {
   return (
     <div className="flex flex-col gap-3">
       {dia.refeicoes.map((r) => {
-        const feita = cumpridas.includes(r.id);
+        const escolhida = escolhas[r.id] ?? null;
+        const feita = escolhida !== null;
+        const umaOpcao = r.opcoes.length <= 1;
+        const opcaoUnica = r.opcoes[0] ?? null;
+
         return (
           <div
             key={r.id}
             className={cn(
               "rounded-[14px] border px-4 py-3.5 transition-colors",
-              feita ? "border-[var(--mint-border)] bg-mint-soft" : "border-stroke bg-surface-2"
+              feita
+                ? "border-[var(--mint-border)] bg-mint-soft"
+                : "border-stroke bg-surface-2"
             )}
           >
             <div className="flex items-start gap-3">
               <Checkbox
                 checked={feita}
                 aria-label={r.nome}
+                // com 1 opção o checkbox marca direto; com várias, checar sem ter
+                // escolhido seleciona a 1ª (o usuário troca depois se quiser)
                 onCheckedChange={() => {
-                  setCumpridas((atual) =>
-                    atual.includes(r.id)
-                      ? atual.filter((id) => id !== r.id)
-                      : [...atual, r.id]
-                  );
-                  startTransition(() => void toggleRefeicaoCumprida(dia.data, r.id));
+                  if (feita) escolher(r.id, null);
+                  else escolher(r.id, (escolhida ?? opcaoUnica?.id) ?? null);
                 }}
+                disabled={!opcaoUnica}
               />
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline justify-between gap-3">
@@ -69,21 +86,77 @@ export function RefeicoesClient({ dia }: { dia: DiaDaDieta }) {
                     <span className="tabular text-[11.5px] text-steel">{r.horario}</span>
                   )}
                 </div>
-                <p className="tabular mt-0.5 text-[11.5px] text-steel">
-                  {Math.round(r.macros.kcal)} kcal · P {Math.round(r.macros.prot)}g · C{" "}
-                  {Math.round(r.macros.carb)}g · G {Math.round(r.macros.gord)}g
-                </p>
-                {r.itens.length > 0 && (
-                  <p className="mt-1.5 text-[12px] text-mist">
-                    {r.itens
-                      .map(
-                        (i) =>
-                          `${i.quantidade.toLocaleString("pt-BR", {
-                            maximumFractionDigits: 0,
-                          })}${i.unidade === "g" ? " g" : "×"} ${i.nome}`
-                      )
-                      .join(" · ")}
-                  </p>
+
+                {umaOpcao ? (
+                  <>
+                    <p className="tabular mt-0.5 text-[11.5px] text-steel">
+                      {Math.round(r.macros.kcal)} kcal · P {Math.round(r.macros.prot)}g ·
+                      C {Math.round(r.macros.carb)}g · G {Math.round(r.macros.gord)}g
+                    </p>
+                    {opcaoUnica && opcaoUnica.itens.length > 0 && (
+                      <p className="mt-1.5 text-[12px] text-mist">
+                        {opcaoUnica.itens
+                          .map(
+                            (i) =>
+                              `${i.quantidade.toLocaleString("pt-BR", {
+                                maximumFractionDigits: 0,
+                              })}${i.unidade === "g" ? " g" : "×"} ${i.nome}`
+                          )
+                          .join(" · ")}
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <p className="mt-0.5 text-[11px] text-steel">
+                      {feita ? "Você comeu:" : "Escolha o que comeu:"}
+                    </p>
+                    <div className="mt-2 flex flex-col gap-1.5">
+                      {r.opcoes.map((o) => {
+                        const sel = escolhida === o.id;
+                        return (
+                          <button
+                            key={o.id}
+                            onClick={() => escolher(r.id, sel ? null : o.id)}
+                            className={cn(
+                              "flex items-center justify-between gap-3 rounded-[10px] border px-3 py-2 text-left transition-colors",
+                              sel
+                                ? "border-[var(--mint-border)] bg-surface-1"
+                                : "border-stroke bg-surface-1 hover:border-[var(--mint-border)]"
+                            )}
+                          >
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className={cn(
+                                    "grid h-3.5 w-3.5 shrink-0 place-items-center rounded-full border",
+                                    sel
+                                      ? "border-mint bg-mint"
+                                      : "border-steel bg-transparent"
+                                  )}
+                                >
+                                  {sel && (
+                                    <span className="h-1.5 w-1.5 rounded-full bg-surface-1" />
+                                  )}
+                                </span>
+                                <span className="truncate text-[12.5px] text-ice">
+                                  {o.nome}
+                                </span>
+                              </div>
+                              {o.itens.length > 0 && (
+                                <p className="mt-0.5 truncate pl-5 text-[11px] text-mist">
+                                  {o.itens.map((i) => i.nome).join(" · ")}
+                                </p>
+                              )}
+                            </div>
+                            <span className="tabular shrink-0 text-[11px] text-steel">
+                              {Math.round(o.macros.kcal)} kcal
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
                 )}
               </div>
             </div>
@@ -237,8 +310,15 @@ export function ExtrasClient({ dia }: { dia: DiaDaDieta }) {
 export function AguaClient({ dia }: { dia: DiaDaDieta }) {
   const [, startTransition] = useTransition();
   const [ml, setMl] = useState(dia.aguaMl);
-  const copos = Math.ceil(dia.metaAguaMl / COPO_ML);
-  const cheios = Math.round(ml / COPO_ML);
+  const copoMl = Math.max(1, dia.copoMl);
+  const copos = Math.max(1, Math.ceil(dia.metaAguaMl / copoMl));
+  // copos já totalmente cheios com o ml atual (não arredonda: um copo só
+  // conta como cheio quando o volume bate ou passa do tamanho do copo)
+  const cheios = Math.min(copos, Math.floor(ml / copoMl));
+
+  useEffect(() => {
+    setMl(dia.aguaMl);
+  }, [dia.aguaMl]);
 
   return (
     <div>
@@ -246,9 +326,9 @@ export function AguaClient({ dia }: { dia: DiaDaDieta }) {
         {Array.from({ length: copos }, (_, i) => i + 1).map((n) => (
           <button
             key={n}
-            aria-label={`${n * COPO_ML} ml`}
+            aria-label={`${n * copoMl} ml`}
             onClick={() => {
-              const novo = n === cheios ? (n - 1) * COPO_ML : n * COPO_ML;
+              const novo = n <= cheios ? (n - 1) * copoMl : n * copoMl;
               setMl(novo);
               startTransition(() => void setAgua(dia.data, novo));
             }}
@@ -266,6 +346,7 @@ export function AguaClient({ dia }: { dia: DiaDaDieta }) {
       <p className="tabular mt-3 text-[13px] text-mist">
         {(ml / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 2 })} L de{" "}
         {(dia.metaAguaMl / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} L
+        <span className="text-steel"> · copo de {copoMl} ml</span>
       </p>
     </div>
   );

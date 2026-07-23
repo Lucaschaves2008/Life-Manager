@@ -1,7 +1,16 @@
-import { subDays } from "date-fns";
+import {
+  unstable_cacheLife as cacheLife,
+  unstable_cacheTag as cacheTag,
+} from "next/cache";
+import { subDays, subYears } from "date-fns";
 import { db } from "@/lib/db";
-import { dayKeySP, spEndOfDay, spStartOfDay, toSP } from "@/lib/dates";
+import { tagUsuario } from "@/lib/cache-tags";
+import { dayKeySP, refDoDiaSP, spEndOfDay, spStartOfDay, toSP } from "@/lib/dates";
 import { parseJSON } from "@/lib/utils";
+
+// Padrão de cache (ver lib/data/home.ts): a função exportada mantém a
+// assinatura original (userId, ref?) e delega para uma interna "use cache"
+// com chaves ESTÁVEIS (userId + dayKey) — nunca um Date de request.
 
 export type Macros = { kcal: number; prot: number; carb: number; gord: number };
 
@@ -56,6 +65,28 @@ export type ExtraLog = {
   gord: number;
 };
 
+export type EscolhaLog = { mealId: string; optionId: string };
+
+export type OpcaoView = {
+  id: string;
+  nome: string;
+  macros: Macros;
+  itens: { id: string; nome: string; quantidade: number; unidade: string }[];
+};
+
+export type RefeicaoView = {
+  id: string;
+  nome: string;
+  horario: string | null;
+  /** macros da opção escolhida hoje; senão da 1ª opção (preview). */
+  macros: Macros;
+  /** id da opção comida hoje (null = ainda não escolhida). */
+  escolhaId: string | null;
+  opcoes: OpcaoView[];
+  /** itens da opção escolhida (ou da 1ª) — compat com quem lê itens direto. */
+  itens: { id: string; nome: string; quantidade: number; unidade: string }[];
+};
+
 export type DiaDaDieta = {
   data: string;
   consumido: Macros;
@@ -64,53 +95,88 @@ export type DiaDaDieta = {
   extras: ExtraLog[];
   aguaMl: number;
   metaAguaMl: number;
+  copoMl: number;
   notas: string;
-  refeicoes: {
-    id: string;
-    nome: string;
-    horario: string | null;
-    macros: Macros;
-    itens: { id: string; nome: string; quantidade: number; unidade: string }[];
-  }[];
+  refeicoes: RefeicaoView[];
   dietaNome: string | null;
 };
 
-export async function diaDaDieta(ref: Date = new Date()): Promise<DiaDaDieta> {
-  const [dieta, log, metaAgua] = await Promise.all([
+export async function diaDaDieta(
+  userId: string,
+  ref: Date = new Date()
+): Promise<DiaDaDieta> {
+  return diaDaDietaDoDia(userId, dayKeySP(ref));
+}
+
+async function diaDaDietaDoDia(userId: string, dia: string): Promise<DiaDaDieta> {
+  "use cache";
+  cacheTag(tagUsuario(userId, "dieta"), tagUsuario(userId, "settings"));
+  cacheLife("days");
+
+  const ref = refDoDiaSP(dia);
+  const [dieta, log, metaAgua, copoAgua] = await Promise.all([
     db.diet.findFirst({
-      where: { ativa: true },
+      where: { userId, ativa: true },
       include: {
         meals: {
           orderBy: { ordem: "asc" },
-          include: { items: { include: { food: true } } },
+          include: {
+            options: {
+              orderBy: { ordem: "asc" },
+              include: { items: { include: { food: true } } },
+            },
+          },
         },
       },
     }),
     db.dietDayLog.findFirst({
-      where: { data: { gte: spStartOfDay(ref), lte: spEndOfDay(ref) } },
+      where: { userId, data: { gte: spStartOfDay(ref), lte: spEndOfDay(ref) } },
     }),
-    db.setting.findUnique({ where: { key: "meta_agua_ml" } }),
+    db.setting.findUnique({ where: { userId_key: { userId, key: "meta_agua_ml" } } }),
+    db.setting.findUnique({ where: { userId_key: { userId, key: "agua_copo_ml" } } }),
   ]);
 
   const cumpridas = parseJSON<string[]>(log?.refeicoesCumpridas ?? "[]", []);
   const extras = parseJSON<ExtraLog[]>(log?.extras ?? "[]", []);
+  const escolhas = parseJSON<EscolhaLog[]>(log?.escolhas ?? "[]", []);
+  const escolhaPorMeal = new Map(escolhas.map((e) => [e.mealId, e.optionId]));
 
-  const refeicoes = (dieta?.meals ?? []).map((meal) => ({
-    id: meal.id,
-    nome: meal.nome,
-    horario: meal.horario,
-    macros: macrosDaRefeicao(meal.items),
-    itens: meal.items.map((i) => ({
-      id: i.id,
-      nome: i.food.nome,
-      quantidade: i.quantidade,
-      unidade: i.unidade,
-    })),
-  }));
+  const refeicoes: RefeicaoView[] = (dieta?.meals ?? []).map((meal) => {
+    const opcoes: OpcaoView[] = meal.options.map((o) => ({
+      id: o.id,
+      nome: o.nome,
+      macros: macrosDaRefeicao(o.items),
+      itens: o.items.map((i) => ({
+        id: i.id,
+        nome: i.food.nome,
+        quantidade: i.quantidade,
+        unidade: i.unidade,
+      })),
+    }));
+
+    const escolhaId = escolhaPorMeal.get(meal.id) ?? null;
+    // opção efetiva p/ exibição: a escolhida hoje, senão a 1ª (preview)
+    const efetiva =
+      (escolhaId && opcoes.find((o) => o.id === escolhaId)) || opcoes[0] || null;
+
+    return {
+      id: meal.id,
+      nome: meal.nome,
+      horario: meal.horario,
+      macros: efetiva?.macros ?? macrosZero,
+      escolhaId,
+      opcoes,
+      itens: efetiva?.itens ?? [],
+    };
+  });
 
   let consumido = macrosZero;
   for (const r of refeicoes) {
-    if (cumpridas.includes(r.id)) consumido = somaMacros(consumido, r.macros);
+    // só conta se cumprida E com uma opção escolhida (macros da escolhida)
+    if (cumpridas.includes(r.id) && r.escolhaId) {
+      const escolhida = r.opcoes.find((o) => o.id === r.escolhaId);
+      if (escolhida) consumido = somaMacros(consumido, escolhida.macros);
+    }
   }
   for (const e of extras) {
     consumido = somaMacros(consumido, {
@@ -122,7 +188,7 @@ export async function diaDaDieta(ref: Date = new Date()): Promise<DiaDaDieta> {
   }
 
   return {
-    data: dayKeySP(ref),
+    data: dia,
     consumido,
     metas: {
       kcal: dieta?.metaKcal ?? 2200,
@@ -134,6 +200,7 @@ export async function diaDaDieta(ref: Date = new Date()): Promise<DiaDaDieta> {
     extras,
     aguaMl: log?.aguaMl ?? 0,
     metaAguaMl: Number(metaAgua?.value ?? 3000) || 3000,
+    copoMl: Number(copoAgua?.value ?? 250) || 250,
     notas: log?.notas ?? "",
     refeicoes,
     dietaNome: dieta?.nome ?? null,
@@ -141,15 +208,28 @@ export async function diaDaDieta(ref: Date = new Date()): Promise<DiaDaDieta> {
 }
 
 /** % de refeições cumpridas nos últimos 7 dias. */
-export async function aderencia7d(ref: Date = new Date()): Promise<number> {
+export async function aderencia7d(
+  userId: string,
+  ref: Date = new Date()
+): Promise<number> {
+  return aderencia7dDoDia(userId, dayKeySP(ref));
+}
+
+async function aderencia7dDoDia(userId: string, dia: string): Promise<number> {
+  "use cache";
+  cacheTag(tagUsuario(userId, "dieta"));
+  cacheLife("days");
+
+  const ref = refDoDiaSP(dia);
   const dieta = await db.diet.findFirst({
-    where: { ativa: true },
+    where: { userId, ativa: true },
     include: { meals: true },
   });
   if (!dieta || dieta.meals.length === 0) return 0;
 
   const logs = await db.dietDayLog.findMany({
     where: {
+      userId,
       data: { gte: spStartOfDay(subDays(toSP(ref), 6)), lte: spEndOfDay(ref) },
     },
   });
@@ -163,9 +243,21 @@ export async function aderencia7d(ref: Date = new Date()): Promise<number> {
 }
 
 /** Dias consecutivos com diário preenchido (alguma refeição ou extra). */
-export async function streakDieta(ref: Date = new Date()): Promise<number> {
+export async function streakDieta(
+  userId: string,
+  ref: Date = new Date()
+): Promise<number> {
+  return streakDietaDoDia(userId, dayKeySP(ref));
+}
+
+async function streakDietaDoDia(userId: string, dia: string): Promise<number> {
+  "use cache";
+  cacheTag(tagUsuario(userId, "dieta"));
+  cacheLife("days");
+
+  const ref = refDoDiaSP(dia);
   const logs = await db.dietDayLog.findMany({
-    where: { data: { gte: spStartOfDay(subDays(toSP(ref), 120)) } },
+    where: { userId, data: { gte: spStartOfDay(subDays(toSP(ref), 120)) } },
   });
   const dias = new Set(
     logs
@@ -179,8 +271,8 @@ export async function streakDieta(ref: Date = new Date()): Promise<number> {
 
   let streak = 0;
   for (let i = 0; i < 120; i++) {
-    const dia = dayKeySP(subDays(toSP(ref), i));
-    if (dias.has(dia)) streak++;
+    const chave = dayKeySP(subDays(toSP(ref), i));
+    if (dias.has(chave)) streak++;
     else if (i > 0) break;
   }
   return streak;
@@ -193,20 +285,47 @@ export type PesoPonto = {
   meta: number;
 };
 
-export async function evolucaoPeso(ref: Date = new Date()): Promise<{
+export type EvolucaoPeso = {
   pontos: PesoPonto[];
   atual: number | null;
   variacao30d: number | null;
   alvo: number;
-}> {
-  const [registros, alvoSetting] = await Promise.all([
-    db.weightLog.findMany({ orderBy: { data: "asc" } }),
-    db.setting.findUnique({ where: { key: "peso_alvo_kg" } }),
+};
+
+export async function evolucaoPeso(
+  userId: string,
+  ref: Date = new Date()
+): Promise<EvolucaoPeso> {
+  return evolucaoPesoDoDia(userId, dayKeySP(ref));
+}
+
+async function evolucaoPesoDoDia(userId: string, dia: string): Promise<EvolucaoPeso> {
+  "use cache";
+  cacheTag(tagUsuario(userId, "dieta"), tagUsuario(userId, "settings"));
+  cacheLife("days");
+
+  const ref = refDoDiaSP(dia);
+  // Janela de 12 meses; 6 pontos anteriores mantêm a média móvel correta no início.
+  const inicioJanela = spStartOfDay(subYears(toSP(ref), 1));
+  const [registros, anteriores, alvoSetting] = await Promise.all([
+    db.weightLog.findMany({
+      where: { userId, data: { gte: inicioJanela } },
+      orderBy: { data: "asc" },
+    }),
+    db.weightLog.findMany({
+      where: { userId, data: { lt: inicioJanela } },
+      orderBy: { data: "desc" },
+      take: 6,
+    }),
+    db.setting.findUnique({ where: { userId_key: { userId, key: "peso_alvo_kg" } } }),
   ]);
   const alvo = Number(alvoSetting?.value ?? 78) || 78;
 
+  const todos = [...anteriores.reverse(), ...registros];
+  const base = todos.length - registros.length;
+
   const pontos: PesoPonto[] = registros.map((r, i) => {
-    const janela = registros.slice(Math.max(0, i - 6), i + 1);
+    const janela = todos.slice(Math.max(0, base + i - 6), base + i + 1);
     return {
       label: dayKeySP(r.data).slice(5).split("-").reverse().join("/"),
       peso: r.pesoKg,
@@ -220,9 +339,9 @@ export async function evolucaoPeso(ref: Date = new Date()): Promise<{
     };
   });
 
-  const atual = registros.at(-1)?.pesoKg ?? null;
+  const atual = todos.at(-1)?.pesoKg ?? null;
   const limite = subDays(toSP(ref), 30);
-  const antigo = [...registros].reverse().find((r) => r.data <= limite);
+  const antigo = [...todos].reverse().find((r) => r.data <= limite);
 
   return {
     pontos,

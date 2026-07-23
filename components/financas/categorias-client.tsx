@@ -5,6 +5,7 @@ import { Pencil, Plus, Tag, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
+import { EmojiPicker } from "@/components/ui/emoji-picker";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { DotsMenu } from "@/components/caverna/dots-menu";
 import { EmptyState } from "@/components/caverna/empty-state";
@@ -152,12 +153,10 @@ export function CategoriasClient({ itens }: { itens: CategoriaItem[] }) {
             <div className="grid grid-cols-[76px_1fr] gap-4">
               <div>
                 <Label htmlFor="cat-emoji">Ícone</Label>
-                <Input
-                  id="cat-emoji"
+                <EmojiPicker
                   value={form.emoji}
-                  onChange={(e) => setForm({ ...form, emoji: e.target.value })}
-                  className="text-center"
-                  maxLength={2}
+                  onChange={(emoji) => setForm({ ...form, emoji })}
+                  ariaLabel="Escolher ícone da categoria"
                 />
               </div>
               <div>

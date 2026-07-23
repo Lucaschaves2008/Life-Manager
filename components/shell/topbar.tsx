@@ -4,15 +4,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
-  Bell,
   CalendarPlus,
   Dumbbell,
   Menu,
-  Moon,
   PiggyBank,
   Plus,
   ReceiptText,
-  Sun,
   UtensilsCrossed,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -23,6 +20,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { fullDate, nowSP } from "@/lib/dates";
+import { NotificacoesBell } from "@/components/shell/notificacoes-bell";
 
 const titles: [string, string][] = [
   ["/financas", "Finanças"],
@@ -41,39 +39,26 @@ function pageTitle(pathname: string): string {
 }
 
 const novoItems = [
-  { label: "Transação", href: "/financas/transacoes?novo=1", icon: ReceiptText },
+  { label: "Transação", href: "/financas?novo=1", icon: ReceiptText },
   { label: "Treino", href: "/treinos?novo=1", icon: Dumbbell },
   { label: "Refeição", href: "/dieta?novo=1", icon: UtensilsCrossed },
   { label: "Evento", href: "/agenda?novo=1", icon: CalendarPlus },
   { label: "Aporte", href: "/investimentos?novo=1", icon: PiggyBank },
 ];
 
-export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
+export function Topbar({
+  onMenuClick,
+  notificacoesSlot,
+}: {
+  onMenuClick: () => void;
+  notificacoesSlot?: React.ReactNode;
+}) {
   const pathname = usePathname();
   const [hoje, setHoje] = useState<string>("");
-  const [theme, setTheme] = useState<"dark" | "light">("dark");
 
   useEffect(() => {
     setHoje(fullDate(nowSP()));
-
-    const savedTheme = window.localStorage.getItem("life-manager-theme");
-    const initialTheme =
-      savedTheme === "light" || savedTheme === "dark"
-        ? savedTheme
-        : window.matchMedia("(prefers-color-scheme: dark)").matches
-        ? "dark"
-        : "light";
-
-    setTheme(initialTheme);
-    document.documentElement.dataset.theme = initialTheme;
   }, []);
-
-  function toggleTheme() {
-    const nextTheme = theme === "dark" ? "light" : "dark";
-    setTheme(nextTheme);
-    document.documentElement.dataset.theme = nextTheme;
-    window.localStorage.setItem("life-manager-theme", nextTheme);
-  }
 
   return (
     <header className="sticky top-0 z-30 border-b border-stroke bg-bg/85 backdrop-blur-md">
@@ -93,27 +78,7 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
             {hoje}
           </span>
 
-          <button
-            type="button"
-            onClick={toggleTheme}
-            aria-label={`Ativar modo ${theme === "dark" ? "claro" : "noturno"}`}
-            className="rounded-full p-2 text-mist transition-colors hover:bg-surface-2 hover:text-ice"
-          >
-            {theme === "dark" ? (
-              <Sun className="h-5 w-5" strokeWidth={1.5} />
-            ) : (
-              <Moon className="h-5 w-5" strokeWidth={1.5} />
-            )}
-          </button>
-
-          <Link
-            href="/agenda"
-            aria-label="Notificações"
-            className="relative rounded-full p-2 text-mist transition-colors hover:bg-surface-2 hover:text-ice"
-            id="sino-notificacoes"
-          >
-            <Bell className="h-[18px] w-[18px]" strokeWidth={1.5} />
-          </Link>
+          {notificacoesSlot ?? <NotificacoesBell notificacoes={[]} />}
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

@@ -2,7 +2,17 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
-import { Copy, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import {
+  ArrowRight,
+  Copy,
+  CreditCard,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+  TrendingUp,
+  Wallet,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,10 +43,24 @@ export type LinhaTransacao = TransacaoEditavel & {
   dataLabel: string;
   categoriaNome: string | null;
   categoriaEmoji: string | null;
-  contaNome: string;
+  contaNome: string | null;
+  origemNome: string | null;
+  destinoNome: string | null;
   parcelaNum: number | null;
   parcelaTotal: number | null;
 };
+
+const iconePorTipoPonta: Record<string, typeof Wallet> = {
+  conta: Wallet,
+  cartao: CreditCard,
+  ativo: TrendingUp,
+};
+
+function IconePonta({ tipo }: { tipo: string | null }) {
+  const Icone = tipo ? iconePorTipoPonta[tipo] : null;
+  if (!Icone) return null;
+  return <Icone className="h-3.5 w-3.5 text-steel" strokeWidth={1.5} />;
+}
 
 const periodos = [
   { value: "mes", label: "Este mês" },
@@ -50,12 +74,14 @@ export function TransacoesClient({
   contas,
   categorias,
   cartoes,
+  ativos,
   hoje,
 }: {
   linhas: LinhaTransacao[];
   contas: OpcaoSimples[];
   categorias: OpcaoSimples[];
   cartoes: OpcaoSimples[];
+  ativos: OpcaoSimples[];
   hoje: string;
 }) {
   const router = useRouter();
@@ -222,14 +248,26 @@ export function TransacoesClient({
                     ))}
                   </div>
                 </Td>
-                <Td className="text-mist">
-                  {linha.categoriaNome
-                    ? `${linha.categoriaEmoji ?? ""} ${linha.categoriaNome}`
-                    : linha.tipo === "transferencia"
-                    ? "Transferência"
-                    : "—"}
-                </Td>
-                <Td className="text-mist">{linha.contaNome}</Td>
+                {linha.tipo === "transferencia" ? (
+                  <Td className="text-mist" colSpan={2}>
+                    <span className="flex items-center gap-1.5">
+                      <IconePonta tipo={linha.origemTipo} />
+                      {linha.origemNome ?? "—"}
+                      <ArrowRight className="h-3 w-3 shrink-0 text-steel" strokeWidth={1.5} />
+                      <IconePonta tipo={linha.destinoTipo} />
+                      {linha.destinoNome ?? "—"}
+                    </span>
+                  </Td>
+                ) : (
+                  <>
+                    <Td className="text-mist">
+                      {linha.categoriaNome
+                        ? `${linha.categoriaEmoji ?? ""} ${linha.categoriaNome}`
+                        : "—"}
+                    </Td>
+                    <Td className="text-mist">{linha.contaNome ?? "—"}</Td>
+                  </>
+                )}
                 <Td right>
                   <span
                     className={cn(
@@ -291,6 +329,7 @@ export function TransacoesClient({
           contas={contas}
           categorias={categorias}
           cartoes={cartoes}
+          ativos={ativos}
           hoje={hoje}
           editando={sheet.item}
         />

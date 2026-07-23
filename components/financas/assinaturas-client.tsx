@@ -5,6 +5,7 @@ import { CreditCard, Pause, Pencil, Play, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
+import { EmojiPicker } from "@/components/ui/emoji-picker";
 import { StatusPill } from "@/components/ui/table";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { DotsMenu } from "@/components/caverna/dots-menu";
@@ -158,12 +159,10 @@ export function AssinaturasClient({ itens }: { itens: AssinaturaItem[] }) {
             <div className="grid grid-cols-[76px_1fr] gap-4">
               <div>
                 <Label htmlFor="emoji">Ícone</Label>
-                <Input
-                  id="emoji"
+                <EmojiPicker
                   value={form.emoji}
-                  onChange={(e) => setForm({ ...form, emoji: e.target.value })}
-                  className="text-center"
-                  maxLength={2}
+                  onChange={(emoji) => setForm({ ...form, emoji })}
+                  ariaLabel="Escolher ícone da assinatura"
                 />
               </div>
               <div>

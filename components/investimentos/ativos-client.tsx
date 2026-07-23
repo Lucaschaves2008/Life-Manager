@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowDownRight,
   ArrowUpRight,
+  Coins,
   Pencil,
   Plus,
   RotateCcw,
@@ -26,6 +27,7 @@ import { Table, Td, Th, THead, Tr } from "@/components/ui/table";
 import { DotsMenu } from "@/components/caverna/dots-menu";
 import { EmptyState } from "@/components/caverna/empty-state";
 import { MoneyInput } from "@/components/caverna/money-input";
+import { Segmented } from "@/components/caverna/segmented";
 import { VariationBadge } from "@/components/caverna/variation-badge";
 import { Sparkline } from "@/components/charts/sparkline";
 import {
@@ -58,6 +60,8 @@ export type AtivoView = {
   classe: string;
   instituicao: string;
   cor: string;
+  diaAporte: number | null;
+  revisarACada: number | null;
   valorAtual: number;
   aportado: number;
   rendimento: number;
@@ -65,6 +69,13 @@ export type AtivoView = {
   serie: number[];
   movimentos: MovimentoView[];
 };
+
+const opcoesRevisao = [
+  { label: "Não lembrar", value: "0" },
+  { label: "A cada semana", value: "7" },
+  { label: "A cada 15 dias", value: "15" },
+  { label: "A cada mês", value: "30" },
+];
 
 const classes = ["Renda Fixa", "Tesouro", "Ações", "FIIs", "Cripto", "Fundos"];
 const paleta = [
@@ -83,13 +94,44 @@ const ativoVazio: AtivoInput = {
   classe: "Renda Fixa",
   instituicao: "",
   cor: paleta[0],
+  diaAporte: null,
+  revisarACada: null,
+};
+
+const rotuloMovimento: Record<string, string> = {
+  aporte: "Aporte",
+  resgate: "Resgate",
+  atualizacao: "Atualização",
+  dividendo: "Dividendo",
 };
 
 const iconeMovimento: Record<string, { Icon: typeof ArrowUpRight; cor: string }> = {
   aporte: { Icon: ArrowUpRight, cor: "text-mint" },
   resgate: { Icon: ArrowDownRight, cor: "text-coral" },
   atualizacao: { Icon: RotateCcw, cor: "text-steel" },
+  dividendo: { Icon: Coins, cor: "text-amber" },
 };
+
+type GrupoInstituicaoView = {
+  instituicao: string;
+  valorTotal: number;
+  ativos: AtivoView[];
+};
+
+/** Agrupa os ativos por instituição para a visão por corretora. */
+function groupByInstituicao(ativos: AtivoView[]): GrupoInstituicaoView[] {
+  const mapa = new Map<string, AtivoView[]>();
+  for (const a of ativos) {
+    mapa.set(a.instituicao, [...(mapa.get(a.instituicao) ?? []), a]);
+  }
+  return Array.from(mapa.entries())
+    .map(([instituicao, lista]) => ({
+      instituicao,
+      valorTotal: lista.reduce((s, a) => s + a.valorAtual, 0),
+      ativos: lista,
+    }))
+    .sort((a, b) => b.valorTotal - a.valorTotal);
+}
 
 export function AtivosClient({
   ativos,
@@ -106,6 +148,9 @@ export function AtivosClient({
   const [sheetAtivo, setSheetAtivo] = useState(false);
   const [editandoId, setEditandoId] = useState<string | null>(null);
   const [form, setForm] = useState<AtivoInput>(ativoVazio);
+  const [agrupar, setAgrupar] = useState(false);
+
+  const grupos = groupByInstituicao(ativos);
 
   const [detalhe, setDetalhe] = useState<AtivoView | null>(null);
   const [mov, setMov] = useState<Omit<MovimentoInput, "assetId">>({
@@ -116,15 +161,32 @@ export function AtivosClient({
   });
 
   const abrirNovo = params.get("novo") === "1";
+  const revisarId = params.get("revisar");
   useEffect(() => {
     if (abrirNovo && ativos.length > 0) setDetalhe(ativos[0]);
   }, [abrirNovo, ativos]);
 
+  useEffect(() => {
+    if (!revisarId) return;
+    const ativo = ativos.find((a) => a.id === revisarId);
+    if (ativo) {
+      setDetalhe(ativo);
+      setMov({ tipo: "atualizacao", valor: 0, data: hoje, nota: "" });
+    }
+  }, [revisarId, ativos, hoje]);
+
   function limparNovo() {
-    if (!abrirNovo) return;
+    if (!abrirNovo && !revisarId) return;
     const next = new URLSearchParams(params.toString());
     next.delete("novo");
-    router.replace(`/investimentos?${next.toString()}`);
+    next.delete("revisar");
+    const query = next.toString();
+    // Adia a navegação para depois da animação de fechamento do Sheet (Radix
+    // Portal): disparar o router.replace no mesmo tick faz o React tentar
+    // remover o mesmo nó do portal duas vezes (removeChild NotFoundError).
+    setTimeout(() => {
+      router.replace(query ? `/investimentos?${query}` : "/investimentos");
+    }, 0);
   }
 
   function abrirAtivo(ativo: AtivoView | null) {
@@ -136,6 +198,8 @@ export function AtivosClient({
             classe: ativo.classe,
             instituicao: ativo.instituicao,
             cor: ativo.cor,
+            diaAporte: ativo.diaAporte,
+            revisarACada: ativo.revisarACada,
           }
         : ativoVazio
     );
@@ -164,6 +228,8 @@ export function AtivosClient({
           ? "Aporte registrado"
           : mov.tipo === "resgate"
           ? "Resgate registrado"
+          : mov.tipo === "dividendo"
+          ? "Dividendo registrado"
           : "Valor atualizado"
       );
       setMov({ tipo: "aporte", valor: 0, data: hoje, nota: "" });
@@ -171,6 +237,116 @@ export function AtivosClient({
       limparNovo();
     });
   }
+
+  function renderLinha(ativo: AtivoView) {
+    return (
+      <Tr key={ativo.id}>
+        <Td>
+          <button
+            onClick={() => setDetalhe(ativo)}
+            className="flex items-center gap-3 text-left"
+          >
+            <span
+              className="h-7 w-7 shrink-0 rounded-[8px]"
+              style={{
+                background: `color-mix(in srgb, ${ativo.cor} 22%, transparent)`,
+                border: `1px solid ${ativo.cor}`,
+              }}
+            />
+            <span>
+              <span className="block text-[13.5px] text-ice">{ativo.nome}</span>
+              <span className="block text-[11.5px] text-steel">
+                {ativo.instituicao}
+              </span>
+            </span>
+          </button>
+        </Td>
+        <Td>
+          <span className="rounded-full bg-surface-2 px-2.5 py-1 text-[11.5px] text-mist">
+            {ativo.classe}
+          </span>
+        </Td>
+        <Td right>{formatBRL(ativo.valorAtual)}</Td>
+        <Td right className="text-mist">
+          {formatBRL(ativo.aportado)}
+        </Td>
+        <Td right>
+          {ativo.pctRendimento != null ? (
+            <VariationBadge pct={ativo.pctRendimento} />
+          ) : (
+            <span className="text-steel">—</span>
+          )}
+        </Td>
+        <Td>
+          <Sparkline
+            values={ativo.serie}
+            cor={
+              ativo.rendimento >= 0
+                ? "var(--color-mint)"
+                : "var(--color-coral)"
+            }
+          />
+        </Td>
+        <Td right>
+          <DotsMenu
+            items={[
+              {
+                label: "Movimentos",
+                icon: RotateCcw,
+                onSelect: () => setDetalhe(ativo),
+              },
+              {
+                label: "Editar",
+                icon: Pencil,
+                onSelect: () => abrirAtivo(ativo),
+              },
+              {
+                label: "Excluir",
+                icon: Trash2,
+                destructive: true,
+                onSelect: () =>
+                  startTransition(async () => {
+                    const removido = await deleteAsset(ativo.id);
+                    if (!removido) return;
+                    toast("Ativo excluído", {
+                      action: {
+                        label: "Desfazer",
+                        onClick: () =>
+                          restoreAsset({
+                            nome: removido.nome,
+                            classe: removido.classe,
+                            instituicao: removido.instituicao,
+                            cor: removido.cor,
+                            diaAporte: removido.diaAporte,
+                            movements: removido.movements.map((m) => ({
+                              tipo: m.tipo,
+                              valor: m.valor,
+                              data: m.data,
+                              nota: m.nota,
+                            })),
+                          }),
+                      },
+                    });
+                  }),
+              },
+            ]}
+          />
+        </Td>
+      </Tr>
+    );
+  }
+
+  const cabecalho = (
+    <THead>
+      <Th>Ativo</Th>
+      <Th>Classe</Th>
+      <Th right>Valor atual</Th>
+      <Th right>Aportado</Th>
+      <Th right>Rentabilidade</Th>
+      <Th>Evolução</Th>
+      <Th right> </Th>
+    </THead>
+  );
 
   return (
     <>
@@ -188,115 +364,42 @@ export function AtivosClient({
         />
       ) : (
         <>
-          <Table>
-            <THead>
-              <Th>Ativo</Th>
-              <Th>Classe</Th>
-              <Th right>Valor atual</Th>
-              <Th right>Aportado</Th>
-              <Th right>Rentabilidade</Th>
-              <Th>Evolução</Th>
-              <Th right> </Th>
-            </THead>
-            <tbody>
-              {ativos.map((ativo) => (
-                <Tr key={ativo.id}>
-                  <Td>
-                    <button
-                      onClick={() => setDetalhe(ativo)}
-                      className="flex items-center gap-3 text-left"
-                    >
-                      <span
-                        className="h-7 w-7 shrink-0 rounded-[8px]"
-                        style={{
-                          background: `color-mix(in srgb, ${ativo.cor} 22%, transparent)`,
-                          border: `1px solid ${ativo.cor}`,
-                        }}
-                      />
-                      <span>
-                        <span className="block text-[13.5px] text-ice">
-                          {ativo.nome}
-                        </span>
-                        <span className="block text-[11.5px] text-steel">
-                          {ativo.instituicao}
-                        </span>
-                      </span>
-                    </button>
-                  </Td>
-                  <Td>
-                    <span className="rounded-full bg-surface-2 px-2.5 py-1 text-[11.5px] text-mist">
-                      {ativo.classe}
-                    </span>
-                  </Td>
-                  <Td right>{formatBRL(ativo.valorAtual)}</Td>
-                  <Td right className="text-mist">
-                    {formatBRL(ativo.aportado)}
-                  </Td>
-                  <Td right>
-                    {ativo.pctRendimento != null ? (
-                      <VariationBadge pct={ativo.pctRendimento} />
-                    ) : (
-                      <span className="text-steel">—</span>
-                    )}
-                  </Td>
-                  <Td>
-                    <Sparkline
-                      values={ativo.serie}
-                      cor={
-                        ativo.rendimento >= 0
-                          ? "var(--color-mint)"
-                          : "var(--color-coral)"
-                      }
-                    />
-                  </Td>
-                  <Td right>
-                    <DotsMenu
-                      items={[
-                        {
-                          label: "Movimentos",
-                          icon: RotateCcw,
-                          onSelect: () => setDetalhe(ativo),
-                        },
-                        {
-                          label: "Editar",
-                          icon: Pencil,
-                          onSelect: () => abrirAtivo(ativo),
-                        },
-                        {
-                          label: "Excluir",
-                          icon: Trash2,
-                          destructive: true,
-                          onSelect: () =>
-                            startTransition(async () => {
-                              const removido = await deleteAsset(ativo.id);
-                              if (!removido) return;
-                              toast("Ativo excluído", {
-                                action: {
-                                  label: "Desfazer",
-                                  onClick: () =>
-                                    restoreAsset({
-                                      nome: removido.nome,
-                                      classe: removido.classe,
-                                      instituicao: removido.instituicao,
-                                      cor: removido.cor,
-                                      movements: removido.movements.map((m) => ({
-                                        tipo: m.tipo,
-                                        valor: m.valor,
-                                        data: m.data,
-                                        nota: m.nota,
-                                      })),
-                                    }),
-                                },
-                              });
-                            }),
-                        },
-                      ]}
-                    />
-                  </Td>
-                </Tr>
+          <div className="mb-4 flex justify-end">
+            <Segmented
+              options={[
+                { label: "Lista", value: "lista" },
+                { label: "Por instituição", value: "instituicao" },
+              ]}
+              value={agrupar ? "instituicao" : "lista"}
+              onChange={(v) => setAgrupar(v === "instituicao")}
+            />
+          </div>
+
+          {agrupar ? (
+            <div className="flex flex-col gap-7">
+              {grupos.map((grupo) => (
+                <div key={grupo.instituicao}>
+                  <div className="mb-2 flex items-baseline justify-between gap-4">
+                    <p className="text-[13.5px] font-medium text-ice">
+                      {grupo.instituicao || "Sem instituição"}
+                    </p>
+                    <p className="tabular text-[13px] text-mist">
+                      {formatBRL(grupo.valorTotal)}
+                    </p>
+                  </div>
+                  <Table>
+                    {cabecalho}
+                    <tbody>{grupo.ativos.map((ativo) => renderLinha(ativo))}</tbody>
+                  </Table>
+                </div>
               ))}
-            </tbody>
-          </Table>
+            </div>
+          ) : (
+            <Table>
+              {cabecalho}
+              <tbody>{ativos.map((ativo) => renderLinha(ativo))}</tbody>
+            </Table>
+          )}
 
           <Button
             variant="dashed"
@@ -350,6 +453,54 @@ export function AtivosClient({
                 onChange={(e) => setForm({ ...form, instituicao: e.target.value })}
                 placeholder="Inter, NuInvest…"
               />
+            </div>
+            <div>
+              <Label htmlFor="dia-aporte">Dia do aporte (opcional)</Label>
+              <Input
+                id="dia-aporte"
+                type="number"
+                min={1}
+                max={31}
+                inputMode="numeric"
+                value={form.diaAporte ?? ""}
+                onChange={(e) => {
+                  const raw = e.target.value.trim();
+                  if (raw === "") {
+                    setForm({ ...form, diaAporte: null });
+                    return;
+                  }
+                  const n = Math.min(31, Math.max(1, Number(raw)));
+                  setForm({ ...form, diaAporte: Number.isNaN(n) ? null : n });
+                }}
+                placeholder="ex.: 5"
+                className="tabular"
+              />
+              <p className="mt-1.5 text-[11.5px] text-steel">
+                Dia do mês em que você costuma aportar. Vira lembrete na carteira.
+              </p>
+            </div>
+            <div>
+              <Label>Lembrar de atualizar o valor</Label>
+              <Select
+                value={String(form.revisarACada ?? 0)}
+                onValueChange={(v) =>
+                  setForm({ ...form, revisarACada: v === "0" ? null : Number(v) })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {opcoesRevisao.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="mt-1.5 text-[11.5px] text-steel">
+                Avisa no sino quando estiver perto de vencer, com atalho para atualizar.
+              </p>
             </div>
             <div>
               <Label>Cor</Label>
@@ -409,26 +560,50 @@ export function AtivosClient({
               <div className="mt-6 rounded-[14px] border border-stroke bg-surface-2 p-4">
                 <p className="microlabel">Novo movimento</p>
                 <div className="mt-3 flex flex-col gap-4">
-                  <div className="flex gap-1.5 rounded-full border border-stroke bg-surface p-1">
-                    {(["aporte", "resgate", "atualizacao"] as const).map((t) => (
-                      <button
-                        key={t}
-                        type="button"
-                        onClick={() => setMov({ ...mov, tipo: t })}
-                        className={cn(
-                          "flex-1 rounded-full py-1.5 text-[12.5px] transition-colors",
-                          mov.tipo === t
-                            ? "bg-elevated text-ice"
-                            : "text-steel hover:text-mist"
-                        )}
+                  {ativos.length > 1 && (
+                    <div>
+                      <Label>Ativo</Label>
+                      <Select
+                        value={detalhe.id}
+                        onValueChange={(v) => {
+                          const proximo = ativos.find((a) => a.id === v);
+                          if (proximo) setDetalhe(proximo);
+                        }}
                       >
-                        {t === "aporte"
-                          ? "Aporte"
-                          : t === "resgate"
-                          ? "Resgate"
-                          : "Atualização"}
-                      </button>
-                    ))}
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {ativos.map((a) => (
+                            <SelectItem key={a.id} value={a.id}>
+                              {a.nome} · {a.instituicao}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-1.5 rounded-[14px] border border-stroke bg-surface p-1">
+                    {(["aporte", "resgate", "atualizacao", "dividendo"] as const).map(
+                      (t) => (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => setMov({ ...mov, tipo: t })}
+                          className={cn(
+                            "rounded-[10px] py-1.5 text-[12.5px] transition-colors",
+                            mov.tipo === t
+                              ? t === "dividendo"
+                                ? "bg-elevated text-amber"
+                                : "bg-elevated text-ice"
+                              : "text-steel hover:text-mist"
+                          )}
+                        >
+                          {rotuloMovimento[t]}
+                        </button>
+                      )
+                    )}
                   </div>
 
                   <div>
@@ -494,19 +669,27 @@ export function AtivosClient({
                       >
                         <Icon className={cn("h-4 w-4", cor)} strokeWidth={1.5} />
                         <div className="min-w-0 flex-1">
-                          <p className="text-[13px] text-ice">
-                            {m.tipo === "aporte"
-                              ? "Aporte"
-                              : m.tipo === "resgate"
-                              ? "Resgate"
-                              : "Atualização"}
+                          <p
+                            className={cn(
+                              "flex items-center gap-1.5 text-[13px]",
+                              m.tipo === "dividendo" ? "text-amber" : "text-ice"
+                            )}
+                          >
+                            {rotuloMovimento[m.tipo] ?? "Atualização"}
+                            {m.tipo === "dividendo" && <span aria-hidden>💰</span>}
                           </p>
                           <p className="tabular text-[11.5px] text-steel">
                             {m.dataLabel}
                             {m.nota ? ` · ${m.nota}` : ""}
                           </p>
                         </div>
-                        <span className="tabular text-[13px] text-mist">
+                        <span
+                          className={cn(
+                            "tabular text-[13px]",
+                            m.tipo === "dividendo" ? "text-amber" : "text-mist"
+                          )}
+                        >
+                          {m.tipo === "dividendo" ? "+" : ""}
                           {formatBRL(m.valor)}
                         </span>
                         <button

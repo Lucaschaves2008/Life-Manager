@@ -1,6 +1,17 @@
+import {
+  unstable_cacheLife as cacheLife,
+  unstable_cacheTag as cacheTag,
+} from "next/cache";
 import { addDays } from "date-fns";
 import { db } from "@/lib/db";
-import { dayKeySP, spEndOfDay, spStartOfDay, toSP } from "@/lib/dates";
+import { tagUsuario } from "@/lib/cache-tags";
+import { dayKeySP, refDoDiaSP, spEndOfDay, spStartOfDay, toSP } from "@/lib/dates";
+
+// Padrão de cache deste arquivo (ver lib/data/home.ts): a função exportada
+// mantém a assinatura original e delega para uma interna "use cache" com
+// chaves ESTÁVEIS (userId/dayKey/id) que só busca no banco. Tudo que depende
+// do instante atual — "segundos até agora" de sessão/pausa aberta — roda no
+// wrapper, fora do cache; as actions do cronômetro revalidam a tag "estudos".
 
 // ---------- Tipos de visão (serializáveis p/ o cliente) ----------
 
@@ -26,6 +37,7 @@ export type SessaoView = {
   rating: number;
   notes: string | null;
   targetMinutes: number | null;
+  categoryId: string | null;
   pausas: PausaView[];
 };
 
@@ -39,6 +51,7 @@ type SessaoDb = {
   targetMinutes: number | null;
   rating: number;
   notes: string | null;
+  categoryId: string | null;
   pauses: {
     id: string;
     startedAt: Date;
@@ -102,6 +115,7 @@ export function toSessaoView(s: SessaoDb, agora: Date): SessaoView {
     rating: s.rating,
     notes: s.notes,
     targetMinutes: s.targetMinutes,
+    categoryId: s.categoryId,
     pausas: s.pauses
       .slice()
       .sort((a, b) => a.startedAt.getTime() - b.startedAt.getTime())
@@ -121,37 +135,65 @@ const includePausas = {
 } as const;
 
 /** A sessão em andamento (no máximo uma), se houver. */
-export async function sessaoEmAndamento(): Promise<SessaoView | null> {
+export async function sessaoEmAndamento(userId: string): Promise<SessaoView | null> {
+  // o fetch é cacheado (toda action do cronômetro revalida a tag); o cálculo
+  // de "segundos até agora" roda aqui, sobre o instante real do request
+  const s = await sessaoAtivaDb(userId);
+  if (!s) return null;
+  return toSessaoView(s, new Date());
+}
+
+async function sessaoAtivaDb(userId: string): Promise<SessaoDb | null> {
+  "use cache";
+  cacheTag(tagUsuario(userId, "estudos"));
+  cacheLife("days");
   const s = await db.studySession.findFirst({
-    where: { endedAt: null },
+    where: { userId, endedAt: null },
     orderBy: { startedAt: "desc" },
     include: includePausas,
   });
-  if (!s) return null;
-  return toSessaoView(s as SessaoDb, new Date());
+  return s as SessaoDb | null;
 }
 
 /** Sessões iniciadas no dia informado (mais recentes primeiro). */
-export async function sessoesDoDia(dia: Date): Promise<SessaoView[]> {
+export async function sessoesDoDia(userId: string, dia: Date): Promise<SessaoView[]> {
   const agora = new Date();
+  const sessoes = await sessoesDoDiaDb(userId, dayKeySP(dia));
+  return sessoes.map((s) => toSessaoView(s, agora));
+}
+
+async function sessoesDoDiaDb(userId: string, dia: string): Promise<SessaoDb[]> {
+  "use cache";
+  cacheTag(tagUsuario(userId, "estudos"));
+  cacheLife("days");
+  const ref = refDoDiaSP(dia);
   const sessoes = await db.studySession.findMany({
     where: {
-      startedAt: { gte: spStartOfDay(dia), lte: spEndOfDay(dia) },
+      userId,
+      startedAt: { gte: spStartOfDay(ref), lte: spEndOfDay(ref) },
     },
     orderBy: { startedAt: "desc" },
     include: includePausas,
   });
-  return sessoes.map((s) => toSessaoView(s as SessaoDb, agora));
+  return sessoes as SessaoDb[];
 }
 
 /** Uma sessão pelo id, com pausas. */
-export async function sessaoPorId(id: string): Promise<SessaoView | null> {
-  const s = await db.studySession.findUnique({
-    where: { id },
+export async function sessaoPorId(userId: string, id: string): Promise<SessaoView | null> {
+  const s = await sessaoPorIdDb(userId, id);
+  if (!s) return null;
+  return toSessaoView(s, new Date());
+}
+
+async function sessaoPorIdDb(userId: string, id: string): Promise<SessaoDb | null> {
+  "use cache";
+  cacheTag(tagUsuario(userId, "estudos"));
+  cacheLife("days");
+  const s = await db.studySession.findFirst({
+    where: { id, userId },
     include: includePausas,
   });
-  if (!s) return null;
-  return toSessaoView(s as SessaoDb, new Date());
+  return s as SessaoDb | null;
 }
 
 // ---------- Dashboard ----------
@@ -172,14 +214,14 @@ export type DashboardEstudos = {
 
 const DIAS_SEMANA = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
 
-export async function dashboardEstudos(hoje: Date): Promise<DashboardEstudos> {
+export async function dashboardEstudos(
+  userId: string,
+  hoje: Date
+): Promise<DashboardEstudos> {
+  // o fetch (parte cara) é cacheado por dia; a agregação roda fora do cache
+  // porque sessão em andamento conta segundos "até agora" (snapshotSessao)
   const agora = new Date();
-  const desde = spStartOfDay(addDays(hoje, -55)); // ~8 semanas de histórico
-  const sessoes = (await db.studySession.findMany({
-    where: { startedAt: { gte: desde } },
-    orderBy: { startedAt: "asc" },
-    include: includePausas,
-  })) as SessaoDb[];
+  const sessoes = await sessoesDashboardDb(userId, dayKeySP(hoje));
 
   // segundos líquidos por chave de dia
   const segPorDia = new Map<string, number>();
@@ -264,17 +306,59 @@ export async function dashboardEstudos(hoje: Date): Promise<DashboardEstudos> {
   };
 }
 
+async function sessoesDashboardDb(userId: string, dia: string): Promise<SessaoDb[]> {
+  "use cache";
+  cacheTag(tagUsuario(userId, "estudos"));
+  cacheLife("days");
+  const desde = spStartOfDay(addDays(refDoDiaSP(dia), -55)); // ~8 semanas de histórico
+  // pausas só influenciam o snapshot de sessões em andamento; nas finalizadas
+  // os totais vêm de totalSeconds/netSeconds — evita carregar ~8 semanas de pausas
+  const [finalizadas, abertas] = await Promise.all([
+    db.studySession.findMany({
+      where: { userId, startedAt: { gte: desde }, endedAt: { not: null } },
+      orderBy: { startedAt: "asc" },
+    }),
+    db.studySession.findMany({
+      where: { userId, startedAt: { gte: desde }, endedAt: null },
+      include: includePausas,
+    }),
+  ]);
+  return [
+    ...finalizadas.map((s) => ({ ...s, pauses: [] })),
+    ...(abertas as SessaoDb[]),
+  ];
+}
+
+// ---------- Categorias de estudo (variáveis reutilizáveis) ----------
+
+export type CategoriaView = {
+  id: string;
+  nome: string;
+  emoji: string;
+  cor: string;
+  ordem: number;
+};
+
+/** Categorias de estudo ativas do usuário, ordenadas. */
+export async function categoriasEstudo(userId: string): Promise<CategoriaView[]> {
+  "use cache";
+  cacheTag(tagUsuario(userId, "estudos"));
+  cacheLife("days");
+  const cats = await db.studyCategory.findMany({
+    where: { userId, ativo: true },
+    orderBy: { ordem: "asc" },
+  });
+  return cats.map((c) => ({
+    id: c.id,
+    nome: c.nome,
+    emoji: c.emoji,
+    cor: c.cor,
+    ordem: c.ordem,
+  }));
+}
+
 // ---------- Formatação ----------
 
-/** 3725 → "1h 02min" ; 125 → "2min" ; 0 → "0min" */
-export function formatHoras(segundos: number): string {
-  const h = Math.floor(segundos / 3600);
-  const m = Math.round((segundos % 3600) / 60);
-  if (h > 0) return `${h}h ${String(m).padStart(2, "0")}min`;
-  return `${m}min`;
-}
-
-/** horas decimais → "5,4 h" */
-export function formatHorasDecimal(horas: number): string {
-  return `${horas.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} h`;
-}
+// Movidos para estudos-format.ts (client-safe); re-export mantém os call
+// sites de servidor. Client components importam de "@/lib/data/estudos-format".
+export { formatHoras, formatHorasDecimal } from "./estudos-format";

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { TZDate } from "@date-fns/tz";
 import {
@@ -26,6 +27,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { DotsMenu } from "@/components/caverna/dots-menu";
 import { Segmented } from "@/components/caverna/segmented";
 import { EventoDetalhe } from "@/components/agenda/evento-detalhe";
+import { EventoPopover } from "@/components/agenda/evento-popover";
 import {
   EventoDialog,
   type CalendarioView,
@@ -64,7 +66,15 @@ function minutosDoDia(iso: string): number {
   return d.getHours() * 60 + d.getMinutes();
 }
 
-type Bloco = { oc: OcorrenciaView; col: number; cols: number };
+type Bloco = { oc: OcorrenciaView; col: number; cols: number; clusterKey: string };
+
+type ZoomRect = {
+  left: number;
+  top: number;
+  colWidth: number;
+  colsDisponiveisEsquerda: number;
+  colsDisponiveisDireita: number;
+};
 
 /** Distribui ocorrências sobrepostas em colunas lado a lado. */
 function distribuir(ocs: OcorrenciaView[]): Bloco[] {
@@ -76,8 +86,9 @@ function distribuir(ocs: OcorrenciaView[]): Bloco[] {
   let fimCluster = -1;
 
   const fechar = () => {
+    const clusterKey = cluster.map((oc) => oc.chave).join("|");
     cluster.forEach((oc, i) =>
-      blocos.push({ oc, col: i, cols: cluster.length })
+      blocos.push({ oc, col: i, cols: cluster.length, clusterKey })
     );
     cluster = [];
     fimCluster = -1;
@@ -121,7 +132,9 @@ export function AgendaClient({
   } | null>(null);
   const [editando, setEditando] = useState<EventoEdicao | null>(null);
   const [detalhe, setDetalhe] = useState<OcorrenciaView | null>(null);
+  const [popoverAberto, setPopoverAberto] = useState<string | null>(null);
   const [maisDoDia, setMaisDoDia] = useState<string | null>(null);
+  const [zoomCluster, setZoomCluster] = useState<string | null>(null);
   const [agora, setAgora] = useState<number | null>(null);
   const [novaAgenda, setNovaAgenda] = useState({ nome: "", cor: paleta[0] });
 
@@ -194,8 +207,17 @@ export function AgendaClient({
     navegar({ data: chaveDia(proxima) });
   }
 
+  function formatarPeriodo(oc: OcorrenciaView) {
+    return oc.diaInteiro
+      ? format(sp(oc.inicio), "EEEE, d 'de' MMMM", { locale: ptBR })
+      : `${format(sp(oc.inicio), "EEEE, d 'de' MMMM", {
+          locale: ptBR,
+        })} ⋅ ${hhmm(oc.inicio)} – ${hhmm(oc.fim)}`;
+  }
+
   function abrirEdicao(oc: OcorrenciaView) {
     setDetalhe(null);
+    setPopoverAberto(null);
     setEditando({
       eventId: oc.eventId,
       dayKey: oc.dayKey,
@@ -408,7 +430,11 @@ export function AgendaClient({
               ocorrencias={filtradas}
               maisDoDia={maisDoDia}
               setMaisDoDia={setMaisDoDia}
-              onEvento={setDetalhe}
+              popoverAberto={popoverAberto}
+              setPopoverAberto={setPopoverAberto}
+              formatarPeriodo={formatarPeriodo}
+              onEditar={abrirEdicao}
+              onVerMais={setDetalhe}
               onSlot={(dia) =>
                 setCriando({
                   dia,
@@ -424,7 +450,13 @@ export function AgendaClient({
               hojeKey={hojeKey}
               ocorrencias={filtradas}
               agora={agora}
-              onEvento={setDetalhe}
+              popoverAberto={popoverAberto}
+              setPopoverAberto={setPopoverAberto}
+              zoomCluster={zoomCluster}
+              setZoomCluster={setZoomCluster}
+              formatarPeriodo={formatarPeriodo}
+              onEditar={abrirEdicao}
+              onVerMais={setDetalhe}
               onSlot={(dia, hora) =>
                 setCriando({
                   dia,
@@ -460,13 +492,7 @@ export function AgendaClient({
         ocorrencia={detalhe}
         onOpenChange={(v) => !v && setDetalhe(null)}
         onEditar={abrirEdicao}
-        formatarPeriodo={(oc) =>
-          oc.diaInteiro
-            ? format(sp(oc.inicio), "EEEE, d 'de' MMMM", { locale: ptBR })
-            : `${format(sp(oc.inicio), "EEEE, d 'de' MMMM", {
-                locale: ptBR,
-              })} ⋅ ${hhmm(oc.inicio)} – ${hhmm(oc.fim)}`
-        }
+        formatarPeriodo={formatarPeriodo}
         formatarNota={(iso) => format(sp(iso), "d MMM, HH:mm", { locale: ptBR })}
       />
     </div>
@@ -553,19 +579,107 @@ function VisaoTempo({
   hojeKey,
   ocorrencias,
   agora,
-  onEvento,
+  popoverAberto,
+  setPopoverAberto,
+  zoomCluster,
+  setZoomCluster,
+  formatarPeriodo,
+  onEditar,
+  onVerMais,
   onSlot,
 }: {
   dias: Date[];
   hojeKey: string;
   ocorrencias: OcorrenciaView[];
   agora: number | null;
-  onEvento: (oc: OcorrenciaView) => void;
+  popoverAberto: string | null;
+  setPopoverAberto: (chave: string | null) => void;
+  zoomCluster: string | null;
+  setZoomCluster: (chave: string | null) => void;
+  formatarPeriodo: (oc: OcorrenciaView) => string;
+  onEditar: (oc: OcorrenciaView) => void;
+  onVerMais: (oc: OcorrenciaView) => void;
   onSlot: (dia: string, hora: number) => void;
 }) {
   const horas = Array.from({ length: 24 }, (_, i) => i);
   const diaInteiroPorDia = (key: string) =>
     ocorrencias.filter((o) => o.diaInteiro && o.dayKey === key);
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
+  const colRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const diasKey = dias.map(chaveDia).join(",");
+  const temHoje = dias.some((d) => chaveDia(d) === hojeKey);
+
+  // ao trocar de visão/dia, centraliza o scroll no horário atual (se hoje estiver na visão)
+  // ou perto do início do dia útil, como no Google Calendar.
+  // Espera o `agora` real chegar (evita centralizar no fallback 8h e nunca recalcular).
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (temHoje && agora == null) return;
+    const referencia = temHoje ? agora! : 8 * 60;
+    const alvo = (referencia / 60) * HORA_PX - el.clientHeight / 2;
+    el.scrollTop = Math.max(0, alvo);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [diasKey, temHoje, agora != null]);
+
+  useEffect(() => {
+    setZoomCluster(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [diasKey]);
+
+  const blocosPorDia = dias.map((dia) => {
+    const key = chaveDia(dia);
+    const doDia = ocorrencias.filter((o) => !o.diaInteiro && o.dayKey === key);
+    return distribuir(doDia);
+  });
+
+  let clusterAbertoInfo: { diaIndex: number; blocos: Bloco[] } | null = null;
+  if (zoomCluster) {
+    const diaIndex = blocosPorDia.findIndex((blocos) =>
+      blocos.some((b) => b.clusterKey === zoomCluster)
+    );
+    if (diaIndex !== -1) {
+      clusterAbertoInfo = {
+        diaIndex,
+        blocos: blocosPorDia[diaIndex].filter((b) => b.clusterKey === zoomCluster),
+      };
+    }
+  }
+
+  const [zoomRect, setZoomRect] = useState<ZoomRect | null>(null);
+
+  useEffect(() => {
+    if (!clusterAbertoInfo) {
+      setZoomRect(null);
+      return;
+    }
+    const calcular = () => {
+      const grid = gridRef.current;
+      const col = colRefs.current.get(clusterAbertoInfo.diaIndex);
+      if (!grid || !col) return;
+      const gridBox = grid.getBoundingClientRect();
+      const colBox = col.getBoundingClientRect();
+      setZoomRect({
+        left: colBox.left,
+        top: colBox.top,
+        colWidth: colBox.width,
+        colsDisponiveisEsquerda: clusterAbertoInfo.diaIndex,
+        colsDisponiveisDireita: dias.length - 1 - clusterAbertoInfo.diaIndex,
+      });
+      void gridBox;
+    };
+    calcular();
+    window.addEventListener("resize", calcular);
+    const scrollEl = scrollRef.current;
+    scrollEl?.addEventListener("scroll", calcular);
+    return () => {
+      window.removeEventListener("resize", calcular);
+      scrollEl?.removeEventListener("scroll", calcular);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clusterAbertoInfo?.diaIndex, zoomCluster, dias.length]);
 
   return (
     <div className="overflow-x-auto">
@@ -608,103 +722,271 @@ function VisaoTempo({
             return (
               <div key={key} className="min-h-8 border-l border-stroke p-1">
                 {diaInteiroPorDia(key).map((oc) => (
-                  <button
+                  <EventoPopover
                     key={oc.chave}
-                    onClick={() => onEvento(oc)}
-                    className="mb-1 block w-full truncate rounded-[6px] px-2 py-1 text-left text-[11.5px]"
-                    style={{
-                      background: `color-mix(in srgb, ${oc.cor} 22%, transparent)`,
-                      borderLeft: `3px solid ${oc.cor}`,
-                      color: "var(--color-ice)",
-                    }}
+                    ocorrencia={popoverAberto === oc.chave ? oc : null}
+                    side="bottom"
+                    onOpenChange={(v) => setPopoverAberto(v ? oc.chave : null)}
+                    onEditar={onEditar}
+                    onVerMais={onVerMais}
+                    formatarPeriodo={formatarPeriodo}
                   >
-                    {oc.titulo}
-                  </button>
-                ))}
-              </div>
-            );
-          })}
-        </div>
-
-        {/* grade de horas */}
-        <div
-          className="relative grid"
-          style={{ gridTemplateColumns: `56px repeat(${dias.length}, 1fr)` }}
-        >
-          <div>
-            {horas.map((h) => (
-              <div
-                key={h}
-                className="relative border-b border-stroke/60"
-                style={{ height: HORA_PX }}
-              >
-                <span className="tabular absolute -top-2 right-2 text-[10px] text-steel">
-                  {h > 0 ? `${String(h).padStart(2, "0")}:00` : ""}
-                </span>
-              </div>
-            ))}
-          </div>
-
-          {dias.map((dia) => {
-            const key = chaveDia(dia);
-            const doDia = ocorrencias.filter((o) => !o.diaInteiro && o.dayKey === key);
-            const blocos = distribuir(doDia);
-            const ehHoje = key === hojeKey;
-
-            return (
-              <div key={key} className="relative border-l border-stroke">
-                {horas.map((h) => (
-                  <button
-                    key={h}
-                    aria-label={`Criar evento às ${h}:00`}
-                    onClick={() => onSlot(key, h)}
-                    className="block w-full border-b border-stroke/60 transition-colors hover:bg-surface-2/40"
-                    style={{ height: HORA_PX }}
-                  />
-                ))}
-
-                {blocos.map(({ oc, col, cols }) => {
-                  const ini = minutosDoDia(oc.inicio);
-                  const fim = Math.max(minutosDoDia(oc.fim), ini + 30);
-                  return (
                     <button
-                      key={oc.chave}
-                      onClick={() => onEvento(oc)}
-                      className="absolute overflow-hidden rounded-[8px] px-2 py-1 text-left"
+                      onClick={() => setPopoverAberto(oc.chave)}
+                      className="mb-1 block w-full truncate rounded-[6px] px-2 py-1 text-left text-[11.5px] font-medium text-white shadow-sm ring-1 ring-black/10 transition-[filter] hover:brightness-110"
                       style={{
-                        top: (ini / 60) * HORA_PX,
-                        height: ((fim - ini) / 60) * HORA_PX - 2,
-                        left: `calc(${(col / cols) * 100}% + 2px)`,
-                        width: `calc(${100 / cols}% - 4px)`,
-                        background: `color-mix(in srgb, ${oc.cor} 24%, transparent)`,
-                        borderLeft: `3px solid ${oc.cor}`,
+                        background: `color-mix(in srgb, ${oc.cor} 78%, var(--color-surface) 22%)`,
                       }}
                     >
-                      <span className="block truncate text-[11.5px] text-ice">
-                        {oc.titulo}
-                      </span>
-                      <span className="tabular block truncate text-[10.5px] text-mist">
-                        {hhmm(oc.inicio)}
-                      </span>
+                      {oc.titulo}
                     </button>
-                  );
-                })}
-
-                {ehHoje && agora != null && (
-                  <div
-                    className="pointer-events-none absolute left-0 right-0 z-10 flex items-center"
-                    style={{ top: (agora / 60) * HORA_PX }}
-                  >
-                    <span className="h-2 w-2 -translate-x-1 rounded-full bg-coral" />
-                    <span className="h-px flex-1 bg-coral" />
-                  </div>
-                )}
+                  </EventoPopover>
+                ))}
               </div>
             );
           })}
         </div>
+
+        {/* grade de horas, com scroll próprio centralizado no horário atual */}
+        <div ref={scrollRef} className="max-h-[calc(100vh-360px)] overflow-y-auto">
+          <div
+            ref={gridRef}
+            className="relative grid"
+            style={{ gridTemplateColumns: `56px repeat(${dias.length}, 1fr)` }}
+          >
+            <div className="relative">
+              {horas.map((h) => (
+                <div
+                  key={h}
+                  className="relative border-b border-stroke/60"
+                  style={{ height: HORA_PX }}
+                >
+                  <span className="tabular absolute -top-2 right-2 text-[10px] text-steel">
+                    {h > 0 ? `${String(h).padStart(2, "0")}:00` : ""}
+                  </span>
+                </div>
+              ))}
+              {temHoje && agora != null && (
+                <span
+                  className="tabular pointer-events-none absolute right-2 z-10 -translate-y-1/2 rounded-[3px] bg-coral px-1 py-px text-[9.5px] font-medium text-white"
+                  style={{ top: (agora / 60) * HORA_PX }}
+                >
+                  {`${String(Math.floor(agora / 60)).padStart(2, "0")}:${String(
+                    agora % 60
+                  ).padStart(2, "0")}`}
+                </span>
+              )}
+            </div>
+
+            {dias.map((dia, diaIndex) => {
+              const key = chaveDia(dia);
+              const blocos = blocosPorDia[diaIndex];
+              const ehHoje = key === hojeKey;
+              const clusterAberto = blocos.find(
+                (b) => b.cols > 1 && b.clusterKey === zoomCluster
+              )
+                ? zoomCluster
+                : null;
+
+              return (
+                <div
+                  key={key}
+                  ref={(el) => {
+                    if (el) colRefs.current.set(diaIndex, el);
+                    else colRefs.current.delete(diaIndex);
+                  }}
+                  className="relative border-l border-stroke"
+                >
+                  {horas.map((h) => (
+                    <button
+                      key={h}
+                      aria-label={`Criar evento às ${h}:00`}
+                      onClick={() => onSlot(key, h)}
+                      className="block w-full border-b border-stroke/60 transition-colors hover:bg-surface-2/40"
+                      style={{ height: HORA_PX }}
+                    />
+                  ))}
+
+                  {blocos.map(({ oc, col, cols, clusterKey }) => {
+                    const ini = minutosDoDia(oc.inicio);
+                    const fim = Math.max(minutosDoDia(oc.fim), ini + 30);
+                    const alturaPx = ((fim - ini) / 60) * HORA_PX - 2;
+                    const compacto = alturaPx < 34;
+                    // enquanto o zoom estiver aberto, o card original fica escondido —
+                    // seja o cluster expandido (substituído pelo ClusterZoom) ou outro (cobrto pelo backdrop).
+                    const escondidoPeloZoom = cols > 1 && clusterAberto != null;
+                    return (
+                      <EventoPopover
+                        key={oc.chave}
+                        ocorrencia={!escondidoPeloZoom && popoverAberto === oc.chave ? oc : null}
+                        side="right"
+                        onOpenChange={(v) => setPopoverAberto(v ? oc.chave : null)}
+                        onEditar={onEditar}
+                        onVerMais={onVerMais}
+                        formatarPeriodo={formatarPeriodo}
+                      >
+                        <button
+                          onClick={() => {
+                            if (cols > 1 && clusterAberto !== clusterKey) {
+                              setZoomCluster(clusterKey);
+                              return;
+                            }
+                            setPopoverAberto(oc.chave);
+                          }}
+                          title={`${oc.titulo} · ${hhmm(oc.inicio)}–${hhmm(oc.fim)}`}
+                          className={cn(
+                            "absolute overflow-hidden rounded-[6px] text-left shadow-sm ring-1 ring-black/10 transition-[filter,opacity] hover:brightness-110",
+                            compacto ? "flex items-center gap-1.5 px-2 py-0" : "flex flex-col px-2 py-1",
+                            escondidoPeloZoom && "opacity-0 pointer-events-none"
+                          )}
+                          style={{
+                            top: (ini / 60) * HORA_PX,
+                            height: alturaPx,
+                            left: `calc(${(col / cols) * 100}% + 2px)`,
+                            width: `calc(${100 / cols}% - 4px)`,
+                            background: `color-mix(in srgb, ${oc.cor} 78%, var(--color-surface) 22%)`,
+                            zIndex: cols > 1 ? col + 1 : undefined,
+                          }}
+                        >
+                          {compacto ? (
+                            <>
+                              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-white/85" />
+                              <span className="truncate text-[11px] font-medium leading-none text-white">
+                                {oc.titulo}
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="block truncate text-[11.5px] font-medium leading-tight text-white">
+                                {oc.titulo}
+                              </span>
+                              <span className="tabular block truncate text-[10.5px] leading-tight text-white/80">
+                                {hhmm(oc.inicio)} – {hhmm(oc.fim)}
+                              </span>
+                            </>
+                          )}
+                        </button>
+                      </EventoPopover>
+                    );
+                  })}
+
+                  {ehHoje && agora != null && (
+                    <div
+                      className="pointer-events-none absolute left-0 right-0 z-10 flex items-center"
+                      style={{ top: (agora / 60) * HORA_PX }}
+                    >
+                      <span className="h-2 w-2 -translate-x-1 rounded-full bg-coral" />
+                      <span className="h-px flex-1 bg-coral" />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
+
+      {clusterAbertoInfo && zoomRect && (
+        <ClusterZoom
+          rect={zoomRect}
+          blocos={clusterAbertoInfo.blocos}
+          popoverAberto={popoverAberto}
+          setPopoverAberto={setPopoverAberto}
+          onEditar={onEditar}
+          onVerMais={onVerMais}
+          formatarPeriodo={formatarPeriodo}
+          onFechar={() => setZoomCluster(null)}
+        />
+      )}
     </div>
+  );
+}
+
+/** Overlay que expande um cluster de eventos sobrepostos, mostrando cada card por inteiro lado a lado (como o Google Calendar). Renderizado via portal para não ser cortado pelo scroll/overflow da grade. */
+function ClusterZoom({
+  rect,
+  blocos,
+  popoverAberto,
+  setPopoverAberto,
+  onEditar,
+  onVerMais,
+  formatarPeriodo,
+  onFechar,
+}: {
+  rect: ZoomRect;
+  blocos: Bloco[];
+  popoverAberto: string | null;
+  setPopoverAberto: (chave: string | null) => void;
+  onEditar: (oc: OcorrenciaView) => void;
+  onVerMais: (oc: OcorrenciaView) => void;
+  formatarPeriodo: (oc: OcorrenciaView) => string;
+  onFechar: () => void;
+}) {
+  const [montado, setMontado] = useState(false);
+  useEffect(() => setMontado(true), []);
+
+  const inicioMin = Math.min(...blocos.map((b) => minutosDoDia(b.oc.inicio)));
+  const fimMin = Math.max(
+    ...blocos.map((b) => Math.max(minutosDoDia(b.oc.fim), minutosDoDia(b.oc.inicio) + 30))
+  );
+  const topoPx = rect.top + (inicioMin / 60) * HORA_PX - 6;
+  const alturaPx = Math.max(((fimMin - inicioMin) / 60) * HORA_PX + 12, 72);
+
+  // expande por colunas de dia suficientes p/ cada card caber com folga (~1.6 col por card),
+  // preferindo abrir à direita e recuando p/ esquerda quando não há colunas sobrando.
+  const colsDesejadas = Math.max(2, Math.ceil(blocos.length * 1.6));
+  const colsDireita = Math.min(rect.colsDisponiveisDireita, colsDesejadas - 1);
+  const colsEsquerda = Math.min(
+    rect.colsDisponiveisEsquerda,
+    Math.max(0, colsDesejadas - 1 - colsDireita)
+  );
+  const larguraPx = rect.colWidth * (1 + colsEsquerda + colsDireita);
+  const esquerdaPx = rect.left - rect.colWidth * colsEsquerda;
+
+  if (!montado) return null;
+
+  return createPortal(
+    <>
+      <div className="fixed inset-0 z-40" onClick={onFechar} aria-hidden />
+      <div
+        className="fixed z-50 flex gap-1 rounded-[10px] border border-stroke bg-elevated p-1.5 shadow-[0_16px_48px_rgba(0,0,0,.5)]"
+        style={{
+          top: Math.max(8, topoPx),
+          left: esquerdaPx,
+          width: larguraPx,
+          height: alturaPx,
+        }}
+      >
+        {blocos.map(({ oc }) => (
+          <EventoPopover
+            key={oc.chave}
+            ocorrencia={popoverAberto === oc.chave ? oc : null}
+            side="right"
+            onOpenChange={(v) => setPopoverAberto(v ? oc.chave : null)}
+            onEditar={onEditar}
+            onVerMais={onVerMais}
+            formatarPeriodo={formatarPeriodo}
+          >
+            <button
+              onClick={() => setPopoverAberto(oc.chave)}
+              title={`${oc.titulo} · ${hhmm(oc.inicio)}–${hhmm(oc.fim)}`}
+              className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-[6px] px-2 py-1.5 text-left shadow-sm ring-1 ring-black/10 transition-[filter] hover:brightness-110"
+              style={{
+                background: `color-mix(in srgb, ${oc.cor} 78%, var(--color-surface) 22%)`,
+              }}
+            >
+              <span className="block truncate text-[11.5px] font-medium leading-tight text-white">
+                {oc.titulo}
+              </span>
+              <span className="tabular block truncate text-[10.5px] leading-tight text-white/80">
+                {hhmm(oc.inicio)} – {hhmm(oc.fim)}
+              </span>
+            </button>
+          </EventoPopover>
+        ))}
+      </div>
+    </>,
+    document.body
   );
 }
 
@@ -715,7 +997,11 @@ function VisaoMes({
   ocorrencias,
   maisDoDia,
   setMaisDoDia,
-  onEvento,
+  popoverAberto,
+  setPopoverAberto,
+  formatarPeriodo,
+  onEditar,
+  onVerMais,
   onSlot,
 }: {
   dias: Date[];
@@ -724,7 +1010,11 @@ function VisaoMes({
   ocorrencias: OcorrenciaView[];
   maisDoDia: string | null;
   setMaisDoDia: (v: string | null) => void;
-  onEvento: (oc: OcorrenciaView) => void;
+  popoverAberto: string | null;
+  setPopoverAberto: (chave: string | null) => void;
+  formatarPeriodo: (oc: OcorrenciaView) => string;
+  onEditar: (oc: OcorrenciaView) => void;
+  onVerMais: (oc: OcorrenciaView) => void;
   onSlot: (dia: string) => void;
 }) {
   return (
@@ -769,22 +1059,31 @@ function VisaoMes({
 
               <div className="flex flex-col gap-0.5">
                 {visiveis.map((oc) => (
-                  <button
+                  <EventoPopover
                     key={oc.chave}
-                    onClick={() => onEvento(oc)}
-                    className="flex items-center gap-1.5 rounded-[6px] px-1.5 py-0.5 text-left transition-colors hover:bg-surface-2"
+                    ocorrencia={popoverAberto === oc.chave ? oc : null}
+                    side="right"
+                    onOpenChange={(v) => setPopoverAberto(v ? oc.chave : null)}
+                    onEditar={onEditar}
+                    onVerMais={onVerMais}
+                    formatarPeriodo={formatarPeriodo}
                   >
-                    <span
-                      className="h-1.5 w-1.5 shrink-0 rounded-full"
-                      style={{ background: oc.cor }}
-                    />
-                    <span className="truncate text-[11px] text-mist">{oc.titulo}</span>
-                    {!oc.diaInteiro && (
-                      <span className="tabular ml-auto shrink-0 text-[10px] text-steel">
-                        {hhmm(oc.inicio)}
-                      </span>
-                    )}
-                  </button>
+                    <button
+                      onClick={() => setPopoverAberto(oc.chave)}
+                      className="flex w-full items-center gap-1.5 rounded-[6px] px-1.5 py-0.5 text-left transition-colors hover:bg-surface-2"
+                    >
+                      <span
+                        className="h-1.5 w-1.5 shrink-0 rounded-full"
+                        style={{ background: oc.cor }}
+                      />
+                      <span className="truncate text-[11px] text-mist">{oc.titulo}</span>
+                      {!oc.diaInteiro && (
+                        <span className="tabular ml-auto shrink-0 text-[10px] text-steel">
+                          {hhmm(oc.inicio)}
+                        </span>
+                      )}
+                    </button>
+                  </EventoPopover>
                 ))}
 
                 {restantes > 0 && (
@@ -803,27 +1102,36 @@ function VisaoMes({
                       </p>
                       <div className="mt-2 flex flex-col">
                         {doDia.map((oc) => (
-                          <button
+                          <EventoPopover
                             key={oc.chave}
-                            onClick={() => {
-                              setMaisDoDia(null);
-                              onEvento(oc);
-                            }}
-                            className="flex items-center gap-2 rounded-[6px] px-1.5 py-1.5 text-left transition-colors hover:bg-surface-2"
+                            ocorrencia={popoverAberto === oc.chave ? oc : null}
+                            side="right"
+                            onOpenChange={(v) => setPopoverAberto(v ? oc.chave : null)}
+                            onEditar={onEditar}
+                            onVerMais={onVerMais}
+                            formatarPeriodo={formatarPeriodo}
                           >
-                            <span
-                              className="h-1.5 w-1.5 shrink-0 rounded-full"
-                              style={{ background: oc.cor }}
-                            />
-                            <span className="truncate text-[12px] text-mist">
-                              {oc.titulo}
-                            </span>
-                            {!oc.diaInteiro && (
-                              <span className="tabular ml-auto text-[10.5px] text-steel">
-                                {hhmm(oc.inicio)}
+                            <button
+                              onClick={() => {
+                                setMaisDoDia(null);
+                                setPopoverAberto(oc.chave);
+                              }}
+                              className="flex w-full items-center gap-2 rounded-[6px] px-1.5 py-1.5 text-left transition-colors hover:bg-surface-2"
+                            >
+                              <span
+                                className="h-1.5 w-1.5 shrink-0 rounded-full"
+                                style={{ background: oc.cor }}
+                              />
+                              <span className="truncate text-[12px] text-mist">
+                                {oc.titulo}
                               </span>
-                            )}
-                          </button>
+                              {!oc.diaInteiro && (
+                                <span className="tabular ml-auto text-[10.5px] text-steel">
+                                  {hhmm(oc.inicio)}
+                                </span>
+                              )}
+                            </button>
+                          </EventoPopover>
                         ))}
                       </div>
                     </PopoverContent>

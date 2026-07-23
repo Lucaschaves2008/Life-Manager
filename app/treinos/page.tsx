@@ -8,16 +8,28 @@ import { StatCard } from "@/components/caverna/stat-card";
 import { CorridaClient, type CorridaView } from "@/components/treinos/corrida-client";
 import { PaceChart, VolumeChart } from "@/components/treinos/corrida-charts";
 import { MusculacaoClient, type FichaView } from "@/components/treinos/musculacao-client";
+import { PeriodoChartClient } from "@/components/treinos/periodo-chart-client";
+import { PlanoCorridaClient } from "@/components/treinos/plano-corrida-client";
+import { StravaWidget } from "@/components/treinos/strava-widget";
+import { StravaCallbackToast } from "@/components/treinos/strava-callback-toast";
 import {
   formatDuracao,
   formatTonelagem,
   frequencia,
+  mediaAnual,
+  mediaMensal,
+  planosCorrida,
   recordes,
   resumoTreinos,
+  semanaCicloAtual,
   volumeSemanal,
+  weekConfig,
 } from "@/lib/data/treinos";
 import { dayKeySP, mediumDate, nowSP, shortDate } from "@/lib/dates";
 import { db } from "@/lib/db";
+import { getCurrentUser } from "@/lib/auth";
+import { parseJSON } from "@/lib/utils";
+import { stravaConectado, stravaConfigurado } from "@/lib/strava";
 
 export const dynamic = "force-dynamic";
 
@@ -43,6 +55,7 @@ export default async function Page({
 }: {
   searchParams: Promise<{ tab?: string; novo?: string }>;
 }) {
+  const user = await getCurrentUser();
   const { tab: tabParam, novo } = await searchParams;
   // "+ Novo → Treino" cai direto na musculação, onde a execução acontece
   const tab = novo === "1" ? tabParam ?? "musculacao" : tabParam ?? "visao";
@@ -51,18 +64,19 @@ export default async function Page({
   return (
     <div className="flex flex-col gap-6">
       <PillTabs tabs={tabs} param="tab" />
-      {tab === "visao" && <VisaoGeral hoje={hoje} />}
-      {tab === "musculacao" && <Musculacao />}
-      {tab === "corrida" && <Corrida hoje={hoje} />}
+      {tab === "visao" && <VisaoGeral userId={user.id} hoje={hoje} />}
+      {tab === "musculacao" && <Musculacao userId={user.id} />}
+      {tab === "corrida" && <Corrida userId={user.id} hoje={hoje} />}
     </div>
   );
 }
 
-async function VisaoGeral({ hoje }: { hoje: Date }) {
+async function VisaoGeral({ userId, hoje }: { userId: string; hoje: Date }) {
   const [resumo, cells, sessoes] = await Promise.all([
-    resumoTreinos(hoje),
-    frequencia(118, hoje),
+    resumoTreinos(userId, hoje),
+    frequencia(userId, 118, hoje),
     db.workoutSession.findMany({
+      where: { userId },
       orderBy: { data: "desc" },
       take: 6,
       include: { routine: true, setLogs: true },
@@ -187,40 +201,75 @@ async function VisaoGeral({ hoje }: { hoje: Date }) {
   );
 }
 
-async function Musculacao() {
-  const rotinas = await db.routine.findMany({
-    orderBy: { ordem: "asc" },
-    include: { exercises: { orderBy: { ordem: "asc" } } },
-  });
+async function Musculacao({ userId }: { userId: string }) {
+  const [rotinas, semana] = await Promise.all([
+    db.routine.findMany({
+      where: { userId },
+      orderBy: { ordem: "asc" },
+      include: {
+        exercises: {
+          orderBy: { ordem: "asc" },
+          include: { weeks: { orderBy: { semana: "asc" } } },
+        },
+      },
+    }),
+    semanaCicloAtual(userId),
+  ]);
 
   const fichas: FichaView[] = rotinas.map((r) => ({
     id: r.id,
     nome: r.nome,
     foco: r.foco,
-    exercicios: r.exercises.map((e) => ({
-      id: e.id,
-      nome: e.nome,
-      grupoMuscular: e.grupoMuscular,
-      series: e.series,
-      repsAlvo: e.repsAlvo,
-      cargaAtual: e.cargaAtual,
-      descansoSeg: e.descansoSeg,
-      observacao: e.observacao,
-    })),
+    dias: parseJSON<string[]>(r.diasSemana, []).map(Number),
+    exercicios: r.exercises.map((e) => {
+      const cfg = weekConfig(
+        { series: e.series, repsAlvo: e.repsAlvo, cargaAtual: e.cargaAtual },
+        e.weeks,
+        semana
+      );
+      return {
+        id: e.id,
+        nome: e.nome,
+        grupoMuscular: e.grupoMuscular,
+        metodo: e.metodo,
+        tipoAlvo: e.tipoAlvo,
+        series: cfg.series,
+        repsAlvo: cfg.repsAlvo,
+        cargaAtual: cfg.cargaAtual,
+        tempoAlvoSeg: e.tempoAlvoSeg,
+        descansoSeg: e.descansoSeg,
+        observacao: e.observacao,
+        herdado: cfg.herdado,
+        origem: cfg.origem,
+      };
+    }),
   }));
 
-  return <MusculacaoClient fichas={fichas} />;
+  return <MusculacaoClient fichas={fichas} semana={semana} />;
 }
 
-async function Corrida({ hoje }: { hoje: Date }) {
-  const [corridas, volume, prs, resumo] = await Promise.all([
-    db.run.findMany({ orderBy: { data: "desc" }, take: 60 }),
-    volumeSemanal(8, hoje),
-    recordes(),
-    resumoTreinos(hoje),
-  ]);
+async function Corrida({ userId, hoje }: { userId: string; hoje: Date }) {
+  const [corridas, volume, prs, resumo, planosDeCorrida, semanaCorrida, meses, anos, conectado] =
+    await Promise.all([
+      db.run.findMany({ where: { userId }, orderBy: { data: "desc" }, take: 60 }),
+      volumeSemanal(userId, 8, hoje),
+      recordes(userId),
+      resumoTreinos(userId, hoje),
+      planosCorrida(userId, hoje),
+      semanaCicloAtual(userId),
+      mediaMensal(userId, 6, hoje),
+      mediaAnual(userId, 3, hoje),
+      stravaConectado(userId),
+    ]);
 
-  const metaKm = await db.setting.findUnique({ where: { key: "meta_km_mes" } });
+  const configurado = stravaConfigurado();
+  // A conexão passa pela rota /api/strava/connect, que gera o state CSRF
+  // aleatório e grava o cookie antes de redirecionar para o Strava.
+  const authorizeUrl = configurado ? "/api/strava/connect" : null;
+
+  const metaKm = await db.setting.findUnique({
+    where: { userId_key: { userId, key: "meta_km_mes" } },
+  });
   const meta = Number(metaKm?.value ?? 40) || 40;
   const kmMes = corridas
     .filter((c) => dayKeySP(c.data).slice(0, 7) === dayKeySP(hoje).slice(0, 7))
@@ -236,6 +285,7 @@ async function Corrida({ hoje }: { hoje: Date }) {
     tipo: c.tipo,
     sensacao: c.sensacao,
     notas: c.notas,
+    stravaLink: c.stravaLink,
   }));
 
   const pacePontos = [...corridas]
@@ -245,6 +295,21 @@ async function Corrida({ hoje }: { hoje: Date }) {
 
   return (
     <div className="stagger grid grid-cols-12 gap-6">
+      <StravaCallbackToast />
+      <Card className="col-span-12">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <CardLabel>Corrida</CardLabel>
+          <StravaWidget
+            configurado={configurado}
+            conectado={conectado}
+            authorizeUrl={authorizeUrl}
+          />
+        </div>
+        <div className="mt-4">
+          <PlanoCorridaClient planos={planosDeCorrida} semana={semanaCorrida} />
+        </div>
+      </Card>
+
       <Card destaque={pctMeta >= 100} className="col-span-12 lg:col-span-4">
         <CardLabel>Km no mês</CardLabel>
         <div className="mt-5">
@@ -269,6 +334,10 @@ async function Corrida({ hoje }: { hoje: Date }) {
         <div className="mt-5">
           <VolumeChart data={volume} />
         </div>
+      </Card>
+
+      <Card className="col-span-12">
+        <PeriodoChartClient meses={meses} anos={anos} />
       </Card>
 
       <Card className="col-span-12 lg:col-span-7">

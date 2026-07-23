@@ -1,15 +1,25 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { db } from "@/lib/db";
+import { requireUser } from "@/lib/auth";
+import { tagUsuario } from "@/lib/cache-tags";
 
-function revalidar() {
+function revalidar(userId: string) {
   revalidatePath("/investimentos");
   revalidatePath("/");
+  // derruba as leituras cacheadas do módulo (carteira, resumos, revisões)
+  revalidateTag(tagUsuario(userId, "investimentos"));
 }
 
 function dataSP(dia: string): Date {
   return new Date(`${dia}T12:00:00-03:00`);
+}
+
+function somarDias(base: Date, dias: number): Date {
+  const d = new Date(base);
+  d.setDate(d.getDate() + dias);
+  return d;
 }
 
 export type AtivoInput = {
@@ -17,25 +27,53 @@ export type AtivoInput = {
   classe: string;
   instituicao: string;
   cor: string;
+  diaAporte?: number | null;
+  revisarACada?: number | null;
 };
 
 export async function createAsset(input: AtivoInput) {
-  await db.asset.create({ data: input });
-  revalidar();
+  const { id: userId } = await requireUser();
+  const revisarACada = input.revisarACada ?? null;
+  await db.asset.create({
+    data: {
+      ...input,
+      diaAporte: input.diaAporte ?? null,
+      revisarACada,
+      proximaRevisao: revisarACada ? somarDias(new Date(), revisarACada) : null,
+      userId,
+    },
+  });
+  revalidar(userId);
 }
 
 export async function updateAsset(id: string, input: AtivoInput) {
-  await db.asset.update({ where: { id }, data: input });
-  revalidar();
+  const { id: userId } = await requireUser();
+  const revisarACada = input.revisarACada ?? null;
+  const atual = await db.asset.findFirst({ where: { id, userId } });
+  await db.asset.update({
+    where: { id, userId },
+    data: {
+      ...input,
+      diaAporte: input.diaAporte ?? null,
+      revisarACada,
+      proximaRevisao: !revisarACada
+        ? null
+        : atual?.revisarACada === revisarACada && atual?.proximaRevisao
+        ? atual.proximaRevisao
+        : somarDias(new Date(), revisarACada),
+    },
+  });
+  revalidar(userId);
 }
 
 export async function deleteAsset(id: string) {
-  const ativo = await db.asset.findUnique({
-    where: { id },
+  const { id: userId } = await requireUser();
+  const ativo = await db.asset.findFirst({
+    where: { id, userId },
     include: { movements: true },
   });
-  await db.asset.delete({ where: { id } });
-  revalidar();
+  await db.asset.delete({ where: { id, userId } });
+  revalidar(userId);
   return ativo;
 }
 
@@ -44,29 +82,40 @@ export async function restoreAsset(dados: {
   classe: string;
   instituicao: string;
   cor: string;
+  diaAporte?: number | null;
   movements: { tipo: string; valor: number; data: Date; nota: string | null }[];
 }) {
+  const { id: userId } = await requireUser();
   await db.asset.create({
     data: {
       nome: dados.nome,
       classe: dados.classe,
       instituicao: dados.instituicao,
       cor: dados.cor,
-      movements: { create: dados.movements },
+      diaAporte: dados.diaAporte ?? null,
+      userId,
+      movements: { create: dados.movements.map((m) => ({ ...m, userId })) },
     },
   });
-  revalidar();
+  revalidar(userId);
 }
 
 export type MovimentoInput = {
   assetId: string;
-  tipo: "aporte" | "resgate" | "atualizacao";
+  tipo: "aporte" | "resgate" | "atualizacao" | "dividendo";
   valor: number;
   data: string; // yyyy-MM-dd
   nota?: string | null;
 };
 
 export async function createMovement(input: MovimentoInput) {
+  const { id: userId } = await requireUser();
+  const ativo = await db.asset.findFirst({
+    where: { id: input.assetId, userId },
+    select: { id: true, revisarACada: true },
+  });
+  if (!ativo) throw new Error("Recurso não encontrado.");
+
   await db.assetMovement.create({
     data: {
       assetId: input.assetId,
@@ -74,15 +123,25 @@ export async function createMovement(input: MovimentoInput) {
       valor: input.valor,
       data: dataSP(input.data),
       nota: input.nota?.trim() || null,
+      userId,
     },
   });
-  revalidar();
+
+  if (input.tipo === "atualizacao" && ativo.revisarACada) {
+    await db.asset.update({
+      where: { id: ativo.id },
+      data: { proximaRevisao: somarDias(dataSP(input.data), ativo.revisarACada) },
+    });
+  }
+
+  revalidar(userId);
 }
 
 export async function deleteMovement(id: string) {
-  const mov = await db.assetMovement.findUnique({ where: { id } });
-  await db.assetMovement.delete({ where: { id } });
-  revalidar();
+  const { id: userId } = await requireUser();
+  const mov = await db.assetMovement.findFirst({ where: { id, userId } });
+  await db.assetMovement.delete({ where: { id, userId } });
+  revalidar(userId);
   return mov;
 }
 
@@ -93,6 +152,12 @@ export async function restoreMovement(dados: {
   data: Date;
   nota: string | null;
 }) {
-  await db.assetMovement.create({ data: dados });
-  revalidar();
+  const { id: userId } = await requireUser();
+  const ativo = await db.asset.findFirst({
+    where: { id: dados.assetId, userId },
+    select: { id: true },
+  });
+  if (!ativo) throw new Error("Recurso não encontrado.");
+  await db.assetMovement.create({ data: { ...dados, userId } });
+  revalidar(userId);
 }

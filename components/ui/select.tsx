@@ -15,8 +15,9 @@ export function SelectTrigger({
 }: React.ComponentProps<typeof SelectPrimitive.Trigger>) {
   return (
     <SelectPrimitive.Trigger
+      translate="no"
       className={cn(
-        "flex h-9.5 w-full items-center justify-between gap-2 rounded-[14px] border border-stroke bg-surface-2 px-3.5 text-left text-[13.5px] text-ice",
+        "notranslate flex h-9.5 w-full items-center justify-between gap-2 rounded-[14px] border border-stroke bg-surface-2 px-3.5 text-left text-[13.5px] text-ice",
         "transition-colors duration-200 focus:border-[rgba(13,110,253,.4)] focus:outline-none data-[placeholder]:text-steel",
         className
       )}
@@ -40,8 +41,9 @@ export function SelectContent({
       <SelectPrimitive.Content
         position="popper"
         sideOffset={6}
+        translate="no"
         className={cn(
-          "z-50 max-h-72 min-w-[var(--radix-select-trigger-width)] overflow-y-auto rounded-[12px] border border-stroke bg-elevated p-1.5 shadow-[0_16px_48px_rgba(0,0,0,.5)]",
+          "notranslate z-50 max-h-72 min-w-[var(--radix-select-trigger-width)] overflow-y-auto rounded-[12px] border border-stroke bg-elevated p-1.5 shadow-[0_16px_48px_rgba(0,0,0,.5)]",
           className
         )}
         {...props}

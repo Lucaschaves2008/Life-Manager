@@ -15,8 +15,9 @@ export function DropdownMenuContent({
     <DropdownMenuPrimitive.Portal>
       <DropdownMenuPrimitive.Content
         sideOffset={sideOffset}
+        translate="no"
         className={cn(
-          "z-50 min-w-[190px] rounded-[12px] border border-stroke bg-elevated p-1.5 shadow-[0_16px_48px_rgba(0,0,0,.5)]",
+          "notranslate z-50 min-w-[190px] rounded-[12px] border border-stroke bg-elevated p-1.5 shadow-[0_16px_48px_rgba(0,0,0,.5)]",
           "data-[state=open]:animate-in data-[state=closed]:animate-out",
           className
         )}

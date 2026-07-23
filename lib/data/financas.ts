@@ -1,9 +1,16 @@
+import { cache } from "react";
+import {
+  unstable_cacheLife as cacheLife,
+  unstable_cacheTag as cacheTag,
+} from "next/cache";
 import { addDays, getDate, getDaysInMonth, subMonths } from "date-fns";
 import { db } from "@/lib/db";
+import { tagUsuario } from "@/lib/cache-tags";
 import {
   dayKeySP,
   monthKeySP,
   monthName,
+  refDoDiaSP,
   spEndOfDay,
   spEndOfMonth,
   spStartOfDay,
@@ -11,14 +18,64 @@ import {
   toSP,
 } from "@/lib/dates";
 import type { RitmoPoint } from "@/components/charts/ritmo-chart";
+import { parseJSON } from "@/lib/utils";
 
-/** Soma de despesas (centavos) num intervalo. */
-export async function somaDespesas(from: Date, to: Date): Promise<number> {
+// Padrão de cache deste arquivo (ver lib/data/home.ts): a função exportada
+// mantém a assinatura original (userId, ref?) e delega para uma interna
+// "use cache" cujos argumentos são chaves ESTÁVEIS (dayKey/monthKey) — nunca
+// um Date de request. Janela mensal → monthKey; sensível ao dia → dayKey.
+
+/** Reconstrói uma ref no 1º dia do mês a partir da chave "yyyy-MM". */
+function refDoMesSP(mes: string): Date {
+  return refDoDiaSP(`${mes}-01`);
+}
+
+/**
+ * Soma de despesas (centavos) num intervalo.
+ * Não cacheada: from/to são instantes arbitrários (sem chave estável);
+ * só é usada dentro de funções já cacheadas, então herda o cache delas.
+ */
+export async function somaDespesas(
+  userId: string,
+  from: Date,
+  to: Date
+): Promise<number> {
   const agg = await db.transaction.aggregate({
-    where: { tipo: "despesa", data: { gte: from, lte: to } },
+    where: { userId, tipo: "despesa", data: { gte: from, lte: to } },
     _sum: { valor: true },
   });
   return agg._sum.valor ?? 0;
+}
+
+// ---------- Assinaturas como despesa mensal ----------
+
+type AssinaturaAtiva = { valor: number; diaCobranca: number };
+
+/**
+ * Assinaturas ativas contam como despesa mensal em todas as agregações de
+ * gastos (resumo, ritmo, heatmap, fluxo de caixa), mesmo sem existirem como
+ * Transaction: uma cobrança por mês, no diaCobranca (limitado ao último dia
+ * em meses mais curtos).
+ */
+async function assinaturasAtivas(userId: string): Promise<AssinaturaAtiva[]> {
+  return db.subscription.findMany({
+    where: { userId, status: "ativa" },
+    select: { valor: true, diaCobranca: true },
+  });
+}
+
+/** Soma das cobranças do mês; com `ateDia`, só as que caem até esse dia. */
+function somaAssinaturas(
+  assinaturas: AssinaturaAtiva[],
+  diasNoMes: number,
+  ateDia?: number
+): number {
+  let total = 0;
+  for (const a of assinaturas) {
+    const dia = Math.min(a.diaCobranca, diasNoMes);
+    if (ateDia == null || dia <= ateDia) total += a.valor;
+  }
+  return total;
 }
 
 export type ResumoMes = {
@@ -33,7 +90,20 @@ export type ResumoMes = {
   topCategoria: { nome: string; emoji: string; total: number } | null;
 };
 
-export async function resumoDoMes(ref: Date = new Date()): Promise<ResumoMes> {
+export const resumoDoMes = cache(async function resumoDoMes(
+  userId: string,
+  ref: Date = new Date()
+): Promise<ResumoMes> {
+  // depende do "mesmo dia do mês anterior" → chave por dia
+  return resumoDoDia(userId, dayKeySP(ref));
+});
+
+async function resumoDoDia(userId: string, dia: string): Promise<ResumoMes> {
+  "use cache";
+  cacheTag(tagUsuario(userId, "financas"));
+  cacheLife("days");
+
+  const ref = refDoDiaSP(dia);
   const iniMes = spStartOfMonth(ref);
   const fimMes = spEndOfMonth(ref);
   const refAnterior = subMonths(toSP(ref), 1);
@@ -48,24 +118,39 @@ export async function resumoDoMes(ref: Date = new Date()): Promise<ResumoMes> {
     )
   );
 
-  const [gastoMes, gastoMesAnterior, acumuladoAnteriorMesmoDia, porCategoria] =
+  const [gastoTx, gastoTxAnterior, acumuladoTxAnterior, porCategoria, assinaturas] =
     await Promise.all([
-      somaDespesas(iniMes, fimMes),
-      somaDespesas(iniAnt, fimAnt),
-      somaDespesas(iniAnt, mesmoDiaAnterior),
+      somaDespesas(userId, iniMes, fimMes),
+      somaDespesas(userId, iniAnt, fimAnt),
+      somaDespesas(userId, iniAnt, mesmoDiaAnterior),
       db.transaction.groupBy({
         by: ["categoryId"],
-        where: { tipo: "despesa", data: { gte: iniMes, lte: fimMes } },
+        where: { userId, tipo: "despesa", data: { gte: iniMes, lte: fimMes } },
         _sum: { valor: true },
         orderBy: { _sum: { valor: "desc" } },
         take: 1,
       }),
+      assinaturasAtivas(userId),
     ]);
+
+  const diasMes = getDaysInMonth(toSP(ref));
+  const diasMesAnterior = getDaysInMonth(refAnterior);
+  const gastoMes = gastoTx + somaAssinaturas(assinaturas, diasMes);
+  const gastoMesAnterior =
+    gastoTxAnterior + somaAssinaturas(assinaturas, diasMesAnterior);
+  const acumuladoHoje = gastoTx + somaAssinaturas(assinaturas, diasMes, diaHoje);
+  const acumuladoAnteriorMesmoDia =
+    acumuladoTxAnterior +
+    somaAssinaturas(
+      assinaturas,
+      diasMesAnterior,
+      Math.min(diaHoje, diasMesAnterior)
+    );
 
   let topCategoria: ResumoMes["topCategoria"] = null;
   if (porCategoria[0]?.categoryId) {
-    const cat = await db.category.findUnique({
-      where: { id: porCategoria[0].categoryId },
+    const cat = await db.category.findFirst({
+      where: { id: porCategoria[0].categoryId, userId },
     });
     if (cat)
       topCategoria = {
@@ -82,11 +167,12 @@ export async function resumoDoMes(ref: Date = new Date()): Promise<ResumoMes> {
       gastoMesAnterior > 0
         ? ((gastoMes - gastoMesAnterior) / gastoMesAnterior) * 100
         : null,
-    acumuladoHoje: gastoMes,
+    acumuladoHoje,
     acumuladoAnteriorMesmoDia,
     pctRitmo:
       acumuladoAnteriorMesmoDia > 0
-        ? ((gastoMes - acumuladoAnteriorMesmoDia) / acumuladoAnteriorMesmoDia) *
+        ? ((acumuladoHoje - acumuladoAnteriorMesmoDia) /
+            acumuladoAnteriorMesmoDia) *
           100
         : null,
     topCategoria,
@@ -94,19 +180,35 @@ export async function resumoDoMes(ref: Date = new Date()): Promise<ResumoMes> {
 }
 
 /** Série do gráfico Ritmo de gastos: acumulado dia a dia + projeção. */
-export async function ritmoDeGastos(ref: Date = new Date()): Promise<{
+export async function ritmoDeGastos(
+  userId: string,
+  ref: Date = new Date()
+): Promise<{
   data: RitmoPoint[];
   acima: boolean;
 }> {
+  return ritmoDoDia(userId, dayKeySP(ref));
+}
+
+async function ritmoDoDia(
+  userId: string,
+  dia: string
+): Promise<{ data: RitmoPoint[]; acima: boolean }> {
+  "use cache";
+  cacheTag(tagUsuario(userId, "financas"));
+  cacheLife("days");
+
+  const ref = refDoDiaSP(dia);
   const refSP = toSP(ref);
   const refAnterior = subMonths(refSP, 1);
   const diaHoje = getDate(refSP);
   const diasAtual = getDaysInMonth(refSP);
   const diasAnterior = getDaysInMonth(refAnterior);
 
-  const [txAtual, txAnterior] = await Promise.all([
+  const [txAtual, txAnterior, assinaturas] = await Promise.all([
     db.transaction.findMany({
       where: {
+        userId,
         tipo: "despesa",
         data: { gte: spStartOfMonth(ref), lte: spEndOfMonth(ref) },
       },
@@ -114,6 +216,7 @@ export async function ritmoDeGastos(ref: Date = new Date()): Promise<{
     }),
     db.transaction.findMany({
       where: {
+        userId,
         tipo: "despesa",
         data: {
           gte: spStartOfMonth(refAnterior),
@@ -122,6 +225,7 @@ export async function ritmoDeGastos(ref: Date = new Date()): Promise<{
       },
       select: { valor: true, data: true },
     }),
+    assinaturasAtivas(userId),
   ]);
 
   const porDia = (txs: { valor: number; data: Date }[]) => {
@@ -135,6 +239,13 @@ export async function ritmoDeGastos(ref: Date = new Date()): Promise<{
 
   const diaAtual = porDia(txAtual);
   const diaAnterior = porDia(txAnterior);
+
+  for (const a of assinaturas) {
+    const dAtual = Math.min(a.diaCobranca, diasAtual);
+    diaAtual.set(dAtual, (diaAtual.get(dAtual) ?? 0) + a.valor);
+    const dAnt = Math.min(a.diaCobranca, diasAnterior);
+    diaAnterior.set(dAnt, (diaAnterior.get(dAnt) ?? 0) + a.valor);
+  }
 
   const maxDias = Math.max(diasAtual, diasAnterior);
   const data: RitmoPoint[] = [];
@@ -179,15 +290,30 @@ export type CategoriaComparada = {
 };
 
 /** Soma por categoria no mês atual e anterior (para insights e top categorias). */
-export async function categoriasComparadas(
+export const categoriasComparadas = cache(async function categoriasComparadas(
+  userId: string,
   ref: Date = new Date()
 ): Promise<CategoriaComparada[]> {
+  // janela mensal inteira → chave por mês
+  return categoriasDoMes(userId, monthKeySP(ref));
+});
+
+async function categoriasDoMes(
+  userId: string,
+  mes: string
+): Promise<CategoriaComparada[]> {
+  "use cache";
+  cacheTag(tagUsuario(userId, "financas"));
+  cacheLife("days");
+
+  const ref = refDoMesSP(mes);
   const refAnterior = subMonths(toSP(ref), 1);
   const [cats, atual, anterior] = await Promise.all([
-    db.category.findMany({ where: { tipo: "despesa" } }),
+    db.category.findMany({ where: { userId, tipo: "despesa" } }),
     db.transaction.groupBy({
       by: ["categoryId"],
       where: {
+        userId,
         tipo: "despesa",
         data: { gte: spStartOfMonth(ref), lte: spEndOfMonth(ref) },
       },
@@ -196,6 +322,7 @@ export async function categoriasComparadas(
     db.transaction.groupBy({
       by: ["categoryId"],
       where: {
+        userId,
         tipo: "despesa",
         data: {
           gte: spStartOfMonth(refAnterior),
@@ -224,6 +351,33 @@ export async function categoriasComparadas(
     .sort((a, b) => b.atual - a.atual);
 }
 
+// ---------- Assinaturas ativas (para detalhamento de despesas) ----------
+
+export type AssinaturaResumo = {
+  id: string;
+  nome: string;
+  emoji: string;
+  /** cobrança mensal (centavos) */
+  valor: number;
+  diaCobranca: number;
+};
+
+/** Assinaturas ativas do usuário, ordenadas pela cobrança mensal. */
+export async function assinaturasResumidas(
+  userId: string
+): Promise<AssinaturaResumo[]> {
+  "use cache";
+  cacheTag(tagUsuario(userId, "financas"));
+  cacheLife("days");
+
+  const subs = await db.subscription.findMany({
+    where: { userId, status: "ativa" },
+    select: { id: true, nome: true, emoji: true, valor: true, diaCobranca: true },
+    orderBy: { valor: "desc" },
+  });
+  return subs;
+}
+
 // ---------- Contas ----------
 
 export type ContaComSaldo = {
@@ -234,28 +388,41 @@ export type ContaComSaldo = {
   saldo: number;
 };
 
-/** Saldo = inicial + receitas − despesas − transferências saindo + transferências entrando. */
-export async function contasComSaldo(): Promise<ContaComSaldo[]> {
+/** Saldo = inicial + receitas − despesas − transferências saindo + transferências entrando (só ponta "conta"). */
+export async function contasComSaldo(userId: string): Promise<ContaComSaldo[]> {
+  "use cache";
+  cacheTag(tagUsuario(userId, "financas"));
+  cacheLife("days");
+
   const [contas, txs] = await Promise.all([
-    db.account.findMany({ orderBy: { criadoEm: "asc" } }),
+    db.account.findMany({ where: { userId }, orderBy: { criadoEm: "asc" } }),
     db.transaction.findMany({
-      select: { tipo: true, valor: true, accountId: true, contraAccountId: true },
+      where: { userId },
+      select: {
+        tipo: true,
+        valor: true,
+        accountId: true,
+        origemTipo: true,
+        origemId: true,
+        destinoTipo: true,
+        destinoId: true,
+      },
     }),
   ]);
 
   const saldos = new Map(contas.map((c) => [c.id, c.saldoInicial]));
-  const add = (id: string | null, delta: number) => {
-    if (!id) return;
+  const add = (tipo: string | null, id: string | null, delta: number) => {
+    if (tipo !== "conta" || !id) return;
     const atual = saldos.get(id);
     if (atual !== undefined) saldos.set(id, atual + delta);
   };
 
   for (const tx of txs) {
-    if (tx.tipo === "receita") add(tx.accountId, tx.valor);
-    else if (tx.tipo === "despesa") add(tx.accountId, -tx.valor);
+    if (tx.tipo === "receita") add("conta", tx.accountId, tx.valor);
+    else if (tx.tipo === "despesa") add("conta", tx.accountId, -tx.valor);
     else {
-      add(tx.accountId, -tx.valor);
-      add(tx.contraAccountId, tx.valor);
+      add(tx.origemTipo, tx.origemId, -tx.valor);
+      add(tx.destinoTipo, tx.destinoId, tx.valor);
     }
   }
 
@@ -274,6 +441,7 @@ export type FaturaCartao = {
   id: string;
   nome: string;
   bandeira: string;
+  tipo: "debito" | "credito";
   cor: string;
   limite: number;
   fechamento: number;
@@ -287,18 +455,39 @@ export type FaturaCartao = {
 
 /** Ciclo aberto = do último fechamento (exclusivo) até agora. */
 export async function faturasDosCartoes(
+  userId: string,
   ref: Date = new Date()
 ): Promise<FaturaCartao[]> {
-  const refSP = toSP(ref);
-  const [cards, txs] = await Promise.all([
-    db.card.findMany(),
+  return faturasDoDia(userId, dayKeySP(ref));
+}
+
+async function faturasDoDia(
+  userId: string,
+  dia: string
+): Promise<FaturaCartao[]> {
+  "use cache";
+  cacheTag(tagUsuario(userId, "financas"));
+  cacheLife("days");
+
+  const refSP = toSP(refDoDiaSP(dia));
+  const [cards, txs, transferenciasCartao] = await Promise.all([
+    db.card.findMany({ where: { userId } }),
     db.transaction.findMany({
-      where: { cardId: { not: null }, tipo: "despesa" },
+      where: { userId, cardId: { not: null }, tipo: "despesa" },
       select: { valor: true, data: true, cardId: true },
+    }),
+    db.transaction.findMany({
+      where: {
+        userId,
+        tipo: "transferencia",
+        OR: [{ origemTipo: "cartao" }, { destinoTipo: "cartao" }],
+      },
+      select: { valor: true, data: true, origemTipo: true, origemId: true, destinoTipo: true, destinoId: true },
     }),
   ]);
 
   return cards.map((card) => {
+    const limite = card.limite ?? 0;
     const diaHoje = getDate(refSP);
     const inicioCiclo =
       diaHoje > card.fechamento
@@ -306,22 +495,38 @@ export async function faturasDosCartoes(
         : new Date(refSP.getFullYear(), refSP.getMonth() - 1, card.fechamento + 1);
 
     const doCartao = txs.filter((t) => t.cardId === card.id);
-    const faturaAberta = doCartao
-      .filter((t) => toSP(t.data) >= toSP(inicioCiclo))
-      .reduce((s, t) => s + t.valor, 0);
-    const utilizado = doCartao.reduce((s, t) => s + t.valor, 0);
+    // Dinheiro saindo do cartão (ex.: cartão → ativo) soma na fatura, como uma compra.
+    const saidasDoCartao = transferenciasCartao.filter(
+      (t) => t.origemTipo === "cartao" && t.origemId === card.id
+    );
+    // Dinheiro entrando para quitar (ex.: ativo → cartão) abate a fatura, como um pagamento.
+    const pagamentosDeFatura = transferenciasCartao.filter(
+      (t) => t.destinoTipo === "cartao" && t.destinoId === card.id
+    );
+    const somaDesde = (txs: { valor: number; data: Date }[], desde?: Date) =>
+      txs
+        .filter((t) => !desde || toSP(t.data) >= toSP(desde))
+        .reduce((s, t) => s + t.valor, 0);
+
+    const faturaAberta =
+      somaDesde(doCartao, inicioCiclo) +
+      somaDesde(saidasDoCartao, inicioCiclo) -
+      somaDesde(pagamentosDeFatura, inicioCiclo);
+    const utilizado =
+      somaDesde(doCartao) + somaDesde(saidasDoCartao) - somaDesde(pagamentosDeFatura);
 
     return {
       id: card.id,
       nome: card.nome,
       bandeira: card.bandeira,
+      tipo: card.tipo === "debito" ? "debito" : "credito",
       cor: card.cor,
-      limite: card.limite,
+      limite,
       fechamento: card.fechamento,
       vencimento: card.vencimento,
       faturaAberta,
       utilizado,
-      pctLimite: card.limite > 0 ? (faturaAberta / card.limite) * 100 : 0,
+      pctLimite: limite > 0 ? (faturaAberta / limite) * 100 : 0,
     };
   });
 }
@@ -335,35 +540,66 @@ export type FluxoMes = {
   saldo: number;
 };
 
-/** Receita × despesa dos últimos N meses (inclui o mês de referência). */
+/**
+ * Receita × despesa dos últimos N meses (inclui o mês de referência).
+ * Assinaturas ativas entram como despesa em todos os meses da janela.
+ */
 export async function fluxoDeCaixa(
+  userId: string,
   meses = 6,
   ref: Date = new Date()
 ): Promise<FluxoMes[]> {
+  return fluxoDeCaixaDoMes(userId, meses, monthKeySP(ref));
+}
+
+async function fluxoDeCaixaDoMes(
+  userId: string,
+  meses: number,
+  mes: string
+): Promise<FluxoMes[]> {
+  "use cache";
+  cacheTag(tagUsuario(userId, "financas"));
+  cacheLife("days");
+
+  const ref = refDoMesSP(mes);
   const inicio = spStartOfMonth(subMonths(toSP(ref), meses - 1));
   const fim = spEndOfMonth(ref);
 
-  const txs = await db.transaction.findMany({
-    where: { data: { gte: inicio, lte: fim }, tipo: { in: ["receita", "despesa"] } },
-    select: { tipo: true, valor: true, data: true },
-  });
+  const [txs, assinaturas] = await Promise.all([
+    db.transaction.findMany({
+      where: {
+        userId,
+        data: { gte: inicio, lte: fim },
+        tipo: { in: ["receita", "despesa"] },
+      },
+      select: { tipo: true, valor: true, data: true },
+    }),
+    assinaturasAtivas(userId),
+  ]);
+  const totalAssinaturas = somaAssinaturas(assinaturas, 31);
+
+  // uma passada: totais por mês, com a chave calculada 1x por transação
+  const porMes = new Map<string, { receita: number; despesa: number }>();
+  for (const tx of txs) {
+    const chave = monthKeySP(toSP(tx.data));
+    let acc = porMes.get(chave);
+    if (!acc) porMes.set(chave, (acc = { receita: 0, despesa: 0 }));
+    if (tx.tipo === "receita") acc.receita += tx.valor;
+    else acc.despesa += tx.valor;
+  }
 
   const out: FluxoMes[] = [];
   for (let i = meses - 1; i >= 0; i--) {
     const mesRef = subMonths(toSP(ref), i);
-    const chave = monthKeySP(mesRef);
-    const doMes = txs.filter((t) => monthKeySP(toSP(t.data)) === chave);
-    const receita = doMes
-      .filter((t) => t.tipo === "receita")
-      .reduce((s, t) => s + t.valor, 0);
-    const despesa = doMes
-      .filter((t) => t.tipo === "despesa")
-      .reduce((s, t) => s + t.valor, 0);
+    const { receita, despesa } = porMes.get(monthKeySP(mesRef)) ?? {
+      receita: 0,
+      despesa: 0,
+    };
     out.push({
       label: monthName(mesRef).slice(0, 3),
       receita,
-      despesa,
-      saldo: receita - despesa,
+      despesa: despesa + totalAssinaturas,
+      saldo: receita - despesa - totalAssinaturas,
     });
   }
   return out;
@@ -372,21 +608,42 @@ export async function fluxoDeCaixa(
 // ---------- Gastos por dia (heatmap) ----------
 
 export async function gastosPorDiaDoMes(
+  userId: string,
   ref: Date = new Date()
 ): Promise<{ dia: number; valor: number }[]> {
-  const txs = await db.transaction.findMany({
-    where: {
-      tipo: "despesa",
-      data: { gte: spStartOfMonth(ref), lte: spEndOfMonth(ref) },
-    },
-    select: { valor: true, data: true },
-  });
+  return gastosDoMes(userId, monthKeySP(ref));
+}
+
+async function gastosDoMes(
+  userId: string,
+  mes: string
+): Promise<{ dia: number; valor: number }[]> {
+  "use cache";
+  cacheTag(tagUsuario(userId, "financas"));
+  cacheLife("days");
+
+  const ref = refDoMesSP(mes);
+  const [txs, assinaturas] = await Promise.all([
+    db.transaction.findMany({
+      where: {
+        userId,
+        tipo: "despesa",
+        data: { gte: spStartOfMonth(ref), lte: spEndOfMonth(ref) },
+      },
+      select: { valor: true, data: true },
+    }),
+    assinaturasAtivas(userId),
+  ]);
 
   const dias = getDaysInMonth(toSP(ref));
   const map = new Map<number, number>();
   for (const tx of txs) {
     const d = getDate(toSP(tx.data));
     map.set(d, (map.get(d) ?? 0) + tx.valor);
+  }
+  for (const a of assinaturas) {
+    const d = Math.min(a.diaCobranca, dias);
+    map.set(d, (map.get(d) ?? 0) + a.valor);
   }
   return Array.from({ length: dias }, (_, i) => ({
     dia: i + 1,
@@ -407,16 +664,31 @@ export type Vencimento = {
 
 /** Assinaturas e parcelas a vencer nos próximos N dias. */
 export async function proximosVencimentos(
+  userId: string,
   dias = 7,
   ref: Date = new Date()
 ): Promise<Vencimento[]> {
+  return vencimentosDoDia(userId, dias, dayKeySP(ref));
+}
+
+async function vencimentosDoDia(
+  userId: string,
+  dias: number,
+  diaKey: string
+): Promise<Vencimento[]> {
+  "use cache";
+  cacheTag(tagUsuario(userId, "financas"));
+  cacheLife("days");
+
+  const ref = refDoDiaSP(diaKey);
   const de = spStartOfDay(ref);
   const ate = spEndOfDay(addDays(toSP(ref), dias));
 
   const [assinaturas, parcelas] = await Promise.all([
-    db.subscription.findMany({ where: { status: "ativa" } }),
+    db.subscription.findMany({ where: { userId, status: "ativa" } }),
     db.transaction.findMany({
       where: {
+        userId,
         parcelaGrupo: { not: null },
         data: { gte: de, lte: ate },
       },
@@ -468,21 +740,42 @@ export type Parcelamento = {
   pagas: number;
   parcelas: number;
   proxima: Date | null;
+  primeiraData: Date;
+  accountId: string | null;
+  categoryId: string | null;
+  cardId: string | null;
+  tags: string[];
 };
 
-export async function parcelamentos(ref: Date = new Date()): Promise<Parcelamento[]> {
+export async function parcelamentos(
+  userId: string,
+  ref: Date = new Date()
+): Promise<Parcelamento[]> {
+  return parcelamentosDoDia(userId, dayKeySP(ref));
+}
+
+async function parcelamentosDoDia(
+  userId: string,
+  dia: string
+): Promise<Parcelamento[]> {
+  "use cache";
+  cacheTag(tagUsuario(userId, "financas"));
+  cacheLife("days");
+
   const txs = await db.transaction.findMany({
-    where: { parcelaGrupo: { not: null } },
+    where: { userId, parcelaGrupo: { not: null } },
     orderBy: { data: "asc" },
   });
 
   const grupos = new Map<string, typeof txs>();
   for (const tx of txs) {
     const g = tx.parcelaGrupo!;
-    grupos.set(g, [...(grupos.get(g) ?? []), tx]);
+    const lista = grupos.get(g);
+    if (lista) lista.push(tx);
+    else grupos.set(g, [tx]);
   }
 
-  const hoje = spEndOfDay(ref);
+  const hoje = spEndOfDay(refDoDiaSP(dia));
   return Array.from(grupos.entries())
     .map(([grupo, itens]) => {
       const pagas = itens.filter((t) => t.data <= hoje).length;
@@ -495,6 +788,11 @@ export async function parcelamentos(ref: Date = new Date()): Promise<Parcelament
         pagas,
         parcelas: itens[0].parcelaTotal ?? itens.length,
         proxima,
+        primeiraData: itens[0].data,
+        accountId: itens[0].accountId,
+        categoryId: itens[0].categoryId,
+        cardId: itens[0].cardId,
+        tags: parseJSON<string[]>(itens[0].tags, []),
       };
     })
     .filter((p) => p.pagas < p.parcelas)

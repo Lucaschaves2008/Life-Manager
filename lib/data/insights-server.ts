@@ -1,5 +1,10 @@
+import {
+  unstable_cacheLife as cacheLife,
+  unstable_cacheTag as cacheTag,
+} from "next/cache";
 import { db } from "@/lib/db";
-import { monthName, spStartOfMonth, toSP } from "@/lib/dates";
+import { dayKeySP, monthName, refDoDiaSP, spStartOfMonth } from "@/lib/dates";
+import { tagUsuario } from "@/lib/cache-tags";
 import {
   categoriasComparadas,
   resumoDoMes,
@@ -16,13 +21,33 @@ import {
   type Insight,
 } from "@/lib/insights";
 
+// Padrão de cache: wrapper mantém a assinatura original e converte o Date de
+// request em chave estável (dayKeySP); a interna "use cache" reconstrói o ref
+// com refDoDiaSP e registra a tag de cada módulo cujas tabelas lê.
+
 /** Insights de finanças (usados na Home e no topo de Finanças). */
-export async function insightsFinanceiros(ref: Date = new Date()): Promise<Insight[]> {
+export async function insightsFinanceiros(
+  userId: string,
+  ref: Date = new Date()
+): Promise<Insight[]> {
+  return insightsFinanceirosDoDia(userId, dayKeySP(ref));
+}
+
+async function insightsFinanceirosDoDia(
+  userId: string,
+  dia: string
+): Promise<Insight[]> {
+  "use cache";
+  // lê transaction/category (via resumoDoMes/categoriasComparadas) e subscription
+  cacheTag(tagUsuario(userId, "financas"));
+  cacheLife("days");
+
+  const ref = refDoDiaSP(dia);
   const mes = monthName(ref);
   const [resumo, categorias, assinaturas] = await Promise.all([
-    resumoDoMes(ref),
-    categoriasComparadas(ref),
-    db.subscription.findMany({ where: { status: "ativa" } }),
+    resumoDoMes(userId, ref),
+    categoriasComparadas(userId, ref),
+    db.subscription.findMany({ where: { userId, status: "ativa" } }),
   ]);
 
   const out: (Insight | null)[] = [];
@@ -70,13 +95,30 @@ export async function insightsFinanceiros(ref: Date = new Date()): Promise<Insig
 }
 
 /** Insight do dia da Home: o mais relevante entre finanças/treino/dieta. */
-export async function insightDoDia(ref: Date = new Date()): Promise<Insight> {
+export async function insightDoDia(
+  userId: string,
+  ref: Date = new Date()
+): Promise<Insight> {
+  return insightDoDiaKey(userId, dayKeySP(ref));
+}
+
+async function insightDoDiaKey(userId: string, dia: string): Promise<Insight> {
+  "use cache";
+  // finanças (insights + resumo), dieta (mediaKcal7d, diet, streak) e treinos (streak)
+  cacheTag(
+    tagUsuario(userId, "financas"),
+    tagUsuario(userId, "dieta"),
+    tagUsuario(userId, "treinos")
+  );
+  cacheLife("days");
+
+  const ref = refDoDiaSP(dia);
   const [financeiros, kcal7d, streak, dieta, resumo] = await Promise.all([
-    insightsFinanceiros(ref),
-    mediaKcal7d(ref),
-    streakLC(ref),
-    db.diet.findFirst({ where: { ativa: true } }),
-    resumoDoMes(ref),
+    insightsFinanceirosDoDia(userId, dia),
+    mediaKcal7d(userId, ref),
+    streakLC(userId, ref),
+    db.diet.findFirst({ where: { userId, ativa: true } }),
+    resumoDoMes(userId, ref),
   ]);
 
   const todos: (Insight | null)[] = [
@@ -98,11 +140,24 @@ export async function insightDoDia(ref: Date = new Date()): Promise<Insight> {
 
 /** Insight financeiro mais relevante (topo do módulo Finanças). */
 export async function insightFinanceiroPrincipal(
+  userId: string,
   ref: Date = new Date()
 ): Promise<Insight> {
+  return insightFinanceiroPrincipalDoDia(userId, dayKeySP(ref));
+}
+
+async function insightFinanceiroPrincipalDoDia(
+  userId: string,
+  dia: string
+): Promise<Insight> {
+  "use cache";
+  cacheTag(tagUsuario(userId, "financas"));
+  cacheLife("days");
+
+  const ref = refDoDiaSP(dia);
   const [financeiros, resumo] = await Promise.all([
-    insightsFinanceiros(ref),
-    resumoDoMes(ref),
+    insightsFinanceirosDoDia(userId, dia),
+    resumoDoMes(userId, ref),
   ]);
   return (
     pickInsight(financeiros) ??

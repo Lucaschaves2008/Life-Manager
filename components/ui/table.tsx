@@ -80,9 +80,11 @@ export function Td({
 export function StatusPill({
   tone,
   children,
+  className,
 }: {
   tone: "mint" | "amber" | "coral" | "steel";
   children: React.ReactNode;
+  className?: string;
 }) {
   const tones = {
     mint: "bg-mint-soft text-mint",
@@ -94,7 +96,8 @@ export function StatusPill({
     <span
       className={cn(
         "inline-flex items-center rounded-full px-2.5 py-0.5 text-[11.5px] font-medium",
-        tones[tone]
+        tones[tone],
+        className
       )}
     >
       {children}

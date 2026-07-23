@@ -5,12 +5,14 @@ import { PillTabs } from "@/components/caverna/pill-tabs";
 import { Cronometro } from "@/components/estudos/cronometro";
 import { SessoesDoDia } from "@/components/estudos/sessoes-dia";
 import {
+  categoriasEstudo,
   dashboardEstudos,
   formatHoras,
   sessaoEmAndamento,
   sessoesDoDia,
 } from "@/lib/data/estudos";
 import { fullDate, nowSP } from "@/lib/dates";
+import { getCurrentUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -20,11 +22,13 @@ const tabs = [
 ];
 
 export default async function EstudosPage() {
+  const user = await getCurrentUser();
   const hoje = nowSP();
-  const [ativa, doDia, dash] = await Promise.all([
-    sessaoEmAndamento(),
-    sessoesDoDia(hoje),
-    dashboardEstudos(hoje),
+  const [ativa, doDia, dash, categorias] = await Promise.all([
+    sessaoEmAndamento(user.id),
+    sessoesDoDia(user.id, hoje),
+    dashboardEstudos(user.id, hoje),
+    categoriasEstudo(user.id),
   ]);
 
   // a sessão em andamento não entra na lista de "concluídas de hoje"
@@ -46,7 +50,7 @@ export default async function EstudosPage() {
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
         {/* Cronômetro */}
         <Card className="xl:col-span-7">
-          <Cronometro sessaoInicial={ativa} />
+          <Cronometro sessaoInicial={ativa} categorias={categorias} />
         </Card>
 
         {/* Resumo de hoje + sessões */}

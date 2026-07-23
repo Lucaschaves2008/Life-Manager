@@ -7,6 +7,10 @@ import {
   endOfMonth,
   startOfWeek,
   endOfWeek,
+  startOfQuarter,
+  endOfQuarter,
+  startOfYear,
+  endOfYear,
   isSameDay as dfIsSameDay,
 } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -94,7 +98,101 @@ export function dayKeySP(date: Date): string {
   return fmtSP(date, "yyyy-MM-dd");
 }
 
+/**
+ * Inverso de dayKeySP: converte a chave "yyyy-MM-dd" de volta para o início
+ * do dia em SP. Usado pelas funções cacheadas ("use cache"), cujos argumentos
+ * precisam ser chaves estáveis por dia — nunca um instante por request.
+ */
+export function refDoDiaSP(dayKey: string): Date {
+  return new Date(new TZDate(`${dayKey}T00:00:00`, TIMEZONE).getTime());
+}
+
 /** Chave "yyyy-MM" no fuso de SP. */
 export function monthKeySP(date: Date): string {
   return fmtSP(date, "yyyy-MM");
+}
+
+/** Inverso de monthKeySP: chave "yyyy-MM" -> início do mês em SP. */
+export function refDoMesSP(monthKey: string): Date {
+  return new Date(new TZDate(`${monthKey}-15T00:00:00`, TIMEZONE).getTime());
+}
+
+export function spStartOfQuarter(date: Date): Date {
+  return new Date(startOfQuarter(toSP(date)).getTime());
+}
+
+export function spEndOfQuarter(date: Date): Date {
+  return new Date(endOfQuarter(toSP(date)).getTime());
+}
+
+export function spStartOfYear(date: Date): Date {
+  return new Date(startOfYear(toSP(date)).getTime());
+}
+
+export function spEndOfYear(date: Date): Date {
+  return new Date(endOfYear(toSP(date)).getTime());
+}
+
+/** Chave "yyyy-Qn" no fuso de SP (ex.: "2026-Q3"). */
+export function quarterKeySP(date: Date): string {
+  const q = Math.floor(toSP(date).getMonth() / 3) + 1;
+  return `${fmtSP(date, "yyyy")}-Q${q}`;
+}
+
+/** Inverso de quarterKeySP: chave "yyyy-Qn" -> um dia dentro do trimestre em SP. */
+export function refDoTrimestreSP(quarterKey: string): Date {
+  const [anoStr, qStr] = quarterKey.split("-Q");
+  const mesInicial = (Number(qStr) - 1) * 3; // 0, 3, 6, 9
+  const mes = String(mesInicial + 1).padStart(2, "0");
+  return new Date(new TZDate(`${anoStr}-${mes}-15T00:00:00`, TIMEZONE).getTime());
+}
+
+/** Chave "yyyy" no fuso de SP. */
+export function yearKeySP(date: Date): string {
+  return fmtSP(date, "yyyy");
+}
+
+/** Inverso de yearKeySP: chave "yyyy" -> um dia dentro do ano em SP. */
+export function refDoAnoSP(yearKey: string): Date {
+  return new Date(new TZDate(`${yearKey}-06-15T00:00:00`, TIMEZONE).getTime());
+}
+
+/** Chave "yyyy-Www" (semana ISO) no fuso de SP — ex.: "2026-W29". */
+export function weekKeySP(date: Date): string {
+  return fmtSP(date, "RRRR-'W'II");
+}
+
+/** Inverso de weekKeySP: chave "yyyy-Www" -> domingo (início) daquela semana em SP. */
+export function refDaSemanaSP(weekKey: string): Date {
+  const [anoStr, wStr] = weekKey.split("-W");
+  // 4 de janeiro sempre cai na semana ISO 1; a partir dali soma (semana-1) semanas.
+  const base = new TZDate(`${anoStr}-01-04T00:00:00`, TIMEZONE);
+  const dias = (Number(wStr) - 1) * 7;
+  const alvo = new Date(base.getTime() + dias * 86_400_000);
+  return spStartOfWeek(alvo);
+}
+
+/** Chave "yyyy-Sn" (semestre) no fuso de SP — ex.: "2026-S2". */
+export function semesterKeySP(date: Date): string {
+  const s = toSP(date).getMonth() < 6 ? 1 : 2;
+  return `${fmtSP(date, "yyyy")}-S${s}`;
+}
+
+/** Inverso de semesterKeySP: chave "yyyy-Sn" -> um dia dentro do semestre em SP. */
+export function refDoSemestreSP(semesterKey: string): Date {
+  const [anoStr, sStr] = semesterKey.split("-S");
+  const mes = Number(sStr) === 1 ? "02" : "08";
+  return new Date(new TZDate(`${anoStr}-${mes}-15T00:00:00`, TIMEZONE).getTime());
+}
+
+export function spStartOfSemester(date: Date): Date {
+  const sp = toSP(date);
+  const mesInicial = sp.getMonth() < 6 ? 0 : 6;
+  return new Date(startOfMonth(new TZDate(sp.getFullYear(), mesInicial, 1, TIMEZONE)).getTime());
+}
+
+export function spEndOfSemester(date: Date): Date {
+  const sp = toSP(date);
+  const mesFinal = sp.getMonth() < 6 ? 5 : 11;
+  return new Date(endOfMonth(new TZDate(sp.getFullYear(), mesFinal, 1, TIMEZONE)).getTime());
 }

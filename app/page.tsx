@@ -4,31 +4,48 @@ import { Card, CardLabel } from "@/components/caverna/card";
 import { Donut } from "@/components/caverna/donut";
 import { EmptyState } from "@/components/caverna/empty-state";
 import { Heatmap } from "@/components/caverna/heatmap";
-import { StatCard } from "@/components/caverna/stat-card";
+import { HomeCards } from "@/components/caverna/home-cards";
 import { HomePatrimonioChart } from "@/components/caverna/home-patrimonio-chart";
 import { eventosDeHoje, streakLC } from "@/lib/data/home";
 import { fluxoDeCaixa } from "@/lib/data/financas";
 import { evolucaoPatrimonio, resumoCarteira } from "@/lib/data/investimentos";
+import {
+  calcularHomeCard,
+  homeCardConfigs,
+  metasParaCatalogo,
+  HOME_METRICAS_FIXAS,
+} from "@/lib/data/home-metricas";
 import { formatBRL, formatBRLCompact } from "@/lib/money";
 import { fullDate, nowSP } from "@/lib/dates";
+import { getCurrentUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
+  const user = await getCurrentUser();
   const agora = nowSP();
 
-  const [carteira, evolucao, fluxo, eventos, streak] = await Promise.all([
-    resumoCarteira(agora),
-    evolucaoPatrimonio(6, agora),
-    fluxoDeCaixa(1, agora),
-    eventosDeHoje(agora),
-    streakLC(agora),
-  ]);
+  const [carteira, evolucao, fluxo, eventos, streak, configs, metasCatalogo] =
+    await Promise.all([
+      resumoCarteira(user.id, agora),
+      evolucaoPatrimonio(user.id, 6, agora),
+      fluxoDeCaixa(user.id, 1, agora),
+      eventosDeHoje(user.id, agora),
+      streakLC(user.id, agora),
+      homeCardConfigs(user.id),
+      metasParaCatalogo(user.id),
+    ]);
 
   const mesAtual = fluxo[0] ?? { receita: 0, despesa: 0, saldo: 0 };
-  const patrimonioTotal = carteira.patrimonio + mesAtual.saldo;
-
   const eventosProximos = eventos.slice(0, 3);
+
+  const opcoesMetricas = [...HOME_METRICAS_FIXAS, ...metasCatalogo];
+  const cards = await Promise.all(
+    configs.map(async (config) => ({
+      config,
+      data: await calcularHomeCard(user.id, config, agora),
+    }))
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -42,30 +59,8 @@ export default async function HomePage() {
         </p>
       </header>
 
-      {/* 4 cards principais */}
-      <div className="stagger grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          label="Patrimônio total"
-          value={formatBRL(patrimonioTotal)}
-          pct={carteira.pctRendimentoMes}
-        />
-        <StatCard
-          label="Investimentos"
-          value={formatBRL(carteira.patrimonio)}
-          pct={carteira.pctRendimentoMes}
-        />
-        <StatCard
-          label="Receitas"
-          value={formatBRL(mesAtual.receita)}
-          contexto="neste mês"
-        />
-        <StatCard
-          label="Despesas"
-          value={formatBRL(mesAtual.despesa)}
-          contexto="neste mês"
-          upIsBad
-        />
-      </div>
+      {/* 4 cards principais — métrica e período configuráveis por card */}
+      <HomeCards cards={cards} opcoes={opcoesMetricas} />
 
       {/* Evolução do patrimônio + distribuição dos investimentos */}
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">

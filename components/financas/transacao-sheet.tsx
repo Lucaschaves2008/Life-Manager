@@ -20,8 +20,26 @@ import {
   type TransacaoInput,
 } from "@/app/actions/financas";
 import { cn } from "@/lib/utils";
+import { formatBRL } from "@/lib/money";
 
-export type OpcaoSimples = { id: string; nome: string; emoji?: string; tipo?: string };
+export type OpcaoSimples = {
+  id: string;
+  nome: string;
+  emoji?: string;
+  tipo?: string;
+  /** Saldo/valor atual (contas, ativos) ou fatura utilizada (cartões), em centavos. */
+  saldo?: number;
+  /** Rótulo do valor, ex. "Saldo", "Fatura", "Valor atual". Default "Saldo". */
+  saldoLabel?: string;
+};
+
+function detalheDaOpcao(o: OpcaoSimples | undefined): string | null {
+  if (!o || o.saldo == null) return null;
+  return `${o.saldoLabel ?? "Saldo"}: ${formatBRL(o.saldo)}`;
+}
+
+export type TipoPonta = "conta" | "cartao" | "ativo";
+export type Ponta = { tipo: TipoPonta; id: string };
 
 export type TransacaoEditavel = {
   id: string;
@@ -29,12 +47,89 @@ export type TransacaoEditavel = {
   valor: number;
   data: string;
   descricao: string;
-  accountId: string;
-  contraAccountId: string | null;
+  accountId: string | null;
   categoryId: string | null;
   cardId: string | null;
+  origemTipo: TipoPonta | null;
+  origemId: string | null;
+  destinoTipo: TipoPonta | null;
+  destinoId: string | null;
   tags: string[];
 };
+
+const rotuloPonta: Record<TipoPonta, string> = {
+  conta: "Conta",
+  cartao: "Cartão",
+  ativo: "Ativo",
+};
+
+function SeletorPonta({
+  label,
+  valor,
+  onChange,
+  contas,
+  cartoes,
+  ativos,
+}: {
+  label: string;
+  valor: Ponta | null;
+  onChange: (p: Ponta | null) => void;
+  contas: OpcaoSimples[];
+  cartoes: OpcaoSimples[];
+  ativos: OpcaoSimples[];
+}) {
+  const opcoesPorTipo: Record<TipoPonta, OpcaoSimples[]> = {
+    conta: contas,
+    cartao: cartoes,
+    ativo: ativos,
+  };
+  const tipo = valor?.tipo ?? "conta";
+  const opcaoSelecionada = opcoesPorTipo[tipo].find((o) => o.id === valor?.id);
+  const detalhe = detalheDaOpcao(opcaoSelecionada);
+
+  return (
+    <div>
+      <Label>{label}</Label>
+      <div className="mb-2 flex gap-1.5 rounded-full border border-stroke bg-surface-2 p-1">
+        {(["conta", "cartao", "ativo"] as const).map((t) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => {
+              const primeira = opcoesPorTipo[t][0];
+              onChange(primeira ? { tipo: t, id: primeira.id } : null);
+            }}
+            className={cn(
+              "flex-1 rounded-full py-1.5 text-[12.5px] transition-colors",
+              tipo === t ? "bg-elevated text-ice" : "text-steel hover:text-mist"
+            )}
+          >
+            {rotuloPonta[t]}
+          </button>
+        ))}
+      </div>
+      <Select
+        value={valor?.id ?? ""}
+        onValueChange={(id) => onChange({ tipo, id })}
+      >
+        <SelectTrigger>
+          <SelectValue placeholder="Escolher" />
+        </SelectTrigger>
+        <SelectContent>
+          {opcoesPorTipo[tipo].map((o) => (
+            <SelectItem key={o.id} value={o.id}>
+              {o.nome}
+              {o.saldo != null ? ` · ${formatBRL(o.saldo)}` : ""}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {detalhe && (
+        <p className="mt-1.5 text-[12.5px] text-steel">{detalhe}</p>
+      )}
+    </div>
+  );
+}
 
 const tipos = [
   { value: "despesa", label: "Despesa" },
@@ -48,6 +143,7 @@ export function TransacaoSheet({
   contas,
   categorias,
   cartoes,
+  ativos,
   hoje,
   editando,
 }: {
@@ -56,6 +152,7 @@ export function TransacaoSheet({
   contas: OpcaoSimples[];
   categorias: OpcaoSimples[];
   cartoes: OpcaoSimples[];
+  ativos: OpcaoSimples[];
   /** yyyy-MM-dd de hoje em São Paulo */
   hoje: string;
   editando?: TransacaoEditavel | null;
@@ -68,8 +165,17 @@ export function TransacaoSheet({
   const [data, setData] = useState(editando?.data ?? hoje);
   const [descricao, setDescricao] = useState(editando?.descricao ?? "");
   const [accountId, setAccountId] = useState(editando?.accountId ?? contas[0]?.id ?? "");
-  const [contraAccountId, setContraAccountId] = useState(
-    editando?.contraAccountId ?? ""
+  const [origem, setOrigem] = useState<Ponta | null>(
+    editando?.origemTipo && editando?.origemId
+      ? { tipo: editando.origemTipo, id: editando.origemId }
+      : contas[0]
+        ? { tipo: "conta", id: contas[0].id }
+        : null
+  );
+  const [destino, setDestino] = useState<Ponta | null>(
+    editando?.destinoTipo && editando?.destinoId
+      ? { tipo: editando.destinoTipo, id: editando.destinoId }
+      : null
   );
   const [categoryId, setCategoryId] = useState(editando?.categoryId ?? "");
   const [cardId, setCardId] = useState(editando?.cardId ?? "");
@@ -83,8 +189,11 @@ export function TransacaoSheet({
   const valido =
     valor > 0 &&
     descricao.trim().length > 0 &&
-    accountId &&
-    (tipo !== "transferencia" || (contraAccountId && contraAccountId !== accountId));
+    (tipo === "transferencia"
+      ? origem &&
+        destino &&
+        !(origem.tipo === destino.tipo && origem.id === destino.id)
+      : accountId);
 
   function salvar() {
     const payload: TransacaoInput = {
@@ -93,9 +202,12 @@ export function TransacaoSheet({
       data,
       descricao: descricao.trim(),
       accountId,
-      contraAccountId: contraAccountId || null,
       categoryId: categoryId || null,
       cardId: cardId || null,
+      origemTipo: origem?.tipo ?? null,
+      origemId: origem?.id ?? null,
+      destinoTipo: destino?.tipo ?? null,
+      destinoId: destino?.id ?? null,
       tags,
       parcelas,
     };
@@ -153,7 +265,7 @@ export function TransacaoSheet({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          {tipo === "transferencia" ? (
             <div>
               <Label htmlFor="data">Data</Label>
               <Input
@@ -164,41 +276,62 @@ export function TransacaoSheet({
                 className="tabular"
               />
             </div>
-            <div>
-              <Label>{tipo === "transferencia" ? "Conta de origem" : "Conta"}</Label>
-              <Select value={accountId} onValueChange={setAccountId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Escolher conta" />
-                </SelectTrigger>
-                <SelectContent>
-                  {contas.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.nome}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {tipo === "transferencia" ? (
-            <div>
-              <Label>Conta de destino</Label>
-              <Select value={contraAccountId} onValueChange={setContraAccountId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Escolher conta" />
-                </SelectTrigger>
-                <SelectContent>
-                  {contas
-                    .filter((c) => c.id !== accountId)
-                    .map((c) => (
+          ) : (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="data">Data</Label>
+                <Input
+                  id="data"
+                  type="date"
+                  value={data}
+                  onChange={(e) => setData(e.target.value)}
+                  className="tabular"
+                />
+              </div>
+              <div>
+                <Label>Conta</Label>
+                <Select value={accountId} onValueChange={setAccountId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Escolher conta" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {contas.map((c) => (
                       <SelectItem key={c.id} value={c.id}>
                         {c.nome}
+                        {c.saldo != null ? ` · ${formatBRL(c.saldo)}` : ""}
                       </SelectItem>
                     ))}
-                </SelectContent>
-              </Select>
+                  </SelectContent>
+                </Select>
+                {(() => {
+                  const detalhe = detalheDaOpcao(contas.find((c) => c.id === accountId));
+                  return detalhe ? (
+                    <p className="mt-1.5 text-[12.5px] text-steel">{detalhe}</p>
+                  ) : null;
+                })()}
+              </div>
             </div>
+          )}
+
+          {tipo === "transferencia" ? (
+            <>
+              <SeletorPonta
+                label="De"
+                valor={origem}
+                onChange={setOrigem}
+                contas={contas}
+                cartoes={cartoes}
+                ativos={ativos}
+              />
+              <SeletorPonta
+                label="Para"
+                valor={destino}
+                onChange={setDestino}
+                contas={contas}
+                cartoes={cartoes}
+                ativos={ativos}
+              />
+            </>
           ) : (
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -226,10 +359,17 @@ export function TransacaoSheet({
                     {cartoes.map((c) => (
                       <SelectItem key={c.id} value={c.id}>
                         {c.nome}
+                        {c.saldo != null ? ` · ${formatBRL(c.saldo)}` : ""}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {(() => {
+                  const detalhe = detalheDaOpcao(cartoes.find((c) => c.id === cardId));
+                  return detalhe ? (
+                    <p className="mt-1.5 text-[12.5px] text-steel">{detalhe}</p>
+                  ) : null;
+                })()}
               </div>
             </div>
           )}

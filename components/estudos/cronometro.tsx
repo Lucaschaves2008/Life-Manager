@@ -3,16 +3,18 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { Maximize2, Minimize2, Pause, Play, Square, X } from "lucide-react";
+import { Maximize2, Minimize2, Pause, Play, Settings2, Square, X } from "lucide-react";
 import { FlipTime } from "@/components/caverna/flip-clock";
 import { Button } from "@/components/ui/button";
+import { CategoriasSheet } from "@/components/estudos/categorias-sheet";
 import {
   finalizarSessao,
   iniciarSessao,
   pausarSessao,
   retomarSessao,
 } from "@/app/actions/estudos";
-import { formatHoras, type SessaoView } from "@/lib/data/estudos";
+import { formatHoras } from "@/lib/data/estudos-format";
+import type { CategoriaView, SessaoView } from "@/lib/data/estudos";
 import { cn } from "@/lib/utils";
 
 type Tempos = { bruto: number; pausado: number; liquido: number };
@@ -33,7 +35,6 @@ function calcular(s: SessaoView, agoraMs: number): Tempos {
   return { bruto, pausado, liquido: Math.max(0, bruto - pausado) };
 }
 
-const SUGESTOES = ["Trabalho", "Inglês", "Programação", "Leitura", "Projeto LC"];
 const METAS = [
   { label: "Livre", min: null },
   { label: "25 min", min: 25 },
@@ -45,8 +46,10 @@ const METAS = [
 
 export function Cronometro({
   sessaoInicial,
+  categorias,
 }: {
   sessaoInicial: SessaoView | null;
+  categorias: CategoriaView[];
 }) {
   const router = useRouter();
   const [local, setLocal] = useState<SessaoView | null>(sessaoInicial);
@@ -55,6 +58,8 @@ export function Cronometro({
   const [cheio, setCheio] = useState(false);
   const [subject, setSubject] = useState("");
   const [metaMin, setMetaMin] = useState<number | null>(null);
+  const [categoriaId, setCategoriaId] = useState<string | null>(null);
+  const [gerenciar, setGerenciar] = useState(false);
 
   // adota o estado do servidor quando não há ação otimista em voo
   useEffect(() => {
@@ -75,7 +80,8 @@ export function Cronometro({
   const pausada = local?.pausadaAgora ?? false;
 
   const comeca = () => {
-    const nome = subject.trim() || "Estudo";
+    const cat = categoriaId ? categorias.find((c) => c.id === categoriaId) : null;
+    const nome = subject.trim() || cat?.nome || "Estudo";
     const otimista: SessaoView = {
       id: "pending",
       subject: nome,
@@ -89,11 +95,16 @@ export function Cronometro({
       rating: 0,
       notes: null,
       targetMinutes: metaMin,
+      categoryId: categoriaId,
       pausas: [],
     };
     setLocal(otimista);
     startTransition(async () => {
-      const id = await iniciarSessao({ subject: nome, targetMinutes: metaMin });
+      const id = await iniciarSessao({
+        subject: subject.trim() || cat?.nome || "",
+        targetMinutes: metaMin,
+        categoryId: categoriaId,
+      });
       setLocal((prev) => (prev ? { ...prev, id } : prev));
       router.refresh();
     });
@@ -294,22 +305,67 @@ export function Cronometro({
           // ---- Formulário de início ----
           <div className="flex w-full max-w-md flex-col gap-4">
             <div>
-              <label className="microlabel mb-2 block">Assunto</label>
+              <div className="mb-2 flex items-center justify-between">
+                <label className="microlabel">Categoria</label>
+                <button
+                  type="button"
+                  onClick={() => setGerenciar(true)}
+                  className="inline-flex items-center gap-1 text-[11.5px] text-steel transition-colors hover:text-mint"
+                >
+                  <Settings2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                  Gerenciar
+                </button>
+              </div>
+              {categorias.length === 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setGerenciar(true)}
+                  className="w-full rounded-[14px] border border-dashed border-stroke px-4 py-3 text-[12.5px] text-steel transition-colors hover:border-mint/40 hover:text-mist"
+                >
+                  Nenhuma categoria — crie a primeira (ex.: Inglês)
+                </button>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {categorias.map((c) => {
+                    const sel = categoriaId === c.id;
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => setCategoriaId(sel ? null : c.id)}
+                        className={cn(
+                          "flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-[12.5px] transition-colors",
+                          sel
+                            ? "border-[rgba(13,110,253,.4)] bg-mint-soft text-mint"
+                            : "border-stroke text-mist hover:border-[rgba(143,169,205,.22)]"
+                        )}
+                      >
+                        <span>{c.emoji}</span>
+                        {c.nome}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="microlabel mb-2 block">
+                Assunto {categoriaId ? "(opcional)" : ""}
+              </label>
               <input
                 value={subject}
                 onChange={(e) => setSubject(e.target.value)}
-                list="sugestoes-estudo"
-                placeholder="Ex.: Trabalho, Inglês, Projeto LC…"
+                placeholder={
+                  categoriaId
+                    ? "Detalhe (ex.: unidade 4)…"
+                    : "Ex.: Trabalho, Leitura, Projeto LC…"
+                }
                 onKeyDown={(e) => {
                   if (e.key === "Enter") comeca();
                 }}
                 className="h-11 w-full rounded-[14px] border border-stroke bg-surface-2 px-4 text-[14.5px] text-ice outline-none transition-colors focus:border-[rgba(13,110,253,.4)] placeholder:text-steel"
               />
-              <datalist id="sugestoes-estudo">
-                {SUGESTOES.map((s) => (
-                  <option key={s} value={s} />
-                ))}
-              </datalist>
             </div>
 
             <div>
@@ -394,6 +450,12 @@ export function Cronometro({
           </div>,
           document.body
         )}
+
+      <CategoriasSheet
+        open={gerenciar}
+        onOpenChange={setGerenciar}
+        categorias={categorias}
+      />
     </>
   );
 }

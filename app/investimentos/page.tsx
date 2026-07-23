@@ -9,25 +9,30 @@ import {
   AtivosClient,
   type AtivoView,
 } from "@/components/investimentos/ativos-client";
+import { CalculadoraClient } from "@/components/investimentos/calculadora-client";
 import { EvolucaoClient } from "@/components/investimentos/evolucao-client";
 import {
+  aportesDevidos,
   ativosResumidos,
   evolucaoPatrimonio,
   resumoCarteira,
 } from "@/lib/data/investimentos";
 import { dayKeySP, mediumDate, monthName, nowSP, toSP } from "@/lib/dates";
 import { formatBRL } from "@/lib/money";
+import { getCurrentUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export default async function Page() {
+  const user = await getCurrentUser();
   const hoje = nowSP();
-  const [resumo, ativos, seis, doze, tudo] = await Promise.all([
-    resumoCarteira(hoje),
-    ativosResumidos(hoje),
-    evolucaoPatrimonio(6, hoje),
-    evolucaoPatrimonio(12, hoje),
-    evolucaoPatrimonio(24, hoje),
+  const [resumo, ativos, devidos, seis, doze, tudo] = await Promise.all([
+    resumoCarteira(user.id, hoje),
+    ativosResumidos(user.id, hoje),
+    aportesDevidos(user.id, 7, hoje),
+    evolucaoPatrimonio(user.id, 6, hoje),
+    evolucaoPatrimonio(user.id, 12, hoje),
+    evolucaoPatrimonio(user.id, 24, hoje),
   ]);
 
   const view: AtivoView[] = ativos.map((a) => ({
@@ -36,6 +41,8 @@ export default async function Page() {
     classe: a.classe,
     instituicao: a.instituicao,
     cor: a.cor,
+    diaAporte: a.diaAporte,
+    revisarACada: a.revisarACada,
     valorAtual: a.valorAtual,
     aportado: a.aportado,
     rendimento: a.rendimento,
@@ -129,6 +136,33 @@ export default async function Page() {
         <div className="mt-4">
           <AtivosClient ativos={view} hoje={dayKeySP(hoje)} />
         </div>
+      </Card>
+
+      {devidos.length > 0 && (
+        <Card className="col-span-12">
+          <CardLabel>Aportes desta semana</CardLabel>
+          <div className="mt-3 flex flex-wrap gap-2.5">
+            {devidos.map((d) => (
+              <div
+                key={d.id}
+                className="flex items-center gap-2.5 rounded-full border border-stroke bg-surface-2 py-1.5 pl-2.5 pr-3.5"
+              >
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{ background: d.cor }}
+                />
+                <span className="text-[13px] text-ice">{d.nome}</span>
+                <span className="text-[12px] text-steel">
+                  {d.instituicao} · dia {d.diaAporte}
+                </span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      <Card className="col-span-12">
+        <CalculadoraClient />
       </Card>
     </div>
   );

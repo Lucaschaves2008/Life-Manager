@@ -3,307 +3,525 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
-
-// ---------- Finanças ----------
 
 model Account {
   id           String        @id @default(cuid())
+  userId       String
   nome         String
-  tipo         String // "corrente" | "poupanca" | "carteira"
+  tipo         String
   cor          String
-  saldoInicial Int           @default(0) // centavos
+  saldoInicial Int           @default(0)
   criadoEm     DateTime      @default(now())
   transactions Transaction[]
+
+  @@index([userId])
 }
 
 model Category {
-  id             String        @id @default(cuid())
-  nome           String
-  emoji          String
-  cor            String
-  tipo           String // "despesa" | "receita"
-  orcamentoMensal Int? // centavos
-  transactions   Transaction[]
+  id              String        @id @default(cuid())
+  userId          String
+  nome            String
+  emoji           String
+  cor             String
+  tipo            String
+  orcamentoMensal Int?
+  transactions    Transaction[]
+
+  @@index([userId])
 }
 
 model Card {
   id           String        @id @default(cuid())
+  userId       String
   nome         String
-  bandeira     String // "Visa" | "Mastercard" | ...
-  limite       Int // centavos
-  fechamento   Int // dia do mês
-  vencimento   Int // dia do mês
+  bandeira     String
+  tipo         String        @default("credito")
+  limite       Int?
+  fechamento   Int
+  vencimento   Int
   cor          String        @default("#6B96D6")
   transactions Transaction[]
+
+  @@index([userId])
 }
 
 model Transaction {
-  id           String    @id @default(cuid())
-  tipo         String // "despesa" | "receita" | "transferencia"
-  valor        Int // centavos, sempre positivo
-  data         DateTime
-  descricao    String
-  tags         String    @default("[]") // JSON string[]
-  recorrente   Boolean   @default(false)
-  // parcelamento
-  parcelaGrupo String? // agrupa parcelas da mesma compra
-  parcelaNum   Int?
-  parcelaTotal Int?
-  paga         Boolean   @default(true)
-  account      Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  accountId    String
-  category     Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  categoryId   String?
-  card         Card?     @relation(fields: [cardId], references: [id], onDelete: SetNull)
-  cardId       String?
-  // transferência: conta destino
+  id              String    @id @default(cuid())
+  userId          String
+  tipo            String
+  valor           Int
+  data            DateTime
+  descricao       String
+  tags            String    @default("[]")
+  recorrente      Boolean   @default(false)
+  parcelaGrupo    String?
+  parcelaNum      Int?
+  parcelaTotal    Int?
+  paga            Boolean   @default(true)
+  accountId       String?
+  categoryId      String?
+  cardId          String?
+  // LEGADO: transferências antigas guardavam a conta de destino aqui. Mantido
+  // só para preservar histórico não migrado; ver prisma/backfill-transferencias.ts.
+  // Código novo usa origemTipo/origemId/destinoTipo/destinoId.
   contraAccountId String?
-  criadoEm     DateTime  @default(now())
+  // Ponta de origem/destino de uma transferência: "conta" | "cartao" | "ativo".
+  // Sem FK (mesmo padrão de contraAccountId) — ponta apontando p/ registro já
+  // excluído degrada para null na leitura, em vez de quebrar.
+  origemTipo      String?
+  origemId        String?
+  destinoTipo     String?
+  destinoId       String?
+  criadoEm        DateTime  @default(now())
+  account         Account?  @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  card            Card?     @relation(fields: [cardId], references: [id])
+  category        Category? @relation(fields: [categoryId], references: [id])
 
-  @@index([data])
+  @@index([userId, data])
+  @@index([userId, parcelaGrupo])
   @@index([categoryId])
+  @@index([accountId])
+  @@index([cardId])
+  @@index([origemTipo, origemId])
+  @@index([destinoTipo, destinoId])
 }
 
 model Subscription {
-  id         String  @id @default(cuid())
-  nome       String
-  emoji      String  @default("💳")
-  valor      Int // centavos
-  diaCobranca Int
-  status     String  @default("ativa") // "ativa" | "pausada"
-  criadoEm   DateTime @default(now())
-  valorAnterior Int? // para insight de aumento
+  id            String   @id @default(cuid())
+  userId        String
+  nome          String
+  emoji         String   @default("💳")
+  valor         Int
+  diaCobranca   Int
+  status        String   @default("ativa")
+  criadoEm      DateTime @default(now())
+  valorAnterior Int?
+
+  @@index([userId])
 }
 
-// ---------- Investimentos ----------
-
 model Asset {
-  id          String          @id @default(cuid())
-  nome        String
-  classe      String // "Renda Fixa" | "Tesouro" | "Ações" | "FIIs" | "Cripto" | "Fundos"
-  instituicao String
-  cor         String
-  criadoEm    DateTime        @default(now())
-  movements   AssetMovement[]
+  id             String          @id @default(cuid())
+  userId         String
+  nome           String
+  classe         String
+  instituicao    String
+  cor            String
+  diaAporte      Int? // dia do mês (1-31) para lembrete de aporte recorrente
+  revisarACada   Int? // dias entre revisões de valor (7, 15 ou 30)
+  proximaRevisao DateTime? // próxima data em que o valor deve ser atualizado
+  criadoEm       DateTime        @default(now())
+  movements      AssetMovement[]
+
+  @@index([userId])
+  @@index([proximaRevisao])
 }
 
 model AssetMovement {
-  id      String   @id @default(cuid())
-  tipo    String // "aporte" | "resgate" | "atualizacao"
-  valor   Int // centavos: aporte/resgate = valor movimentado; atualizacao = novo valor TOTAL do ativo
-  data    DateTime
-  nota    String?
-  asset   Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
-  assetId String
+  id            String   @id @default(cuid())
+  userId        String
+  tipo          String
+  valor         Int
+  data          DateTime
+  nota          String?
+  assetId       String
+  // Preenchido quando o movimento nasceu de uma transferência em Finanças
+  // (Transaction.origemTipo/destinoTipo === "ativo"). Sem FK — mesmo padrão
+  // de degradação usado no restante do schema.
+  transactionId String?
+  asset         Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
 
-  @@index([data])
+  @@index([userId, data])
+  @@index([assetId])
+  @@index([transactionId])
 }
 
-// ---------- Dieta ----------
-
 model Food {
-  id        String     @id @default(cuid())
-  nome      String
-  // valores por 100g
-  kcal100   Float?
-  prot100   Float?
-  carb100   Float?
-  gord100   Float?
-  // valores por porção
-  porcaoNome String? // ex.: "1 unidade", "1 scoop"
-  porcaoG    Float? // gramas da porção
-  mealItems MealItem[]
+  id         String     @id @default(cuid())
+  userId     String
+  nome       String
+  kcal100    Float?
+  prot100    Float?
+  carb100    Float?
+  gord100    Float?
+  porcaoNome String?
+  porcaoG    Float?
+  mealItems  MealItem[]
+
+  @@index([userId])
 }
 
 model Diet {
   id       String  @id @default(cuid())
+  userId   String
   nome     String
   ativa    Boolean @default(false)
   metaKcal Int     @default(2200)
-  metaProt Int     @default(160) // g
-  metaCarb Int     @default(220) // g
-  metaGord Int     @default(60) // g
+  metaProt Int     @default(160)
+  metaCarb Int     @default(220)
+  metaGord Int     @default(60)
   meals    Meal[]
+
+  @@index([userId])
 }
 
 model Meal {
-  id      String     @id @default(cuid())
-  nome    String // "Café da manhã", "Almoço"...
-  horario String? // "07:30"
-  ordem   Int        @default(0)
-  diet    Diet       @relation(fields: [dietId], references: [id], onDelete: Cascade)
+  id      String       @id @default(cuid())
+  userId  String
+  nome    String
+  horario String?
+  ordem   Int          @default(0)
   dietId  String
-  items   MealItem[]
+  diet    Diet         @relation(fields: [dietId], references: [id], onDelete: Cascade)
+  items   MealItem[] // itens "soltos" (pré-opções) — migrados p/ options no backfill
+  options MealOption[] // no máx. 4 por refeição (validado na action)
+
+  @@index([userId])
+  @@index([dietId])
+}
+
+// Opção de uma refeição: "Opção A/B/C" com sua própria lista de alimentos.
+// No check-in do dia o usuário escolhe qual opção comeu (DietDayLog.escolhas).
+model MealOption {
+  id     String     @id @default(cuid())
+  userId String
+  nome   String
+  ordem  Int        @default(0)
+  mealId String
+  meal   Meal       @relation(fields: [mealId], references: [id], onDelete: Cascade)
+  items  MealItem[]
+
+  @@index([userId])
+  @@index([mealId])
 }
 
 model MealItem {
-  id         String @id @default(cuid())
-  quantidade Float // gramas ou nº de porções
-  unidade    String @default("g") // "g" | "porcao"
-  meal       Meal   @relation(fields: [mealId], references: [id], onDelete: Cascade)
+  id         String      @id @default(cuid())
+  userId     String
+  quantidade Float
+  unidade    String      @default("g")
   mealId     String
-  food       Food   @relation(fields: [foodId], references: [id], onDelete: Cascade)
   foodId     String
+  optionId   String? // opção a que o item pertence (null = legado pré-backfill)
+  food       Food        @relation(fields: [foodId], references: [id], onDelete: Cascade)
+  meal       Meal        @relation(fields: [mealId], references: [id], onDelete: Cascade)
+  option     MealOption? @relation(fields: [optionId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([mealId])
+  @@index([foodId])
+  @@index([optionId])
 }
 
 model DietDayLog {
   id                 String   @id @default(cuid())
-  data               DateTime @unique // meia-noite UTC do dia
-  refeicoesCumpridas String   @default("[]") // JSON mealId[]
-  extras             String   @default("[]") // JSON {nome,kcal,prot,carb,gord}[]
+  userId             String
+  data               DateTime
+  refeicoesCumpridas String   @default("[]")
+  escolhas           String   @default("[]") // [{mealId, optionId}] — opção comida no dia
+  extras             String   @default("[]")
   aguaMl             Int      @default(0)
   notas              String?
+
+  @@unique([userId, data])
 }
 
 model WeightLog {
   id      String   @id @default(cuid())
+  userId  String
   data    DateTime
   pesoKg  Float
   cintura Float?
   braco   Float?
+
+  @@index([userId, data])
 }
 
-// ---------- Treinos ----------
-
 model Routine {
-  id        String            @id @default(cuid())
-  nome      String // "Ficha A"
-  foco      String? // "Peito e tríceps"
-  ordem     Int               @default(0)
-  exercises RoutineExercise[]
-  sessions  WorkoutSession[]
+  id         String            @id @default(cuid())
+  userId     String
+  nome       String
+  foco       String?
+  ordem      Int               @default(0)
+  diasSemana String            @default("[]") // ["1","3"] = seg,qua (0=dom..6=sáb)
+  exercises  RoutineExercise[]
+  sessions   WorkoutSession[]
+
+  @@index([userId])
 }
 
 model RoutineExercise {
-  id           String   @id @default(cuid())
-  nome         String
-  grupoMuscular String // "Peito" | "Costas" | "Pernas" | ...
-  series       Int
-  repsAlvo     String // "8-12"
-  cargaAtual   Float    @default(0) // kg
-  descansoSeg  Int      @default(90)
-  observacao   String?
-  ordem        Int      @default(0)
-  routine      Routine  @relation(fields: [routineId], references: [id], onDelete: Cascade)
-  routineId    String
-  setLogs      SetLog[]
+  id            String                @id @default(cuid())
+  userId        String
+  nome          String
+  grupoMuscular String
+  // tipoAlvo="series" (padrão): usa series/repsAlvo/cargaAtual abaixo.
+  // tipoAlvo="tempo": bloco cronometrado (aquecimento/alongamento), sem
+  // séries/reps/carga — usa tempoAlvoSeg. series/repsAlvo/cargaAtual = config
+  // da SEMANA-BASE (semana 1). As semanas seguintes herdam a última editada;
+  // overrides vivem em RoutineWeekExercise.
+  tipoAlvo      String                @default("series")
+  series        Int
+  repsAlvo      String
+  cargaAtual    Float                 @default(0)
+  tempoAlvoSeg  Int                   @default(60)
+  descansoSeg   Int                   @default(90)
+  observacao    String?
+  ordem         Int                   @default(0)
+  routineId     String
+  metodo        String                @default("Nenhum")
+  routine       Routine               @relation(fields: [routineId], references: [id], onDelete: Cascade)
+  setLogs       SetLog[]
+  weeks         RoutineWeekExercise[]
+
+  @@index([userId])
+  @@index([routineId])
+}
+
+// Override de um exercício numa semana específica do ciclo. Só existe linha nas
+// semanas que o usuário editou; a config efetiva da semana N é o override da
+// maior semana <= N que existir, senão o valor base do RoutineExercise.
+model RoutineWeekExercise {
+  id         String          @id @default(cuid())
+  userId     String
+  exerciseId String
+  semana     Int // 1, 2, 3... (índice da semana no ciclo)
+  series     Int
+  repsAlvo   String
+  cargaAtual Float           @default(0)
+  exercise   RoutineExercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+
+  @@unique([exerciseId, semana])
+  @@index([userId])
+  @@index([exerciseId])
 }
 
 model WorkoutSession {
   id         String   @id @default(cuid())
+  userId     String
   data       DateTime
   duracaoMin Int      @default(0)
   concluida  Boolean  @default(true)
   notas      String?
-  routine    Routine? @relation(fields: [routineId], references: [id], onDelete: SetNull)
   routineId  String?
   setLogs    SetLog[]
+  routine    Routine? @relation(fields: [routineId], references: [id])
 
-  @@index([data])
+  @@index([userId, data])
+  @@index([routineId])
 }
 
 model SetLog {
   id         String          @id @default(cuid())
+  userId     String
   serie      Int
   reps       Int
   cargaKg    Float
-  session    WorkoutSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   sessionId  String
-  exercise   RoutineExercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
   exerciseId String
+  exercise   RoutineExercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+  session    WorkoutSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([userId, exerciseId])
+  @@index([sessionId])
 }
 
 model Run {
-  id       String   @id @default(cuid())
-  data     DateTime
-  km       Float
-  segundos Int
-  tipo     String // "Leve" | "Moderado" | "Intervalado" | "Longão"
-  sensacao Int      @default(3) // 1-5
-  notas    String?
+  id               String      @id @default(cuid())
+  userId           String
+  data             DateTime
+  km               Float
+  segundos         Int
+  tipo             String
+  sensacao         Int         @default(3)
+  notas            String?
+  // planId: vínculo LEGADO ao antigo RunPlan (removido). Mantido só como coluna
+  // para preservar o histórico; não há mais relação. runSessionId é o novo elo.
+  planId           String?
+  runSessionId     String? // qual sessão do plano (RunSession) esta corrida cumpriu
+  stravaActivityId String? // id da atividade no Strava (evita duplicar na sync)
+  stravaLink       String? // URL da atividade no Strava
+  runSession       RunSession? @relation(fields: [runSessionId], references: [id], onDelete: SetNull)
 
-  @@index([data])
+  @@unique([userId, stravaActivityId])
+  @@index([userId, data])
+  @@index([runSessionId])
 }
 
-// ---------- Estudos ----------
+// Plano nomeado de corrida (espelha Routine): "Base 5k", com dias da semana e
+// sessões dentro. Substitui o antigo RunPlan (linhas soltas por dia).
+model RunRoutine {
+  id         String       @id @default(cuid())
+  userId     String
+  nome       String
+  foco       String?
+  diasSemana String       @default("[]") // ["2","4","6"] (0=dom..6=sáb)
+  ordem      Int          @default(0)
+  criadoEm   DateTime     @default(now())
+  sessions   RunSession[]
+
+  @@index([userId])
+}
+
+// Sessão de um plano de corrida (espelha RoutineExercise): "Longão de domingo",
+// tipo + km-alvo da SEMANA-BASE. Semanas seguintes herdam via RunSessionWeek.
+model RunSession {
+  id              String           @id @default(cuid())
+  userId          String
+  nome            String
+  tipo            String // "Leve" | "Moderado" | "Intervalado" | "Longão"
+  kmAlvo          Float
+  paceAlvoSeg     Int? // opcional, seg/km — reservado p/ futuro
+  ordem           Int              @default(0)
+  routineId       String
+  routine         RunRoutine       @relation(fields: [routineId], references: [id], onDelete: Cascade)
+  weeks           RunSessionWeek[]
+  runs            Run[]
+  rotinaTemplates RotinaTemplate[]
+
+  @@index([userId])
+  @@index([routineId])
+}
+
+// Override de km numa semana do ciclo (espelha RoutineWeekExercise). Só existe
+// linha nas semanas editadas; a config efetiva da semana N segue weekConfig().
+model RunSessionWeek {
+  id        String     @id @default(cuid())
+  userId    String
+  sessionId String
+  semana    Int // 1, 2, 3... (índice da semana no ciclo)
+  kmAlvo    Float
+  session   RunSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, semana])
+  @@index([userId])
+  @@index([sessionId])
+}
+
+// Tokens OAuth do Strava por usuário — nunca expostos ao client.
+model StravaAccount {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  athleteId    String?
+  accessToken  String
+  refreshToken String
+  expiresAt    DateTime
+  criadoEm     DateTime @default(now())
+}
+
+// Categoria reutilizável de estudo (Inglês, Trabalho extra, Cálculo...).
+// É a "variável" compartilhada: o cronômetro estuda uma categoria e o item do
+// checklist (PlanItem) aponta para a mesma, ligando plano ↔ tempo executado.
+model StudyCategory {
+  id              String           @id @default(cuid())
+  userId          String
+  nome            String
+  emoji           String           @default("📚")
+  cor             String           @default("#6B96D6")
+  ordem           Int              @default(0)
+  ativo           Boolean          @default(true)
+  criadoEm        DateTime         @default(now())
+  sessions        StudySession[]
+  rotinaTemplates RotinaTemplate[]
+
+  @@index([userId])
+}
 
 model StudySession {
-  id           String        @id @default(cuid())
-  subject      String
-  startedAt    DateTime
-  endedAt      DateTime? // null = sessão em andamento
-  totalSeconds Int          @default(0) // tempo bruto (parede) ao finalizar
-  netSeconds   Int          @default(0) // tempo líquido (bruto − pausas) ao finalizar
+  id            String         @id @default(cuid())
+  userId        String
+  subject       String
+  startedAt     DateTime
+  endedAt       DateTime?
+  totalSeconds  Int            @default(0)
+  netSeconds    Int            @default(0)
   targetMinutes Int?
-  rating       Int          @default(0)
-  notes        String?
-  createdAt    DateTime     @default(now())
-  pauses       StudyPause[]
-  marks        StudyMark[]
+  rating        Int            @default(0)
+  notes         String?
+  createdAt     DateTime       @default(now())
+  categoryId    String?
+  category      StudyCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  marks         StudyMark[]
+  pauses        StudyPause[]
 
-  @@index([startedAt])
+  @@index([userId, startedAt])
+  @@index([categoryId])
 }
 
 model StudyPause {
-  id           String       @id @default(cuid())
-  startedAt    DateTime
-  endedAt      DateTime?
-  durationSec  Int          @default(0)
-  label        String? // "almoço", "descanso"... renomeável depois
-  session      StudySession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  sessionId    String
+  id          String       @id @default(cuid())
+  userId      String
+  startedAt   DateTime
+  endedAt     DateTime?
+  durationSec Int          @default(0)
+  label       String?
+  sessionId   String
+  session     StudySession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([sessionId])
 }
 
 model StudyMark {
-  id           String       @id @default(cuid())
-  timestamp    DateTime
-  label        String
-  session      StudySession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  sessionId    String
-}
+  id        String       @id @default(cuid())
+  userId    String
+  timestamp DateTime
+  label     String
+  sessionId String
+  session   StudySession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
-// ---------- Agenda ----------
+  @@index([userId])
+  @@index([sessionId])
+}
 
 model Calendar {
   id       String  @id @default(cuid())
+  userId   String
   nome     String
   cor      String
   readonly Boolean @default(false)
   visivel  Boolean @default(true)
   ordem    Int     @default(0)
   events   Event[]
+
+  @@index([userId])
 }
 
 model Event {
   id          String      @id @default(cuid())
+  userId      String
   titulo      String
   inicio      DateTime
   fim         DateTime
   diaInteiro  Boolean     @default(false)
-  // recorrência simples serializada: {freq:"daily"|"weekly"|"monthly"|"yearly", byday?:number[], until?:string}
   rrule       String?
-  // datas (ISO yyyy-MM-dd) excluídas da série (edição/exclusão de ocorrência única)
   exdates     String      @default("[]")
   local       String?
   descricao   String?
-  tags        String      @default("[]") // JSON string[]
-  lembreteMin Int? // null = sem lembrete; 0 = na hora
-  calendar    Calendar    @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+  tags        String      @default("[]")
+  lembreteMin Int?
   calendarId  String
+  calendar    Calendar    @relation(fields: [calendarId], references: [id], onDelete: Cascade)
   notes       EventNote[]
 
-  @@index([inicio])
+  @@index([userId, inicio])
+  @@index([calendarId])
 }
 
 model EventNote {
   id       String   @id @default(cuid())
+  userId   String
   texto    String
   criadoEm DateTime @default(now())
-  event    Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
   eventId  String
+  event    Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([eventId])
 }
 
 model Holiday {
@@ -316,17 +534,233 @@ model Holiday {
   @@index([ano])
 }
 
-// ---------- Geral ----------
-
 model Goal {
   id     String  @id @default(cuid())
+  userId String
   titulo String
-  mes    String // "2026-07"
+  mes    String
   feito  Boolean @default(false)
   ordem  Int     @default(0)
+
+  @@index([userId])
+}
+
+// Meta quantitativa (variável): alvo numérico com progresso calculado
+// automaticamente a partir de dados de outros módulos (ver metrica).
+// chave é a âncora estável do período ("2026-07", "2026-Q3", "2026"),
+// no mesmo espírito de Goal.mes — nunca guardamos um Date cru aqui.
+model MetaQuantitativa {
+  id       String   @id @default(cuid())
+  userId   String
+  titulo   String
+  metrica  String // "treinos" | "km_corridos" | "refeicoes_cumpridas" | "horas_estudo"
+  alvo     Float
+  periodo  String // "mes" | "trimestre" | "ano"
+  chave    String
+  ordem    Int      @default(0)
+  criadoEm DateTime @default(now())
+
+  @@index([userId])
+  @@index([userId, periodo, chave])
+}
+
+// Grupo de crescimento colaborativo ("desafio"), estilo Gymrats: cada membro
+// cadastra e possui as PRÓPRIAS metas (ver DesafioMeta) — o grupo só dá
+// visibilidade cruzada + comparação por %. Dono do desafio é quem cria;
+// membros entram via código de convite. metasGrandesLimite é o nº de metas
+// grandes que CADA membro pode ter, definido uma vez na criação.
+model Desafio {
+  id                 String   @id @default(cuid())
+  criadorId          String
+  nome               String
+  descricao          String?
+  codigo             String   @unique
+  metasGrandesLimite Int      @default(4)
+  ativo              Boolean  @default(true)
+  criadoEm           DateTime @default(now())
+
+  membros DesafioMembro[]
+  metas   DesafioMeta[]
+
+  @@index([criadorId])
+}
+
+// Participação de um usuário num desafio (join table com metadado de entrada).
+model DesafioMembro {
+  id        String   @id @default(cuid())
+  desafioId String
+  userId    String
+  entrouEm  DateTime @default(now())
+  desafio   Desafio  @relation(fields: [desafioId], references: [id], onDelete: Cascade)
+
+  @@unique([desafioId, userId])
+  @@index([userId])
+}
+
+// Meta de UM membro dentro do desafio — grande (metaPaiId=null, até
+// Desafio.metasGrandesLimite por userId) ou pequena (metaPaiId setado,
+// aponta pra uma grande do MESMO userId). Progresso sempre em % (ver
+// lib/data/desafios.ts) pra ser comparável entre membros mesmo quando a
+// métrica/conteúdo é diferente. Visível a qualquer membro do mesmo
+// desafioId, mas só o dono (userId) pode criar/editar/excluir a própria.
+model DesafioMeta {
+  id               String   @id @default(cuid())
+  desafioId        String
+  userId           String
+  metaPaiId        String?
+  titulo           String
+  origem           String // "metrica" | "checklist"
+  metrica          String? // MetaMetrica (metas-quantitativas.ts) quando origem="metrica"
+  // RotinaTemplate do PRÓPRIO userId quando origem="checklist" — sem FK forte
+  // (mesmo padrão de degradação do resto do schema: template excluído no
+  // futuro só faz a contagem voltar a zero, não quebra a leitura).
+  rotinaTemplateId String?
+  alvo             Float
+  periodo          String // "semana" | "mes" | "trimestre" | "semestre"
+  ordem            Int      @default(0)
+  criadoEm         DateTime @default(now())
+
+  desafio Desafio       @relation(fields: [desafioId], references: [id], onDelete: Cascade)
+  metaPai DesafioMeta?  @relation("DesafioMetaFilhas", fields: [metaPaiId], references: [id], onDelete: Cascade)
+  filhas  DesafioMeta[] @relation("DesafioMetaFilhas")
+
+  @@index([desafioId])
+  @@index([userId])
+  @@index([metaPaiId])
 }
 
 model Setting {
-  key   String @id
-  value String
+  userId String
+  key    String
+  value  String
+
+  @@id([userId, key])
+}
+
+model Habit {
+  id     String  @id @default(cuid())
+  userId String
+  nome   String
+  nota   String? // porquê do hábito — texto livre, exibido ao abrir o card
+  ordem  Int     @default(0)
+  ativo  Boolean @default(true)
+
+  @@index([userId])
+}
+
+model HabitDayLog {
+  id          String   @id @default(cuid())
+  userId      String
+  data        DateTime
+  itensFeitos String   @default("[]")
+
+  @@unique([userId, data])
+}
+
+// Plano alternativo de rotina nomeado livremente pelo usuário ("Normal", "Dia
+// ruim", "Viagem"...). Cada RotinaTemplate pode pertencer a um plano
+// específico (planoId setado) ou ser "comum" (planoId=null, aparece em
+// qualquer plano escolhido para o dia). A escolha de qual plano vale em cada
+// dia fica em RotinaDiaPlano — dias sem escolha explícita usam `padrao`.
+model RotinaPlano {
+  id       String   @id @default(cuid())
+  userId   String
+  nome     String
+  padrao   Boolean  @default(false) // plano usado quando o dia não tem escolha explícita
+  ordem    Int      @default(0)
+  ativo    Boolean  @default(true)
+  criadoEm DateTime @default(now())
+
+  templates RotinaTemplate[]
+  dias      RotinaDiaPlano[]
+
+  @@index([userId])
+  @@index([userId, ativo])
+}
+
+// Escolha manual de plano para um dia específico ("hoje foi Plano B"). Linha
+// só existe quando o usuário troca o plano padrão naquele dia.
+model RotinaDiaPlano {
+  id      String      @id @default(cuid())
+  userId  String
+  data    DateTime // início do dia em SP a que a escolha pertence
+  planoId String
+  plano   RotinaPlano @relation(fields: [planoId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, data])
+  @@index([planoId])
+}
+
+// Template do checklist diário (o "checklist inteligente"): cadastra-se uma
+// vez (nome + janela HH:mm opcional + recorrência + tipo/vínculo opcional com
+// uma atividade real) e aparece todo dia que bater a regra, sem duplicar
+// linha no banco por dia. Reaproveita o MESMO formato JSON de Event.rrule
+// (lib/recurrence.ts) e a MESMA semântica: rrule=null significa ocorrência
+// ÚNICA em dataInicio (para "todo dia, para sempre" o rrule é
+// {"freq":"daily"} explícito, sem until). Quando o tipo é
+// "estudo"/"treino"/"corrida" e o usuário executa a atividade vinculada, a
+// ocorrência do dia marca sozinha (RotinaCheckDia.feitoAuto) e — para estudo —
+// o progresso de tempo é DERIVADO das sessões do dia, não duplicado aqui.
+// horaFim, quando presente, deve ser > horaInicio — não cruza meia-noite na v1.
+// planoId=null → item "comum", aparece em qualquer plano ativo no dia.
+model RotinaTemplate {
+  id         String   @id @default(cuid())
+  userId     String
+  nome       String
+  horaInicio String? // "HH:mm" — opcional; item "livre" pode ficar sem hora
+  horaFim    String? // "HH:mm" — só exigido junto com horaInicio
+  dataInicio DateTime // início do dia em SP: âncora da recorrência (e do dia único, se rrule=null)
+  rrule      String? // mesmo JSON de Rrule (lib/recurrence.ts); null = ocorrência única em dataInicio
+  exdates    String   @default("[]") // dayKeys pulados pontualmente ("não fazer hoje")
+  ativo      Boolean  @default(true)
+  ordem      Int      @default(0)
+  criadoEm   DateTime @default(now())
+
+  tipo            String         @default("livre") // "livre" | "estudo" | "treino" | "corrida"
+  studyCategoryId String?
+  studyCategory   StudyCategory? @relation(fields: [studyCategoryId], references: [id], onDelete: SetNull)
+  routineId       String? // tipo "treino" → Routine (musculação)
+  runSessionId    String? // tipo "corrida" → RunSession (plano de corrida)
+  runSession      RunSession?    @relation(fields: [runSessionId], references: [id], onDelete: SetNull)
+  metaMinutos     Int? // meta de tempo p/ estudo/corrida (ex.: 60) — mostra 47/60
+  planoId         String? // null = item comum a todos os planos
+  plano           RotinaPlano?   @relation(fields: [planoId], references: [id], onDelete: SetNull)
+
+  checks RotinaCheckDia[]
+
+  @@index([userId])
+  @@index([userId, ativo])
+  @@index([studyCategoryId])
+  @@index([routineId])
+  @@index([runSessionId])
+  @@index([planoId])
+}
+
+// "Feito" de uma ocorrência específica (rotinaId + dia). Linha só existe
+// quando marcado — presença = feito. feitoAuto distingue "marcado pela
+// execução real" de "marcado manualmente" (mostrado como badge "auto" na UI).
+// Independente do horário atual do template (editar o horário não reescreve
+// histórico).
+model RotinaCheckDia {
+  id        String         @id @default(cuid())
+  userId    String
+  rotinaId  String
+  data      DateTime // início do dia em SP a que o check pertence
+  feitoAuto Boolean        @default(false)
+  rotina    RotinaTemplate @relation(fields: [rotinaId], references: [id], onDelete: Cascade)
+
+  @@unique([rotinaId, data])
+  @@index([userId, data])
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model Profile {
+  id        String   @id
+  email     String   @unique
+  nome      String?
+  telefone  String?
+  avatarUrl String?
+  role      String   @default("user")
+  status    String   @default("ativo")
+  criadoEm  DateTime @default(now())
 }
