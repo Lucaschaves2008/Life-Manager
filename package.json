@@ -4,6 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
+    "dev:open": "node scripts/dev-open.mjs",
+    "watch:deploy": "node scripts/auto-deploy-watch.mjs",
+    "dev:live": "concurrently -n DEV,DEPLOY -c blue,green \"npm:dev:open\" \"npm:watch:deploy\"",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
@@ -47,11 +50,13 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "concurrently": "^10.0.3",
     "eslint": "^9",
     "eslint-config-next": "15.5.20",
     "prisma": "^6.19.3",
     "tailwindcss": "^4",
     "tsx": "^4.23.1",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vercel": "^56.5.0"
   }
 }
