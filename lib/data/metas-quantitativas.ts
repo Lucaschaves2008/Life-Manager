@@ -142,6 +142,80 @@ export async function calcularAtual(
   }
 }
 
+/**
+ * Progresso de todas as metas cuja métrica é `metrica`, calculado com 1 leva de
+ * queries (cobrindo a união dos ranges de todas as metas dessa métrica) em vez
+ * de 1-2 queries por meta — evita N+1 quando o usuário tem várias metas.
+ */
+async function calcularAtualEmLote(
+  userId: string,
+  metrica: MetaMetrica,
+  metas: { inicio: Date; fim: Date }[]
+): Promise<number[]> {
+  const inicioTotal = new Date(Math.min(...metas.map((m) => m.inicio.getTime())));
+  const fimTotal = new Date(Math.max(...metas.map((m) => m.fim.getTime())));
+  const dentro = (d: Date, inicio: Date, fim: Date) => d >= inicio && d <= fim;
+
+  switch (metrica) {
+    case "treinos": {
+      const [sessoes, runs] = await Promise.all([
+        db.workoutSession.findMany({
+          where: { userId, data: { gte: inicioTotal, lte: fimTotal } },
+          select: { data: true },
+        }),
+        db.run.findMany({
+          where: { userId, data: { gte: inicioTotal, lte: fimTotal } },
+          select: { data: true },
+        }),
+      ]);
+      return metas.map(
+        ({ inicio, fim }) =>
+          sessoes.filter((s) => dentro(s.data, inicio, fim)).length +
+          runs.filter((r) => dentro(r.data, inicio, fim)).length
+      );
+    }
+    case "corridas_completas": {
+      const runs = await db.run.findMany({
+        where: { userId, data: { gte: inicioTotal, lte: fimTotal } },
+        select: { data: true },
+      });
+      return metas.map(({ inicio, fim }) => runs.filter((r) => dentro(r.data, inicio, fim)).length);
+    }
+    case "km_corridos": {
+      const runs = await db.run.findMany({
+        where: { userId, data: { gte: inicioTotal, lte: fimTotal } },
+        select: { data: true, km: true },
+      });
+      return metas.map(({ inicio, fim }) =>
+        runs.filter((r) => dentro(r.data, inicio, fim)).reduce((s, r) => s + r.km, 0)
+      );
+    }
+    case "refeicoes_cumpridas": {
+      const logs = await db.dietDayLog.findMany({
+        where: { userId, data: { gte: inicioTotal, lte: fimTotal } },
+        select: { data: true, refeicoesCumpridas: true },
+      });
+      return metas.map(({ inicio, fim }) =>
+        logs
+          .filter((l) => dentro(l.data, inicio, fim))
+          .reduce((s, l) => s + parseJSON<string[]>(l.refeicoesCumpridas, []).length, 0)
+      );
+    }
+    case "horas_estudo": {
+      const sessoes = await db.studySession.findMany({
+        where: { userId, startedAt: { gte: inicioTotal, lte: fimTotal }, endedAt: { not: null } },
+        select: { startedAt: true, netSeconds: true },
+      });
+      return metas.map(({ inicio, fim }) => {
+        const segundos = sessoes
+          .filter((s) => dentro(s.startedAt, inicio, fim))
+          .reduce((s, x) => s + x.netSeconds, 0);
+        return segundos / 3600;
+      });
+    }
+  }
+}
+
 /** Todas as metas quantitativas do usuário, com progresso calculado agora. */
 export async function metasQuantitativas(
   userId: string,
@@ -151,40 +225,64 @@ export async function metasQuantitativas(
     where: { userId },
     orderBy: [{ ordem: "asc" }, { criadoEm: "asc" }],
   });
+  if (metas.length === 0) return [];
 
-  return Promise.all(
-    metas.map(async (m) => {
-      const metrica = m.metrica as MetaMetrica;
-      const periodo = m.periodo as MetaPeriodo;
-      const { inicio, fim } = rangeDoPeriodo(periodo, m.chave);
-      const atual = await calcularAtual(userId, metrica, inicio, fim);
-      const pct = m.alvo > 0 ? (atual / m.alvo) * 100 : 0;
+  const ranges = metas.map((m) => rangeDoPeriodo(m.periodo as MetaPeriodo, m.chave));
 
-      const totalMs = fim.getTime() - inicio.getTime();
-      const decorridoMs = Math.min(Math.max(hoje.getTime() - inicio.getTime(), 0), totalMs);
-      const pctTempo = totalMs > 0 ? (decorridoMs / totalMs) * 100 : 100;
-      const diasRestantes = Math.max(
-        0,
-        Math.ceil((fim.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24))
-      );
-      const noPrazo = pct >= 100 || pct >= pctTempo;
+  // Agrupa por métrica pra fazer 1 leva de queries por métrica usada (não por meta).
+  const indicesPorMetrica = new Map<MetaMetrica, number[]>();
+  metas.forEach((m, i) => {
+    const metrica = m.metrica as MetaMetrica;
+    const lista = indicesPorMetrica.get(metrica) ?? [];
+    lista.push(i);
+    indicesPorMetrica.set(metrica, lista);
+  });
 
-      const unidade = METRICAS.find((met) => met.value === metrica)?.unidade ?? "";
-
-      return {
-        id: m.id,
-        titulo: m.titulo,
+  const atuais = new Array<number>(metas.length);
+  await Promise.all(
+    [...indicesPorMetrica.entries()].map(async ([metrica, indices]) => {
+      const valores = await calcularAtualEmLote(
+        userId,
         metrica,
-        unidade,
-        alvo: m.alvo,
-        atual,
-        pct,
-        periodo,
-        chave: m.chave,
-        periodoLabel: periodoLabelDe(periodo, m.chave),
-        diasRestantes,
-        noPrazo,
-      };
+        indices.map((i) => ranges[i])
+      );
+      indices.forEach((i, k) => {
+        atuais[i] = valores[k];
+      });
     })
   );
+
+  return metas.map((m, i) => {
+    const metrica = m.metrica as MetaMetrica;
+    const periodo = m.periodo as MetaPeriodo;
+    const { inicio, fim } = ranges[i];
+    const atual = atuais[i];
+    const pct = m.alvo > 0 ? (atual / m.alvo) * 100 : 0;
+
+    const totalMs = fim.getTime() - inicio.getTime();
+    const decorridoMs = Math.min(Math.max(hoje.getTime() - inicio.getTime(), 0), totalMs);
+    const pctTempo = totalMs > 0 ? (decorridoMs / totalMs) * 100 : 100;
+    const diasRestantes = Math.max(
+      0,
+      Math.ceil((fim.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24))
+    );
+    const noPrazo = pct >= 100 || pct >= pctTempo;
+
+    const unidade = METRICAS.find((met) => met.value === metrica)?.unidade ?? "";
+
+    return {
+      id: m.id,
+      titulo: m.titulo,
+      metrica,
+      unidade,
+      alvo: m.alvo,
+      atual,
+      pct,
+      periodo,
+      chave: m.chave,
+      periodoLabel: periodoLabelDe(periodo, m.chave),
+      diasRestantes,
+      noPrazo,
+    };
+  });
 }

@@ -78,20 +78,15 @@ async function areaFinancas(userId: string, ref: Date): Promise<AreaEvolucaoView
     start: spStartOfMonth(subMonths(toSP(ref), 5)),
     end: spStartOfMonth(ref),
   });
+  const inicioTotal = spStartOfMonth(meses[0]);
+  const fimTotal = spEndOfMonth(ref);
 
-  const [porMes, assinaturas] = await Promise.all([
-    Promise.all(
-      meses.map((m) =>
-        db.transaction.aggregate({
-          where: {
-            userId,
-            tipo: "despesa",
-            data: { gte: spStartOfMonth(m), lte: spEndOfMonth(m) },
-          },
-          _sum: { valor: true },
-        })
-      )
-    ),
+  // 1 query cobrindo os 6 meses (em vez de 1 aggregate por mês) — bucketiza em memória.
+  const [despesas, assinaturas] = await Promise.all([
+    db.transaction.findMany({
+      where: { userId, tipo: "despesa", data: { gte: inicioTotal, lte: fimTotal } },
+      select: { valor: true, data: true, categoryId: true },
+    }),
     db.subscription.findMany({
       where: { userId, status: "ativa" },
       select: { valor: true },
@@ -99,22 +94,30 @@ async function areaFinancas(userId: string, ref: Date): Promise<AreaEvolucaoView
   ]);
 
   const assinaturasMes = assinaturas.reduce((s, a) => s + a.valor, 0);
-  const serie = porMes.map((p) => (p._sum.valor ?? 0) + assinaturasMes);
+  const serie = meses.map((m) => {
+    const inicio = spStartOfMonth(m);
+    const fim = spEndOfMonth(m);
+    const soma = despesas
+      .filter((d) => d.data >= inicio && d.data <= fim)
+      .reduce((s, d) => s + d.valor, 0);
+    return soma + assinaturasMes;
+  });
   const atual = serie.at(-1) ?? 0;
   const anterior = serie.at(-2) ?? 0;
 
-  // categorias do mês p/ o detalhamento
-  const catAgg = await db.transaction.groupBy({
-    by: ["categoryId"],
-    where: {
-      userId,
-      tipo: "despesa",
-      data: { gte: spStartOfMonth(ref), lte: spEndOfMonth(ref) },
-    },
-    _sum: { valor: true },
-    orderBy: { _sum: { valor: "desc" } },
-    take: 4,
-  });
+  // categorias do mês de referência p/ o detalhamento (a partir do mesmo lote já buscado)
+  const inicioRef = spStartOfMonth(ref);
+  const fimRef = spEndOfMonth(ref);
+  const somaPorCategoria = new Map<string, number>();
+  for (const d of despesas) {
+    if (!d.categoryId) continue;
+    if (d.data < inicioRef || d.data > fimRef) continue;
+    somaPorCategoria.set(d.categoryId, (somaPorCategoria.get(d.categoryId) ?? 0) + d.valor);
+  }
+  const catAgg = [...somaPorCategoria.entries()]
+    .map(([categoryId, valor]) => ({ categoryId, _sum: { valor } }))
+    .sort((a, b) => b._sum.valor - a._sum.valor)
+    .slice(0, 4);
   const cats = await db.category.findMany({
     where: { id: { in: catAgg.map((c) => c.categoryId).filter(Boolean) as string[] } },
   });
@@ -169,23 +172,29 @@ async function areaTreinos(userId: string, ref: Date): Promise<AreaEvolucaoView>
     start: spStartOfMonth(subMonths(toSP(ref), 5)),
     end: spStartOfMonth(ref),
   });
+  const inicioTotal = spStartOfMonth(meses[0]);
+  const fimTotal = spEndOfMonth(ref);
 
-  const [contagens, resumo] = await Promise.all([
-    Promise.all(
-      meses.map(async (m) => {
-        const [s, r] = await Promise.all([
-          db.workoutSession.count({
-            where: { userId, data: { gte: spStartOfMonth(m), lte: spEndOfMonth(m) } },
-          }),
-          db.run.count({
-            where: { userId, data: { gte: spStartOfMonth(m), lte: spEndOfMonth(m) } },
-          }),
-        ]);
-        return s + r;
-      })
-    ),
+  // 1 query por tabela cobrindo os 6 meses (em vez de 2 counts por mês) — bucketiza em memória.
+  const [sessoes, runs, resumo] = await Promise.all([
+    db.workoutSession.findMany({
+      where: { userId, data: { gte: inicioTotal, lte: fimTotal } },
+      select: { data: true },
+    }),
+    db.run.findMany({
+      where: { userId, data: { gte: inicioTotal, lte: fimTotal } },
+      select: { data: true },
+    }),
     resumoTreinos(userId, ref),
   ]);
+
+  const contagens = meses.map((m) => {
+    const inicio = spStartOfMonth(m);
+    const fim = spEndOfMonth(m);
+    const s = sessoes.filter((x) => x.data >= inicio && x.data <= fim).length;
+    const r = runs.filter((x) => x.data >= inicio && x.data <= fim).length;
+    return s + r;
+  });
 
   const atual = contagens.at(-1) ?? 0;
   const anterior = contagens.at(-2) ?? 0;
