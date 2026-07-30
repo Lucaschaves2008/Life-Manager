@@ -8,78 +8,113 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-model Account {
-  id           String        @id @default(cuid())
-  userId       String
-  nome         String
-  tipo         String
-  cor          String
-  saldoInicial Int           @default(0)
-  criadoEm     DateTime      @default(now())
-  transactions Transaction[]
+/// Espaço financeiro isolado do usuário (ex.: "Pessoal", "Trabalho"). Toda
+/// tabela de Finanças/Investimentos pertence a exatamente uma conta, que por
+/// sua vez pertence a um único usuário. Limite de 2 por usuário, aplicado em
+/// app/actions/contas-financeiras.ts (não há constraint de banco para isso).
+model ContaFinanceira {
+  id       String   @id @default(cuid())
+  userId   String
+  nome     String
+  cor      String   @default("#6B96D6")
+  padrao   Boolean  @default(false)
+  criadoEm DateTime @default(now())
+
+  accounts            Account[]
+  categories          Category[]
+  cards               Card[]
+  transactions        Transaction[]
+  subscriptions       Subscription[]
+  assets              Asset[]
+  assetMovements      AssetMovement[]
+  metasPoupanca       MetaPoupanca[]
 
   @@index([userId])
+}
+
+model Account {
+  id                String          @id @default(cuid())
+  userId            String
+  contaFinanceiraId String
+  nome              String
+  tipo              String
+  cor               String
+  saldoInicial      Int             @default(0)
+  criadoEm          DateTime        @default(now())
+  contaFinanceira   ContaFinanceira @relation(fields: [contaFinanceiraId], references: [id], onDelete: Cascade)
+  transactions      Transaction[]
+
+  @@index([userId])
+  @@index([contaFinanceiraId])
 }
 
 model Category {
-  id              String        @id @default(cuid())
-  userId          String
-  nome            String
-  emoji           String
-  cor             String
-  tipo            String
-  orcamentoMensal Int?
-  transactions    Transaction[]
+  id                String          @id @default(cuid())
+  userId            String
+  contaFinanceiraId String
+  nome              String
+  emoji             String
+  cor               String
+  tipo              String
+  orcamentoMensal   Int?
+  contaFinanceira   ContaFinanceira @relation(fields: [contaFinanceiraId], references: [id], onDelete: Cascade)
+  transactions      Transaction[]
 
   @@index([userId])
+  @@index([contaFinanceiraId])
 }
 
 model Card {
-  id           String        @id @default(cuid())
-  userId       String
-  nome         String
-  bandeira     String
-  tipo         String        @default("credito")
-  limite       Int?
-  fechamento   Int
-  vencimento   Int
-  cor          String        @default("#6B96D6")
-  transactions Transaction[]
+  id                String          @id @default(cuid())
+  userId            String
+  contaFinanceiraId String
+  nome              String
+  bandeira          String
+  tipo              String          @default("credito")
+  limite            Int?
+  fechamento        Int
+  vencimento        Int
+  cor               String          @default("#6B96D6")
+  contaFinanceira   ContaFinanceira @relation(fields: [contaFinanceiraId], references: [id], onDelete: Cascade)
+  transactions      Transaction[]
 
   @@index([userId])
+  @@index([contaFinanceiraId])
 }
 
 model Transaction {
-  id              String    @id @default(cuid())
-  userId          String
-  tipo            String
-  valor           Int
-  data            DateTime
-  descricao       String
-  tags            String    @default("[]")
-  recorrente      Boolean   @default(false)
-  parcelaGrupo    String?
-  parcelaNum      Int?
-  parcelaTotal    Int?
-  paga            Boolean   @default(true)
-  accountId       String?
-  categoryId      String?
-  cardId          String?
+  id                String          @id @default(cuid())
+  userId            String
+  contaFinanceiraId String
+  tipo              String
+  valor             Int
+  data              DateTime
+  descricao         String
+  tags              String          @default("[]")
+  recorrente        Boolean         @default(false)
+  parcelaGrupo      String?
+  parcelaNum        Int?
+  parcelaTotal      Int?
+  paga              Boolean         @default(true)
+  accountId         String?
+  categoryId        String?
+  cardId            String?
   // LEGADO: transferências antigas guardavam a conta de destino aqui. Mantido
   // só para preservar histórico não migrado; ver prisma/backfill-transferencias.ts.
   // Código novo usa origemTipo/origemId/destinoTipo/destinoId.
-  contraAccountId String?
+  contraAccountId   String?
   // Ponta de origem/destino de uma transferência: "conta" | "cartao" | "ativo".
   // Sem FK (mesmo padrão de contraAccountId) — ponta apontando p/ registro já
   // excluído degrada para null na leitura, em vez de quebrar.
-  origemTipo      String?
-  origemId        String?
-  destinoTipo     String?
-  destinoId       String?
-  criadoEm        DateTime  @default(now())
-  account         Account?  @relation(fields: [accountId], references: [id], onDelete: SetNull)
-  card            Card?     @relation(fields: [cardId], references: [id])
-  category        Category? @relation(fields: [categoryId], references: [id])
+  origemTipo        String?
+  origemId          String?
+  destinoTipo       String?
+  destinoId         String?
+  criadoEm          DateTime        @default(now())
+  account           Account?        @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  card              Card?           @relation(fields: [cardId], references: [id])
+  category          Category?       @relation(fields: [categoryId], references: [id])
+  contaFinanceira   ContaFinanceira @relation(fields: [contaFinanceiraId], references: [id], onDelete: Cascade)
 
   @@index([userId, data])
   @@index([userId, parcelaGrupo])
@@ -88,56 +123,101 @@ model Transaction {
   @@index([cardId])
   @@index([origemTipo, origemId])
   @@index([destinoTipo, destinoId])
+  @@index([contaFinanceiraId])
 }
 
 model Subscription {
-  id            String   @id @default(cuid())
-  userId        String
-  nome          String
-  emoji         String   @default("💳")
-  valor         Int
-  diaCobranca   Int
-  status        String   @default("ativa")
-  criadoEm      DateTime @default(now())
-  valorAnterior Int?
+  id                String          @id @default(cuid())
+  userId            String
+  contaFinanceiraId String
+  nome              String
+  emoji             String          @default("💳")
+  valor             Int
+  diaCobranca       Int
+  status            String          @default("ativa")
+  criadoEm          DateTime        @default(now())
+  valorAnterior     Int?
+  contaFinanceira   ContaFinanceira @relation(fields: [contaFinanceiraId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([contaFinanceiraId])
+}
+
+model MetaPoupanca {
+  id                String                    @id @default(cuid())
+  userId            String
+  contaFinanceiraId String
+  nome              String
+  emoji             String
+  descricao         String?
+  valorAlvo         Int
+  valorAtual        Int                       @default(0)
+  concluida         Boolean                   @default(false)
+  criadoEm          DateTime                  @default(now())
+  contaFinanceira   ContaFinanceira           @relation(fields: [contaFinanceiraId], references: [id], onDelete: Cascade)
+  contribuicoes     MetaPoupancaContribuicao[]
+
+  @@index([userId])
+  @@index([contaFinanceiraId])
+  @@index([userId, concluida])
+}
+
+model MetaPoupancaContribuicao {
+  id              String        @id @default(cuid())
+  userId          String
+  metaPoupancaId  String
+  valor           Int
+  fonte           String        // "receita" | "investimento" | "cartao" | "conta"
+  fonteId         String?       // id do investimento/cartao/conta, quando aplicável
+  descricao       String?
+  criadoEm        DateTime      @default(now())
+  metaPoupanca    MetaPoupanca  @relation(fields: [metaPoupancaId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([metaPoupancaId])
+  @@index([criadoEm])
 }
 
 model Asset {
-  id             String          @id @default(cuid())
-  userId         String
-  nome           String
-  classe         String
-  instituicao    String
-  cor            String
-  diaAporte      Int? // dia do mês (1-31) para lembrete de aporte recorrente
-  revisarACada   Int? // dias entre revisões de valor (7, 15 ou 30)
-  proximaRevisao DateTime? // próxima data em que o valor deve ser atualizado
-  criadoEm       DateTime        @default(now())
-  movements      AssetMovement[]
+  id                String          @id @default(cuid())
+  userId            String
+  contaFinanceiraId String
+  nome              String
+  classe            String
+  instituicao       String
+  cor               String
+  diaAporte         Int? // dia do mês (1-31) para lembrete de aporte recorrente
+  revisarACada      Int? // dias entre revisões de valor (7, 15 ou 30)
+  proximaRevisao    DateTime? // próxima data em que o valor deve ser atualizado
+  criadoEm          DateTime        @default(now())
+  contaFinanceira   ContaFinanceira @relation(fields: [contaFinanceiraId], references: [id], onDelete: Cascade)
+  movements         AssetMovement[]
 
   @@index([userId])
   @@index([proximaRevisao])
+  @@index([contaFinanceiraId])
 }
 
 model AssetMovement {
-  id            String   @id @default(cuid())
-  userId        String
-  tipo          String
-  valor         Int
-  data          DateTime
-  nota          String?
-  assetId       String
+  id                String          @id @default(cuid())
+  userId            String
+  contaFinanceiraId String
+  tipo              String
+  valor             Int
+  data              DateTime
+  nota              String?
+  assetId           String
   // Preenchido quando o movimento nasceu de uma transferência em Finanças
   // (Transaction.origemTipo/destinoTipo === "ativo"). Sem FK — mesmo padrão
   // de degradação usado no restante do schema.
-  transactionId String?
-  asset         Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  transactionId     String?
+  asset             Asset           @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  contaFinanceira   ContaFinanceira @relation(fields: [contaFinanceiraId], references: [id], onDelete: Cascade)
 
   @@index([userId, data])
   @@index([assetId])
   @@index([transactionId])
+  @@index([contaFinanceiraId])
 }
 
 model Food {
@@ -486,7 +566,24 @@ model Calendar {
   readonly Boolean @default(false)
   visivel  Boolean @default(true)
   ordem    Int     @default(0)
+  // Google Calendar integration
+  googleId String? // ID do calendário no Google (ex: "primary" ou email)
+  sincronizado Boolean @default(false)
   events   Event[]
+
+  @@index([userId])
+  @@index([googleId])
+}
+
+model GoogleIntegration {
+  id           String  @id @default(cuid())
+  userId       String  @unique
+  accessToken  String
+  refreshToken String?
+  expiresAt    DateTime?
+  escopo       String  @default("calendar")
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
 
   @@index([userId])
 }
@@ -550,18 +647,61 @@ model Goal {
 // chave é a âncora estável do período ("2026-07", "2026-Q3", "2026"),
 // no mesmo espírito de Goal.mes — nunca guardamos um Date cru aqui.
 model MetaQuantitativa {
-  id       String   @id @default(cuid())
-  userId   String
-  titulo   String
-  metrica  String // "treinos" | "km_corridos" | "refeicoes_cumpridas" | "horas_estudo"
-  alvo     Float
-  periodo  String // "mes" | "trimestre" | "ano"
-  chave    String
-  ordem    Int      @default(0)
-  criadoEm DateTime @default(now())
+  id         String   @id @default(cuid())
+  userId     String
+  titulo     String
+  origem     String   @default("metrica") // "metrica" | "variavel"
+  metrica    String? // "treinos" | "km_corridos" | "refeicoes_cumpridas" | "horas_estudo", quando origem="metrica"
+  // Variavel do próprio userId quando origem="variavel" — sem FK (vínculo
+  // fraco, mesmo padrão de DesafioMeta.rotinaTemplateId): variável excluída
+  // degrada o progresso pra zero, não quebra a leitura.
+  variavelId String?
+  alvo       Float
+  periodo    String // "mes" | "trimestre" | "ano"
+  chave      String
+  ordem      Int      @default(0)
+  criadoEm   DateTime @default(now())
 
   @@index([userId])
   @@index([userId, periodo, chave])
+}
+
+// Variável pessoal contável, criada livremente pelo usuário (ex.: "Corrida",
+// "Sem pornografia"). Aparece no checklist diário ao lado de RotinaTemplate
+// (ver lib/data/rotinas.ts + lib/data/variaveis.ts: itensChecklistDoDia), mas
+// é um cidadão de primeira classe próprio — permite ser usada como origem de
+// progresso tanto em MetaQuantitativa quanto em DesafioMeta (origem="variavel"
+// nesses models), o que RotinaTemplate não é desenhado para suportar.
+model Variavel {
+  id           String   @id @default(cuid())
+  userId       String
+  nome         String
+  emoji        String   @default("🔥")
+  cor          String   @default("#6B96D6")
+  medeStreak   Boolean  @default(true)
+  medeContagem Boolean  @default(true)
+  ordem        Int      @default(0)
+  ativo        Boolean  @default(true)
+  criadoEm     DateTime @default(now())
+
+  checks VariavelCheckDia[]
+
+  @@index([userId])
+  @@index([userId, ativo])
+}
+
+// "Feito" de uma variável num dia específico (variavelId + dia). Presença =
+// feito, mesmo espírito de RotinaCheckDia. Sem feitoAuto: variável não tem
+// execução automática associada — marcação é sempre manual.
+model VariavelCheckDia {
+  id         String   @id @default(cuid())
+  userId     String
+  variavelId String
+  data       DateTime
+  variavel   Variavel @relation(fields: [variavelId], references: [id], onDelete: Cascade)
+
+  @@unique([variavelId, data])
+  @@index([userId, data])
 }
 
 // Grupo de crescimento colaborativo ("desafio"), estilo Gymrats: cada membro
@@ -579,8 +719,10 @@ model Desafio {
   ativo              Boolean  @default(true)
   criadoEm           DateTime @default(now())
 
-  membros DesafioMembro[]
-  metas   DesafioMeta[]
+  membros   DesafioMembro[]
+  metas     DesafioMeta[]
+  mensagens DesafioMensagem[]
+  documento DesafioDocumento?
 
   @@index([criadorId])
 }
@@ -609,12 +751,15 @@ model DesafioMeta {
   userId           String
   metaPaiId        String?
   titulo           String
-  origem           String // "metrica" | "checklist"
+  origem           String // "metrica" | "checklist" | "variavel"
   metrica          String? // MetaMetrica (metas-quantitativas.ts) quando origem="metrica"
   // RotinaTemplate do PRÓPRIO userId quando origem="checklist" — sem FK forte
   // (mesmo padrão de degradação do resto do schema: template excluído no
   // futuro só faz a contagem voltar a zero, não quebra a leitura).
   rotinaTemplateId String?
+  // Variavel do PRÓPRIO userId quando origem="variavel" — mesmo padrão de
+  // vínculo fraco de rotinaTemplateId acima.
+  variavelId       String?
   alvo             Float
   periodo          String // "semana" | "mes" | "trimestre" | "semestre"
   ordem            Int      @default(0)
@@ -627,6 +772,35 @@ model DesafioMeta {
   @@index([desafioId])
   @@index([userId])
   @@index([metaPaiId])
+}
+
+// Mensagem no chat de um desafio — visível a qualquer membro, sem edição/exclusão
+// (histórico simples, estilo feed de grupo). Lido via polling, não WebSocket.
+model DesafioMensagem {
+  id        String   @id @default(cuid())
+  desafioId String
+  userId    String
+  texto     String
+  criadoEm  DateTime @default(now())
+
+  desafio Desafio @relation(fields: [desafioId], references: [id], onDelete: Cascade)
+
+  @@index([desafioId, criadoEm])
+}
+
+// Documento fixado do desafio ("contrato do grupo") — um por desafio,
+// substituído a cada novo upload. Arquivo vive no Supabase Storage
+// (bucket "desafio-documentos"); aqui só o metadado + URL pública.
+model DesafioDocumento {
+  id           String   @id @default(cuid())
+  desafioId    String   @unique
+  nome         String
+  arquivoUrl   String
+  arquivoTipo  String // mime type (application/pdf, image/png, image/jpeg)
+  enviadoPorId String
+  criadoEm     DateTime @default(now())
+
+  desafio Desafio @relation(fields: [desafioId], references: [id], onDelete: Cascade)
 }
 
 model Setting {
@@ -751,6 +925,20 @@ model RotinaCheckDia {
 
   @@unique([rotinaId, data])
   @@index([userId, data])
+}
+
+/// Registro PERMANENTE de que o usuário esteve ativo num dia (qualquer ação:
+/// check-in, treino, dieta, estudo). Uma vez gravado NÃO é removido — desfazer
+/// a ação (ex.: desmarcar um check-in) não apaga o dia da ofensiva. É a fonte
+/// de verdade do streak: o foguinho só cai se houver 2 dias seguidos SEM
+/// nenhum StreakDia. Grava-se via marcarDiaAtivo() nas server actions.
+model StreakDia {
+  userId String
+  dia    String // dayKey "YYYY-MM-DD" (SP) — estável, não é Date de request
+  em     DateTime @default(now())
+
+  @@id([userId, dia])
+  @@index([userId])
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.

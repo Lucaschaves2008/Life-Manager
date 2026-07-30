@@ -16,6 +16,7 @@ import { CartoesClient } from "@/components/financas/cartoes-client";
 import { CategoriasClient } from "@/components/financas/categorias-client";
 import { FluxoChart } from "@/components/financas/fluxo-chart";
 import { ParcelamentosClient } from "@/components/financas/parcelamentos-client";
+import { MetasPoupancaClient } from "@/components/financas/metas-poupanca-client";
 import {
   TransacoesClient,
   type LinhaTransacao,
@@ -46,6 +47,8 @@ import { db } from "@/lib/db";
 import { formatBRL } from "@/lib/money";
 import { parseJSON } from "@/lib/utils";
 import { getCurrentUser } from "@/lib/auth";
+import { getContaAtiva } from "@/lib/conta-ativa";
+import { ContaFinanceiraSelector } from "@/components/shell/conta-financeira-selector";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +63,7 @@ const tabs = [
   { label: "Assinaturas", href: "/financas?tab=assinaturas", value: "assinaturas" },
   { label: "Categorias", href: "/financas?tab=categorias", value: "categorias" },
   { label: "Cartões", href: "/financas?tab=cartoes", value: "cartoes" },
+  { label: "Metas de poupança", href: "/financas?tab=metas-poupanca", value: "metas-poupanca" },
 ];
 
 type Busca = {
@@ -98,15 +102,16 @@ export default async function Page({
   searchParams: Promise<Busca>;
 }) {
   const user = await getCurrentUser();
+  const { id: contaFinanceiraId, contas } = await getContaAtiva(user.id);
   const busca = await searchParams;
   const tab = busca.novo === "1" ? "transacoes" : busca.tab ?? "visao";
   const hoje = nowSP();
 
   const [categorias, contasSaldo, faturas, ativosResumo] = await Promise.all([
-    db.category.findMany({ where: { userId: user.id }, orderBy: { nome: "asc" } }),
-    contasComSaldo(user.id),
-    faturasDosCartoes(user.id, hoje),
-    ativosResumidos(user.id, hoje),
+    db.category.findMany({ where: { contaFinanceiraId }, orderBy: { nome: "asc" } }),
+    contasComSaldo(contaFinanceiraId),
+    faturasDosCartoes(contaFinanceiraId, hoje),
+    ativosResumidos(contaFinanceiraId, hoje),
   ]);
 
   const opcoesContas = contasSaldo.map((c) => ({
@@ -136,13 +141,16 @@ export default async function Page({
 
   return (
     <div className="flex flex-col gap-6">
-      <PillTabs tabs={tabs} param="tab" />
+      <div className="flex items-center justify-between gap-4">
+        <PillTabs tabs={tabs} param="tab" />
+        <ContaFinanceiraSelector contas={contas} ativaId={contaFinanceiraId} />
+      </div>
 
-      {tab === "visao" && <VisaoGeral userId={user.id} hoje={hoje} />}
+      {tab === "visao" && <VisaoGeral contaFinanceiraId={contaFinanceiraId} hoje={hoje} />}
       {tab === "transacoes" && (
         <Card>
           <Transacoes
-            userId={user.id}
+            contaFinanceiraId={contaFinanceiraId}
             busca={busca}
             hoje={hoje}
             opcoesContas={opcoesContas}
@@ -154,23 +162,24 @@ export default async function Page({
       )}
       {tab === "parcelamentos" && (
         <Parcelamentos
-          userId={user.id}
+          contaFinanceiraId={contaFinanceiraId}
           hoje={hoje}
           opcoesContas={opcoesContas}
           opcoesCategorias={opcoesCategorias}
           opcoesCartoes={opcoesCartoes}
         />
       )}
-      {tab === "assinaturas" && <Assinaturas userId={user.id} />}
-      {tab === "categorias" && <Categorias userId={user.id} hoje={hoje} />}
-      {tab === "cartoes" && <Cartoes userId={user.id} hoje={hoje} />}
+      {tab === "assinaturas" && <Assinaturas contaFinanceiraId={contaFinanceiraId} />}
+      {tab === "categorias" && <Categorias contaFinanceiraId={contaFinanceiraId} hoje={hoje} />}
+      {tab === "cartoes" && <Cartoes contaFinanceiraId={contaFinanceiraId} hoje={hoje} />}
+      {tab === "metas-poupanca" && <MetasPoupanca contaFinanceiraId={contaFinanceiraId} />}
     </div>
   );
 }
 
 // ---------- Visão geral ----------
 
-async function VisaoGeral({ userId, hoje }: { userId: string; hoje: Date }) {
+async function VisaoGeral({ contaFinanceiraId, hoje }: { contaFinanceiraId: string; hoje: Date }) {
   const [
     insight,
     resumo,
@@ -182,15 +191,15 @@ async function VisaoGeral({ userId, hoje }: { userId: string; hoje: Date }) {
     fluxo,
     vencimentos,
   ] = await Promise.all([
-    insightFinanceiroPrincipal(userId, hoje),
-    resumoDoMes(userId, hoje),
-    ritmoDeGastos(userId, hoje),
-    contasComSaldo(userId),
-    faturasDosCartoes(userId, hoje),
-    categoriasComparadas(userId, hoje),
-    gastosPorDiaDoMes(userId, hoje),
-    fluxoDeCaixa(userId, 6, hoje),
-    proximosVencimentos(userId, 7, hoje),
+    insightFinanceiroPrincipal(contaFinanceiraId, hoje),
+    resumoDoMes(contaFinanceiraId, hoje),
+    ritmoDeGastos(contaFinanceiraId, hoje),
+    contasComSaldo(contaFinanceiraId),
+    faturasDosCartoes(contaFinanceiraId, hoje),
+    categoriasComparadas(contaFinanceiraId, hoje),
+    gastosPorDiaDoMes(contaFinanceiraId, hoje),
+    fluxoDeCaixa(contaFinanceiraId, 6, hoje),
+    proximosVencimentos(contaFinanceiraId, 7, hoje),
   ]);
 
   const saldoTotal = contas.reduce((s, c) => s + c.saldo, 0);
@@ -392,7 +401,7 @@ async function VisaoGeral({ userId, hoje }: { userId: string; hoje: Date }) {
 // ---------- Transações ----------
 
 async function Transacoes({
-  userId,
+  contaFinanceiraId,
   busca,
   hoje,
   opcoesContas,
@@ -400,7 +409,7 @@ async function Transacoes({
   opcoesCartoes,
   opcoesAtivos,
 }: {
-  userId: string;
+  contaFinanceiraId: string;
   busca: Busca;
   hoje: Date;
   opcoesContas: { id: string; nome: string }[];
@@ -411,7 +420,7 @@ async function Transacoes({
   const intervalo = intervaloDoPeriodo(busca.periodo, hoje);
   const txs = await db.transaction.findMany({
     where: {
-      userId,
+      contaFinanceiraId,
       ...(intervalo ? { data: intervalo } : {}),
       ...(busca.conta ? { accountId: busca.conta } : {}),
       ...(busca.categoria ? { categoryId: busca.categoria } : {}),
@@ -485,19 +494,19 @@ async function Transacoes({
 // ---------- Parcelamentos ----------
 
 async function Parcelamentos({
-  userId,
+  contaFinanceiraId,
   hoje,
   opcoesContas,
   opcoesCategorias,
   opcoesCartoes,
 }: {
-  userId: string;
+  contaFinanceiraId: string;
   hoje: Date;
   opcoesContas: { id: string; nome: string }[];
   opcoesCategorias: { id: string; nome: string; emoji: string; tipo: string }[];
   opcoesCartoes: { id: string; nome: string }[];
 }) {
-  const itens = await parcelamentos(userId, hoje);
+  const itens = await parcelamentos(contaFinanceiraId, hoje);
   const comprometidoMes = itens.reduce((s, p) => s + p.valorParcela, 0);
 
   return (
@@ -544,9 +553,9 @@ async function Parcelamentos({
 
 // ---------- Assinaturas ----------
 
-async function Assinaturas({ userId }: { userId: string }) {
+async function Assinaturas({ contaFinanceiraId }: { contaFinanceiraId: string }) {
   const assinaturas = await db.subscription.findMany({
-    where: { userId },
+    where: { contaFinanceiraId },
     orderBy: { nome: "asc" },
   });
   const ativas = assinaturas.filter((a) => a.status === "ativa");
@@ -587,10 +596,10 @@ async function Assinaturas({ userId }: { userId: string }) {
 
 // ---------- Categorias ----------
 
-async function Categorias({ userId, hoje }: { userId: string; hoje: Date }) {
+async function Categorias({ contaFinanceiraId, hoje }: { contaFinanceiraId: string; hoje: Date }) {
   const [categorias, cats] = await Promise.all([
-    db.category.findMany({ where: { userId }, orderBy: { nome: "asc" } }),
-    categoriasComparadas(userId, hoje),
+    db.category.findMany({ where: { contaFinanceiraId }, orderBy: { nome: "asc" } }),
+    categoriasComparadas(contaFinanceiraId, hoje),
   ]);
   const gastoPorCat = new Map(cats.map((c) => [c.id, c.atual]));
   const comOrcamento = cats.filter((c) => c.orcamentoMensal);
@@ -644,7 +653,20 @@ async function Categorias({ userId, hoje }: { userId: string; hoje: Date }) {
 
 // ---------- Cartões ----------
 
-async function Cartoes({ userId, hoje }: { userId: string; hoje: Date }) {
-  const faturas = await faturasDosCartoes(userId, hoje);
+async function Cartoes({ contaFinanceiraId, hoje }: { contaFinanceiraId: string; hoje: Date }) {
+  const faturas = await faturasDosCartoes(contaFinanceiraId, hoje);
   return <CartoesClient faturas={faturas} />;
+}
+
+// ---------- Metas de Poupança ----------
+
+async function MetasPoupanca({ contaFinanceiraId }: { contaFinanceiraId: string }) {
+  const { obterMetasPoupanca } = await import("@/lib/data/metas-poupanca");
+  const metas = await obterMetasPoupanca(contaFinanceiraId);
+
+  return (
+    <Card>
+      <MetasPoupancaClient metas={metas} contaFinanceiraId={contaFinanceiraId} />
+    </Card>
+  );
 }
