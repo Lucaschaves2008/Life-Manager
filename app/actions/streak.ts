@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath, revalidateTag } from "next/cache";
+import { revalidatePath, revalidateTag } from "@/lib/cache-revalidate";
 import { db } from "@/lib/db";
 import { requireSuperAdmin } from "@/lib/auth";
 import { tagUsuario } from "@/lib/cache-tags";

@@ -2,7 +2,7 @@
 
 import { db } from '@/lib/db'
 import { requireUser } from '@/lib/auth'
-import { revalidatePath, revalidateTag } from 'next/cache'
+import { revalidatePath, revalidateTag } from '@/lib/cache-revalidate'
 import { tagUsuario } from '@/lib/cache-tags'
 import { nowSP, dayKeySP } from '@/lib/dates'
 
@@ -170,10 +170,10 @@ export async function adicionarContribuicao(data: {
       metaPoupancaId: data.metaPoupancaId,
       valor: valorCentavos,
       fonte: data.fonte,
-      fonteId: data.fonteId,
-      descricao: data.descricao,
-      transactionId,
-      assetMovementId,
+      fonteId: data.fonteId ?? undefined,
+      descricao: data.descricao ?? undefined,
+      ...(transactionId && { transactionId }),
+      ...(assetMovementId && { assetMovementId }),
     },
   })
 
@@ -248,6 +248,13 @@ export async function removerContribuicao(contribuicaoId: string) {
 
   const contribuicao = await db.metaPoupancaContribuicao.findUnique({
     where: { id: contribuicaoId },
+    select: {
+      id: true,
+      userId: true,
+      metaPoupancaId: true,
+      transactionId: true,
+      assetMovementId: true,
+    },
   })
 
   if (!contribuicao || contribuicao.userId !== user.id) {

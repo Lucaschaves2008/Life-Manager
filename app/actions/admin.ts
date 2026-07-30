@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath } from "@/lib/cache-revalidate";
 import { requireSuperAdmin, revalidateProfile } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { createAdminClient } from "@/lib/supabase/admin";

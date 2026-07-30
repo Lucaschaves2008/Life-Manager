@@ -1,7 +1,7 @@
 "use server";
 
 import { addMonths } from "date-fns";
-import { revalidatePath, revalidateTag } from "next/cache";
+import { revalidatePath, revalidateTag } from "@/lib/cache-revalidate";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { tagUsuario } from "@/lib/cache-tags";
@@ -513,4 +513,108 @@ export async function restoreAssinatura(dados: AssinaturaInput) {
   const { id: contaFinanceiraId } = await getContaAtiva(userId);
   await db.subscription.create({ data: { ...dados, userId, contaFinanceiraId } });
   revalidar(contaFinanceiraId);
+}
+
+// ---------- Transferências entre contas ----------
+
+export type TransferenciaEntreContasInput = {
+  tipo: "conta" | "cartao" | "ativo";
+  recursoId: string;
+  contaOrigemId: string;
+  contaDestinoId: string;
+  descricao?: string;
+};
+
+/** Transfere qualquer recurso (conta/cartão/ativo) de uma conta financeira para outra. */
+export async function transferirEntreContas(input: TransferenciaEntreContasInput) {
+  const { id: userId } = await requireUser();
+
+  // Validar que ambas as contas pertencem ao usuário
+  const [contaOrigem, contaDestino] = await Promise.all([
+    db.contaFinanceira.findFirst({
+      where: { id: input.contaOrigemId, userId },
+      select: { id: true },
+    }),
+    db.contaFinanceira.findFirst({
+      where: { id: input.contaDestinoId, userId },
+      select: { id: true },
+    }),
+  ]);
+
+  if (!contaOrigem || !contaDestino) {
+    throw new Error("Uma ou ambas as contas não encontradas.");
+  }
+
+  if (input.contaOrigemId === input.contaDestinoId) {
+    throw new Error("Origem e destino não podem ser iguais.");
+  }
+
+  // Transferir o recurso conforme seu tipo
+  if (input.tipo === "conta") {
+    const conta = await db.account.findFirst({
+      where: { id: input.recursoId, contaFinanceiraId: input.contaOrigemId },
+    });
+    if (!conta) throw new Error("Conta não encontrada na origem.");
+
+    await db.account.update({
+      where: { id: input.recursoId },
+      data: { contaFinanceiraId: input.contaDestinoId },
+    });
+  } else if (input.tipo === "cartao") {
+    const cartao = await db.card.findFirst({
+      where: { id: input.recursoId, contaFinanceiraId: input.contaOrigemId },
+    });
+    if (!cartao) throw new Error("Cartão não encontrado na origem.");
+
+    await db.card.update({
+      where: { id: input.recursoId },
+      data: { contaFinanceiraId: input.contaDestinoId },
+    });
+  } else if (input.tipo === "ativo") {
+    const ativo = await db.asset.findFirst({
+      where: { id: input.recursoId, contaFinanceiraId: input.contaOrigemId },
+    });
+    if (!ativo) throw new Error("Ativo não encontrado na origem.");
+
+    await db.asset.update({
+      where: { id: input.recursoId },
+      data: { contaFinanceiraId: input.contaDestinoId },
+    });
+  }
+
+  // Revalidar ambas as contas
+  revalidar(input.contaOrigemId);
+  revalidar(input.contaDestinoId);
+}
+
+/** Lista todos os recursos (contas/cartões/ativos) de uma conta financeira. */
+export async function listarRecursosParaTransferencia(contaFinanceiraId: string) {
+  const { id: userId } = await requireUser();
+
+  // Validar que a conta pertence ao usuário
+  const conta = await db.contaFinanceira.findFirst({
+    where: { id: contaFinanceiraId, userId },
+  });
+  if (!conta) throw new Error("Conta não encontrada.");
+
+  const [contas, cartoes, ativos] = await Promise.all([
+    db.account.findMany({
+      where: { contaFinanceiraId },
+      select: { id: true, nome: true },
+    }),
+    db.card.findMany({
+      where: { contaFinanceiraId },
+      select: { id: true, nome: true, bandeira: true },
+    }),
+    db.asset.findMany({
+      where: { contaFinanceiraId },
+      select: { id: true, nome: true, classe: true },
+    }),
+  ]);
+
+  return {
+    contas: contas.map((c) => ({ ...c, tipo: "conta" as const })),
+    cartoes: cartoes.map((c) => ({ ...c, tipo: "cartao" as const })),
+    ativos: ativos.map((a) => ({ ...a, tipo: "ativo" as const })),
+  };
 }

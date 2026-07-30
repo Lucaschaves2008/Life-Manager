@@ -20,6 +20,7 @@ import {
   renomearContaFinanceira,
   setContaAtiva,
 } from "@/app/actions/contas-financeiras";
+import { TransferenciaEntreContasModal } from "../modals/transferencia-entre-contas";
 import {
   EMAIL_SUPORTE_LIMITE,
   LIMITE_CONTAS_FINANCEIRAS,
@@ -43,6 +44,7 @@ export function ContaFinanceiraSelector({
   const [editando, setEditando] = useState<ContaFinanceiraView | null>(null);
   const [nome, setNome] = useState("");
   const [cor, setCor] = useState(paleta[0]);
+  const [transferenciaAberta, setTransferenciaAberta] = useState(false);
 
   const ativa = contas.find((c) => c.id === ativaId) ?? contas[0];
   const noLimite = contas.length >= LIMITE_CONTAS_FINANCEIRAS;
@@ -167,6 +169,11 @@ export function ContaFinanceiraSelector({
             </DropdownMenuItem>
           ))}
           <DropdownMenuSeparator />
+          {contas.length > 1 && (
+            <DropdownMenuItem onSelect={() => setTransferenciaAberta(true)}>
+              <span>↔️ Transferir recurso</span>
+            </DropdownMenuItem>
+          )}
           {noLimite ? (
             <DropdownMenuItem
               disabled
@@ -228,6 +235,13 @@ export function ContaFinanceiraSelector({
           </div>
         </SheetContent>
       </Sheet>
+
+      <TransferenciaEntreContasModal
+        open={transferenciaAberta}
+        onOpenChange={setTransferenciaAberta}
+        contaAtiva={ativa}
+        outrasContas={contas.filter((c) => c.id !== ativaId)}
+      />
     </>
   );
 }
