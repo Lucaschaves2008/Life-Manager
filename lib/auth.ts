@@ -1,9 +1,10 @@
 import "server-only";
 import { cache } from "react";
-import { unstable_cache, revalidateTag } from "next/cache";
+import { unstable_cache } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { db } from "@/lib/db";
+import { revalidateTag } from "@/lib/cache-revalidate";
 import type { Profile } from "@prisma/client";
 
 export type CurrentUser = {

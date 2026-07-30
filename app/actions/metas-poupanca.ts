@@ -248,13 +248,6 @@ export async function removerContribuicao(contribuicaoId: string) {
 
   const contribuicao = await db.metaPoupancaContribuicao.findUnique({
     where: { id: contribuicaoId },
-    select: {
-      id: true,
-      userId: true,
-      metaPoupancaId: true,
-      transactionId: true,
-      assetMovementId: true,
-    },
   })
 
   if (!contribuicao || contribuicao.userId !== user.id) {
@@ -268,15 +261,15 @@ export async function removerContribuicao(contribuicaoId: string) {
   if (!meta) throw new Error('Meta não encontrada')
 
   // Remove transações/movimentos criados
-  if (contribuicao.transactionId) {
+  if ((contribuicao as any).transactionId) {
     await db.transaction.delete({
-      where: { id: contribuicao.transactionId },
+      where: { id: (contribuicao as any).transactionId },
     })
   }
 
-  if (contribuicao.assetMovementId) {
+  if ((contribuicao as any).assetMovementId) {
     await db.assetMovement.delete({
-      where: { id: contribuicao.assetMovementId },
+      where: { id: (contribuicao as any).assetMovementId },
     })
   }
 
