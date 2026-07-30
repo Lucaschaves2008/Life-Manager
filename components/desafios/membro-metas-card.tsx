@@ -9,20 +9,13 @@ import { Button } from "@/components/ui/button";
 import { DesafioMetaSheet } from "@/components/desafios/desafio-meta-sheet";
 import { VincularChecklistSelect } from "@/components/desafios/vincular-checklist-select";
 import { excluirMeta } from "@/app/actions/desafios";
-import { cn } from "@/lib/utils";
+import { cn, initials } from "@/lib/utils";
+import { Flame } from "@/components/caverna/flame";
 import type { DesafioMetaView, MembroDesafio } from "@/lib/data/desafios";
+import type { VariavelView } from "@/lib/data/variaveis";
 
 function formatNumero(v: number): string {
   return v % 1 === 0 ? v.toFixed(0) : v.toFixed(1);
-}
-
-function iniciais(nome: string | null): string {
-  if (!nome) return "?";
-  const partes = nome.trim().split(/\s+/);
-  return partes
-    .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase() ?? "")
-    .join("") || "?";
 }
 
 function MetaPequenaRow({ meta, souDono }: { meta: DesafioMetaView; souDono: boolean }) {
@@ -77,11 +70,13 @@ function MetaGrandeBlock({
   meta,
   souDono,
   templatesChecklist,
+  variaveis,
 }: {
   desafioId: string;
   meta: DesafioMetaView;
   souDono: boolean;
   templatesChecklist: { id: string; nome: string }[];
+  variaveis: VariavelView[];
 }) {
   const [, startTransition] = useTransition();
   const [removendo, setRemovendo] = useState(false);
@@ -166,6 +161,7 @@ function MetaGrandeBlock({
             tipo="pequena"
             metaPaiId={meta.id}
             templatesChecklist={templatesChecklist}
+            variaveis={variaveis}
           />
         </>
       )}
@@ -179,12 +175,14 @@ export function MembroMetasCard({
   souEu,
   metasGrandesLimite,
   templatesChecklist,
+  variaveis,
 }: {
   desafioId: string;
   membro: MembroDesafio;
   souEu: boolean;
   metasGrandesLimite: number;
   templatesChecklist: { id: string; nome: string }[];
+  variaveis: VariavelView[];
 }) {
   const [sheetAberto, setSheetAberto] = useState(false);
   const atingiuLimite = membro.metasGrandes.length >= metasGrandesLimite;
@@ -193,10 +191,20 @@ export function MembroMetasCard({
     <Card>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-2 text-[11.5px] text-mist">
-            {iniciais(membro.nome)}
+          <div className="relative shrink-0">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-2 text-[11.5px] text-mist">
+              {initials(membro.nome, "?")}
+            </div>
+            {membro.streak > 0 && (
+              <Flame streak={membro.streak} size={18} className="absolute -bottom-1.5 -right-1.5" />
+            )}
           </div>
-          <CardLabel className="text-ice">{souEu ? "Minhas metas" : (membro.nome ?? "Sem nome")}</CardLabel>
+          <div>
+            <CardLabel className="text-ice">{souEu ? "Minhas metas" : (membro.nome ?? "Sem nome")}</CardLabel>
+            {membro.streak > 0 && (
+              <p className="tabular mt-0.5 text-[11px] text-amber">{membro.streak}d de ofensiva</p>
+            )}
+          </div>
         </div>
         <span className="tabular text-[11.5px] text-steel">
           {membro.metasGrandes.length}/{metasGrandesLimite}
@@ -217,6 +225,7 @@ export function MembroMetasCard({
             meta={meta}
             souDono={souEu}
             templatesChecklist={templatesChecklist}
+            variaveis={variaveis}
           />
         ))}
       </div>
@@ -233,6 +242,7 @@ export function MembroMetasCard({
             desafioId={desafioId}
             tipo="grande"
             templatesChecklist={templatesChecklist}
+            variaveis={variaveis}
           />
         </>
       )}

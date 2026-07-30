@@ -6,11 +6,12 @@ import "./globals.css";
 import { AppShell } from "@/components/shell/app-shell";
 import { NotificacoesBell } from "@/components/shell/notificacoes-bell";
 import { NotificacoesBellServer } from "@/components/shell/notificacoes-bell-server";
+import { StreakBadgeServer } from "@/components/shell/streak-badge-server";
 import { getCurrentUserOrNull } from "@/lib/auth";
 import { ThemeScript } from "@/components/shell/theme-script";
 
 export const metadata: Metadata = {
-  title: "LC · Lucas Chaves",
+  title: "MYLIFE",
   description: "Painel premium pessoal para finanças, investimentos, dieta, treinos e agenda.",
 };
 
@@ -26,6 +27,16 @@ export default async function RootLayout({
   const notificacoesSlot = user && user.status === "ativo" ? (
     <Suspense fallback={<NotificacoesBell notificacoes={[]} />}>
       <NotificacoesBellServer userId={user.id} />
+    </Suspense>
+  ) : null;
+
+  // Badge de streak (foguinho) sempre visível no topbar — também via streaming.
+  const streakSlot = user && user.status === "ativo" ? (
+    <Suspense fallback={null}>
+      <StreakBadgeServer
+        userId={user.id}
+        isSuperAdmin={user.role === "super_admin"}
+      />
     </Suspense>
   ) : null;
 
@@ -46,6 +57,7 @@ export default async function RootLayout({
             avatarUrl: user?.avatarUrl ?? null,
           }}
           notificacoesSlot={notificacoesSlot}
+          streakSlot={streakSlot}
         >
           {children}
         </AppShell>

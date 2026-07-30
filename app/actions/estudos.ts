@@ -4,7 +4,8 @@ import { revalidatePath, revalidateTag } from "next/cache";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { tagUsuario } from "@/lib/cache-tags";
-import { spStartOfDay } from "@/lib/dates";
+import { dayKeySP, spStartOfDay } from "@/lib/dates";
+import { marcarDiaAtivo } from "@/lib/streak";
 import { templateOcorreNoDia } from "@/lib/rotina-helpers";
 
 function revalidar(userId: string) {
@@ -60,6 +61,7 @@ export async function iniciarSessao(input: {
     await marcarItensAuto(userId, categoryId, sessao.startedAt);
     revalidateTag(tagUsuario(userId, "checklist"));
   }
+  await marcarDiaAtivo(userId, dayKeySP(sessao.startedAt)); // conquista o dia
   revalidar(userId);
   return sessao.id;
 }

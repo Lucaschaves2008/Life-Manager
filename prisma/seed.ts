@@ -27,6 +27,16 @@ async function main() {
   }
   const userId = admin.id;
 
+  let contaFinanceira = await db.contaFinanceira.findFirst({
+    where: { userId, padrao: true },
+  });
+  if (!contaFinanceira) {
+    contaFinanceira = await db.contaFinanceira.create({
+      data: { userId, nome: "Pessoal", padrao: true },
+    });
+  }
+  const contaFinanceiraId = contaFinanceira.id;
+
   // limpar tudo (ordem respeita FKs) — apenas os dados deste usuário
   await db.setLog.deleteMany({ where: { userId } });
   await db.workoutSession.deleteMany({ where: { userId } });
@@ -57,6 +67,7 @@ async function main() {
   const inter = await db.account.create({
     data: {
       userId,
+      contaFinanceiraId,
       nome: "Inter",
       tipo: "corrente",
       cor: "#F5B14C",
@@ -66,6 +77,7 @@ async function main() {
   const carteira = await db.account.create({
     data: {
       userId,
+      contaFinanceiraId,
       nome: "Carteira",
       tipo: "poupanca",
       cor: "#6B96D6",
@@ -82,7 +94,7 @@ async function main() {
     orcamentoMensal?: number
   ) =>
     db.category.create({
-      data: { userId, nome, emoji, cor, tipo, orcamentoMensal },
+      data: { userId, contaFinanceiraId, nome, emoji, cor, tipo, orcamentoMensal },
     });
 
   const telecom = await cat("Telecomunicação", "🏠", "#FF6B6B", "despesa", r(300));
@@ -98,9 +110,9 @@ async function main() {
   // ---------- Assinaturas ----------
   await db.subscription.createMany({
     data: [
-      { userId, nome: "Spotify", emoji: "🎧", valor: r(21.9), diaCobranca: 10, status: "ativa" },
-      { userId, nome: "Netflix", emoji: "🎬", valor: r(44.9), diaCobranca: 15, status: "ativa", valorAnterior: r(39.9) },
-      { userId, nome: "Academia Panobianco", emoji: "🏋️", valor: r(129.9), diaCobranca: 5, status: "ativa" },
+      { userId, contaFinanceiraId, nome: "Spotify", emoji: "🎧", valor: r(21.9), diaCobranca: 10, status: "ativa" },
+      { userId, contaFinanceiraId, nome: "Netflix", emoji: "🎬", valor: r(44.9), diaCobranca: 15, status: "ativa", valorAnterior: r(39.9) },
+      { userId, contaFinanceiraId, nome: "Academia Panobianco", emoji: "🏋️", valor: r(129.9), diaCobranca: 5, status: "ativa" },
     ],
   });
 
@@ -207,6 +219,7 @@ async function main() {
     await db.transaction.create({
       data: {
         userId,
+        contaFinanceiraId,
         tipo: tx.tipo,
         valor: tx.valor,
         data: tx.data,
@@ -226,20 +239,27 @@ async function main() {
 
   // ---------- Investimentos ----------
   const cdb = await db.asset.create({
-    data: { userId, nome: "CDB 110% CDI", classe: "Renda Fixa", instituicao: "Inter", cor: "#0d6efd" },
+    data: { userId, contaFinanceiraId, nome: "CDB 110% CDI", classe: "Renda Fixa", instituicao: "Inter", cor: "#0d6efd" },
   });
   const selic = await db.asset.create({
-    data: { userId, nome: "Tesouro Selic 2029", classe: "Tesouro", instituicao: "Tesouro Direto", cor: "#4EC9C0" },
+    data: { userId, contaFinanceiraId, nome: "Tesouro Selic 2029", classe: "Tesouro", instituicao: "Tesouro Direto", cor: "#4EC9C0" },
   });
   const fii = await db.asset.create({
-    data: { userId, nome: "HGLG11", classe: "FIIs", instituicao: "XP Investimentos", cor: "#6B96D6" },
+    data: { userId, contaFinanceiraId, nome: "HGLG11", classe: "FIIs", instituicao: "XP Investimentos", cor: "#6B96D6" },
   });
   const btc = await db.asset.create({
-    data: { userId, nome: "Bitcoin", classe: "Cripto", instituicao: "Binance", cor: "#F5B14C" },
+    data: { userId, contaFinanceiraId, nome: "Bitcoin", classe: "Cripto", instituicao: "Binance", cor: "#F5B14C" },
   });
 
   // aportes mensais (fev→jul) + atualização de valor no fim de cada mês
-  const movimentos: { userId: string; assetId: string; tipo: string; valor: number; data: Date }[] = [];
+  const movimentos: {
+    userId: string;
+    contaFinanceiraId: string;
+    assetId: string;
+    tipo: string;
+    valor: number;
+    data: Date;
+  }[] = [];
   const plano = [
     { asset: cdb, aporte: 500, curva: [505, 1022, 1551, 2094, 2652, 3228] },
     { asset: selic, aporte: 300, curva: [302, 610, 923, 1243, 1570, 1905] },
@@ -251,6 +271,7 @@ async function main() {
       const mes = 2 + i; // fev..jul
       movimentos.push({
         userId,
+        contaFinanceiraId,
         assetId: asset.id,
         tipo: "aporte",
         valor: r(aporte),
@@ -260,6 +281,7 @@ async function main() {
       const diaAtt = mes === 7 ? 15 : 28;
       movimentos.push({
         userId,
+        contaFinanceiraId,
         assetId: asset.id,
         tipo: "atualizacao",
         valor: r(curva[i]),

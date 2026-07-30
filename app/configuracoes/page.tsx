@@ -4,12 +4,17 @@ import { SettingsForm, type SettingField } from "@/components/shell/settings-for
 import { ProfileInfoForm } from "@/components/shell/profile-info-form";
 import { AvatarUpload } from "@/components/shell/avatar-upload";
 import { ThemeSelect } from "@/components/shell/theme-select";
+import { StravaWidget } from "@/components/treinos/strava-widget";
+import { StravaIcon } from "@/components/treinos/strava-icon";
+import { StravaCallbackToast } from "@/components/treinos/strava-callback-toast";
+import { GoogleCalendarWidget } from "@/components/configuracoes/google-calendar-widget";
 import { Button } from "@/components/ui/button";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { signOut } from "@/app/actions/auth";
 import { mediumDate } from "@/lib/dates";
 import { initials } from "@/lib/utils";
+import { stravaConectado, stravaConfigurado } from "@/lib/strava";
 
 export const dynamic = "force-dynamic";
 
@@ -57,11 +62,21 @@ const metas: SettingField[] = [
 
 export default async function Page() {
   const user = await getCurrentUser();
-  const rows = await db.setting.findMany({ where: { userId: user.id } });
+  const [rows, conectado] = await Promise.all([
+    db.setting.findMany({ where: { userId: user.id } }),
+    stravaConectado(user.id),
+  ]);
   const values = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  const configurado = stravaConfigurado();
+  // A conexão passa pela rota /api/strava/connect, que gera o state CSRF
+  // aleatório e grava o cookie antes de redirecionar para o Strava.
+  const authorizeUrl = configurado
+    ? "/api/strava/connect?next=" + encodeURIComponent("/configuracoes")
+    : null;
 
   return (
     <div className="stagger flex flex-col gap-6">
+      <StravaCallbackToast />
       <Card className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-4">
           <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full bg-mint-soft text-[16px] font-medium text-mint">
@@ -120,6 +135,36 @@ export default async function Page() {
               <p className="text-[12px] text-steel">Escolha o tema visual do app.</p>
             </div>
             <ThemeSelect />
+          </div>
+        </Card>
+
+        <Card className="col-span-12">
+          <CardLabel>Integrações</CardLabel>
+          <p className="mt-3 text-[13px] text-mist">
+            Conecte contas externas para importar dados automaticamente.
+          </p>
+          <div className="mt-5 flex flex-col gap-3">
+            <div className="flex items-center justify-between rounded-[14px] border border-stroke bg-surface-2 px-4 py-3.5">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#fc4c02]/12 text-[#fc4c02]">
+                  <StravaIcon className="h-[18px] w-[18px]" />
+                </div>
+                <div>
+                  <p className="text-[13.5px] text-ice">Strava</p>
+                  <p className="text-[12px] text-steel">
+                    {conectado
+                      ? "Conta conectada — importe corridas pelo link em Treinos."
+                      : "Conecte para importar suas corridas automaticamente."}
+                  </p>
+                </div>
+              </div>
+              <StravaWidget
+                configurado={configurado}
+                conectado={conectado}
+                authorizeUrl={authorizeUrl}
+              />
+            </div>
+            <GoogleCalendarWidget />
           </div>
         </Card>
 

@@ -133,7 +133,10 @@ export function Sidebar({
           href="/"
           className="inline-flex items-center transition-opacity hover:opacity-80"
         >
-          <LcLogo className="h-7 shrink-0" />
+          <LcLogo
+            className={cn("shrink-0", collapsed ? "h-[15px]" : "h-[18px]")}
+            compact={collapsed}
+          />
         </Link>
       </div>
 

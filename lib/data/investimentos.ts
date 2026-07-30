@@ -1,7 +1,7 @@
 import { cache } from "react";
 import {
-  unstable_cacheLife as cacheLife,
-  unstable_cacheTag as cacheTag,
+  cacheLife,
+  cacheTag,
 } from "next/cache";
 import { eachMonthOfInterval, getDaysInMonth, subMonths, subYears } from "date-fns";
 import { db } from "@/lib/db";
@@ -16,21 +16,21 @@ import {
   toSP,
 } from "@/lib/dates";
 
-// Padrão de cache: a função exportada mantém a assinatura original (userId,
-// ref?) e delega para uma interna "use cache" com chaves ESTÁVEIS (userId +
+// Padrão de cache: a função exportada mantém a assinatura original (contaFinanceiraId,
+// ref?) e delega para uma interna "use cache" com chaves ESTÁVEIS (contaFinanceiraId +
 // dayKey) — nunca um Date de request. Movimentos são gravados às 12:00 SP,
 // então o corte diário usa o FIM do dia.
 
 /** Carga única de ativos+movimentos, deduplicada por request via React cache. */
-const carregarCarteira = cache(async (userId: string) => carteiraCacheada(userId));
+const carregarCarteira = cache(async (contaFinanceiraId: string) => carteiraCacheada(contaFinanceiraId));
 
 // interna cacheada entre requests; o cache() acima dedupe dentro da request
-async function carteiraCacheada(userId: string) {
+async function carteiraCacheada(contaFinanceiraId: string) {
   "use cache";
-  cacheTag(tagUsuario(userId, "investimentos"));
+  cacheTag(tagUsuario(contaFinanceiraId, "investimentos"));
   cacheLife("days");
   return db.asset.findMany({
-    where: { userId },
+    where: { contaFinanceiraId },
     include: { movements: { orderBy: { data: "asc" } } },
     orderBy: { criadoEm: "asc" },
   });
@@ -102,23 +102,23 @@ export type AtivoResumo = {
 };
 
 export async function ativosResumidos(
-  userId: string,
+  contaFinanceiraId: string,
   ref: Date = new Date()
 ): Promise<AtivoResumo[]> {
-  return ativosResumidosDoDia(userId, dayKeySP(ref));
+  return ativosResumidosDoDia(contaFinanceiraId, dayKeySP(ref));
 }
 
 async function ativosResumidosDoDia(
-  userId: string,
+  contaFinanceiraId: string,
   dia: string
 ): Promise<AtivoResumo[]> {
   "use cache";
-  cacheTag(tagUsuario(userId, "investimentos"));
+  cacheTag(tagUsuario(contaFinanceiraId, "investimentos"));
   cacheLife("days");
 
   // fim do dia: inclui os movimentos datados de hoje (gravados às 12:00 SP)
   const ref = spEndOfDay(refDoDiaSP(dia));
-  const ativos = await carregarCarteira(userId);
+  const ativos = await carregarCarteira(contaFinanceiraId);
 
   const meses = eachMonthOfInterval({
     start: spStartOfMonth(subMonths(toSP(ref), 5)),
@@ -171,24 +171,24 @@ export type PontoPatrimonio = {
 
 /** Evolução do patrimônio total mês a mês, com linhas de valor, aportado e dividendos. */
 export async function evolucaoPatrimonio(
-  userId: string,
+  contaFinanceiraId: string,
   meses = 6,
   ref: Date = new Date()
 ): Promise<PontoPatrimonio[]> {
-  return evolucaoPatrimonioDoDia(userId, meses, dayKeySP(ref));
+  return evolucaoPatrimonioDoDia(contaFinanceiraId, meses, dayKeySP(ref));
 }
 
 async function evolucaoPatrimonioDoDia(
-  userId: string,
+  contaFinanceiraId: string,
   meses: number,
   dia: string
 ): Promise<PontoPatrimonio[]> {
   "use cache";
-  cacheTag(tagUsuario(userId, "investimentos"));
+  cacheTag(tagUsuario(contaFinanceiraId, "investimentos"));
   cacheLife("days");
 
   const ref = refDoDiaSP(dia);
-  const ativos = await carregarCarteira(userId);
+  const ativos = await carregarCarteira(contaFinanceiraId);
 
   const intervalo = eachMonthOfInterval({
     start: spStartOfMonth(subMonths(toSP(ref), meses - 1)),
@@ -254,10 +254,10 @@ export type GrupoInstituicao = {
 
 /** Agrupa os ativos por instituição (Inter, XP, etc.) para a visão por corretora. */
 export async function porInstituicao(
-  userId: string,
+  contaFinanceiraId: string,
   ref: Date = new Date()
 ): Promise<GrupoInstituicao[]> {
-  const ativos = await ativosResumidos(userId, ref);
+  const ativos = await ativosResumidos(contaFinanceiraId, ref);
   const grupos = new Map<string, AtivoResumo[]>();
   for (const a of ativos) {
     grupos.set(a.instituicao, [...(grupos.get(a.instituicao) ?? []), a]);
@@ -282,25 +282,25 @@ export type AporteDevido = {
 
 /** Ativos com diaAporte configurado que cai nos próximos N dias (lembrete de aporte). */
 export async function aportesDevidos(
-  userId: string,
+  contaFinanceiraId: string,
   dias = 7,
   ref: Date = new Date()
 ): Promise<AporteDevido[]> {
-  return aportesDevidosDoDia(userId, dias, dayKeySP(ref));
+  return aportesDevidosDoDia(contaFinanceiraId, dias, dayKeySP(ref));
 }
 
 async function aportesDevidosDoDia(
-  userId: string,
+  contaFinanceiraId: string,
   dias: number,
   dia: string
 ): Promise<AporteDevido[]> {
   "use cache";
-  cacheTag(tagUsuario(userId, "investimentos"));
+  cacheTag(tagUsuario(contaFinanceiraId, "investimentos"));
   cacheLife("days");
 
   const hoje = toSP(refDoDiaSP(dia));
   const diaHoje = hoje.getDate();
-  const ativos = (await carregarCarteira(userId))
+  const ativos = (await carregarCarteira(contaFinanceiraId))
     .filter((a) => a.diaAporte !== null)
     .sort((a, b) => a.diaAporte! - b.diaAporte!);
 
@@ -333,23 +333,23 @@ export type ResumoCarteira = {
 };
 
 export async function resumoCarteira(
-  userId: string,
+  contaFinanceiraId: string,
   ref: Date = new Date()
 ): Promise<ResumoCarteira> {
-  return resumoCarteiraDoDia(userId, dayKeySP(ref));
+  return resumoCarteiraDoDia(contaFinanceiraId, dayKeySP(ref));
 }
 
 async function resumoCarteiraDoDia(
-  userId: string,
+  contaFinanceiraId: string,
   dia: string
 ): Promise<ResumoCarteira> {
   "use cache";
-  cacheTag(tagUsuario(userId, "investimentos"));
+  cacheTag(tagUsuario(contaFinanceiraId, "investimentos"));
   cacheLife("days");
 
   // mesmo corte fim-do-dia dos ativos para manter os números consistentes
   const ref = spEndOfDay(refDoDiaSP(dia));
-  const ativos = await ativosResumidosDoDia(userId, dia);
+  const ativos = await ativosResumidosDoDia(contaFinanceiraId, dia);
   const patrimonio = ativos.reduce((s, a) => s + a.valorAtual, 0);
   const aportado = ativos.reduce((s, a) => s + a.aportado, 0);
   const dividendos = ativos.reduce((s, a) => s + a.dividendos, 0);

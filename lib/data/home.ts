@@ -1,6 +1,6 @@
 import {
-  unstable_cacheLife as cacheLife,
-  unstable_cacheTag as cacheTag,
+  cacheLife,
+  cacheTag,
 } from "next/cache";
 import { addDays, subDays } from "date-fns";
 import { db } from "@/lib/db";
@@ -315,13 +315,20 @@ async function mediaKcal7dDoDia(userId: string, dia: string): Promise<number> {
 export type StreakData = {
   streak: number;
   recordeAnterior: number;
+  /** já bateu o mínimo LC hoje (dia ainda em aberto) */
+  cumpriuHoje: boolean;
   /** últimas 8 semanas p/ mini-heatmap (56 células, domingo→sábado) */
   heatmap: { key: string; value: number; label?: string }[];
 };
 
 /**
- * Streak: dias consecutivos cumprindo o mínimo
- * (≥1 treino registrado OU diário de dieta preenchido no dia).
+ * Streak (foguinho): dias de atividade, com duas regras-chave —
+ *  1. PERMANÊNCIA: qualquer ação no dia (treino, dieta, check-in, estudo)
+ *     grava um StreakDia que NÃO some ao desfazer a ação. Marcou e depois
+ *     desmarcou o check-in? O dia continua conquistado.
+ *  2. TOLERÂNCIA: o foguinho só cai após 2 dias consecutivos SEM nenhuma
+ *     atividade. Um único dia vazio no meio é perdoado.
+ * Fonte de verdade: tabela StreakDia (ver lib/streak.ts::marcarDiaAtivo).
  */
 export async function streakLC(
   userId: string,
@@ -332,57 +339,58 @@ export async function streakLC(
 
 async function streakDoDia(userId: string, dia: string): Promise<StreakData> {
   "use cache";
-  cacheTag(tagUsuario(userId, "treinos"), tagUsuario(userId, "dieta"));
+  cacheTag(tagUsuario(userId, "streak"));
   cacheLife("days");
 
   const ref = refDoDiaSP(dia);
-  const inicio = subDays(spStartOfDay(ref), 180);
-  const [sessoes, corridas, diarios] = await Promise.all([
-    db.workoutSession.findMany({
-      where: { userId, data: { gte: inicio } },
-      select: { data: true },
-    }),
-    db.run.findMany({
-      where: { userId, data: { gte: inicio } },
-      select: { data: true },
-    }),
-    db.dietDayLog.findMany({
-      where: { userId, data: { gte: inicio } },
-      select: { data: true, refeicoesCumpridas: true },
-    }),
-  ]);
+  const inicio = subDays(spStartOfDay(ref), 400);
 
-  const diasCumpridos = new Set<string>();
-  for (const s of sessoes) diasCumpridos.add(dayKeySP(s.data));
-  for (const r of corridas) diasCumpridos.add(dayKeySP(r.data));
-  for (const d of diarios) {
-    if (parseJSON<string[]>(d.refeicoesCumpridas, []).length > 0)
-      diasCumpridos.add(dayKeySP(d.data));
-  }
+  // Fonte de verdade: StreakDia permanente (uma ação num dia = dia batido,
+  // e desfazer a ação NÃO remove). Ver lib/streak.ts.
+  const ativos = await db.streakDia.findMany({
+    where: { userId, dia: { gte: dayKeySP(inicio) } },
+    select: { dia: true },
+  });
+  const diasCumpridos = new Set<string>(ativos.map((a) => a.dia));
 
-  // streak atual: conta de hoje para trás (hoje ainda em aberto não quebra)
-  let streak = 0;
-  let cursor = spStartOfDay(ref);
-  const hojeCumpriu = diasCumpridos.has(dayKeySP(cursor));
-  if (!hojeCumpriu) cursor = subDays(cursor, 1);
-  while (diasCumpridos.has(dayKeySP(cursor))) {
-    streak++;
-    cursor = subDays(cursor, 1);
-  }
+  // Tolerância: o streak só QUEBRA após 2 dias consecutivos SEM atividade.
+  // Regra: andando de trás pra frente, contamos os DIAS ATIVOS; um buraco de
+  // 1 dia é perdoado, mas 2 vazios seguidos encerram. Conta só os dias ativos
+  // (o buraco perdoado não incrementa o número — ele apenas não quebra).
+  const cumpriu = (d: Date) => diasCumpridos.has(dayKeySP(d));
+  const hojeCumpriu = cumpriu(spStartOfDay(ref));
 
-  // recorde anterior: maior sequência que termina antes do início da atual
-  let recordeAnterior = 0;
-  let atual = 0;
-  const fimDaAtual = subDays(spStartOfDay(ref), streak + (hojeCumpriu ? 0 : 1));
-  for (let d = 180; d >= 0; d--) {
-    const dia2 = subDays(spStartOfDay(ref), d);
-    if (dia2 >= fimDaAtual) break;
-    if (diasCumpridos.has(dayKeySP(dia2))) {
-      atual++;
-      recordeAnterior = Math.max(recordeAnterior, atual);
-    } else {
-      atual = 0;
+  /** Conta o streak que termina em `fim`, andando pra trás. */
+  const contarStreak = (fim: Date): number => {
+    let total = 0;
+    let vaziosSeguidos = 0;
+    let cursor = fim;
+    // limite de segurança (2 anos) p/ não varrer infinito
+    for (let i = 0; i < 800; i++) {
+      if (cumpriu(cursor)) {
+        total++;
+        vaziosSeguidos = 0;
+      } else {
+        vaziosSeguidos++;
+        if (vaziosSeguidos >= 2) break; // 2 vazios consecutivos → quebrou
+      }
+      cursor = subDays(cursor, 1);
     }
+    return total;
+  };
+
+  // "Hoje em aberto" não penaliza: se hoje ainda está vazio, começamos de
+  // ontem — MAS o dia de hoje vazio ainda conta como 1 dos 2 vazios possíveis.
+  // Por isso a contagem começa de hoje sempre; o loop acima já trata: hoje
+  // vazio = 1 vazio (não quebra), ontem vazio = 2 vazios (quebra). Assim
+  // "ontem ativo, hoje vazio" = streak 1, e "hoje e ontem vazios" = 0.
+  const streak = contarStreak(spStartOfDay(ref));
+
+  // recorde: maior streak que termina em cada dia da série (varredura simples)
+  let recordeAnterior = 0;
+  for (let d = 380; d >= 0; d--) {
+    const fim = subDays(spStartOfDay(ref), d);
+    recordeAnterior = Math.max(recordeAnterior, contarStreak(fim));
   }
 
   // heatmap das últimas 8 semanas (domingo → sábado)
@@ -393,14 +401,14 @@ async function streakDoDia(userId: string, dia: string): Promise<StreakData> {
     const diaHeat = addDays(inicioHeat, i);
     if (diaHeat > fimSemana) break;
     const key = dayKeySP(diaHeat);
-    const cumpriu = diasCumpridos.has(key);
+    const feito = diasCumpridos.has(key);
     const futuro = diaHeat > ref;
     heatmap.push({
       key,
-      value: futuro ? 0 : cumpriu ? 1 : 0,
-      label: `${key.slice(8)}/${key.slice(5, 7)}${cumpriu ? " · cumprido" : ""}`,
+      value: futuro ? 0 : feito ? 1 : 0,
+      label: `${key.slice(8)}/${key.slice(5, 7)}${feito ? " · cumprido" : ""}`,
     });
   }
 
-  return { streak, recordeAnterior, heatmap };
+  return { streak, recordeAnterior, cumpriuHoje: hojeCumpriu, heatmap };
 }

@@ -20,19 +20,22 @@ import {
 import { dayKeySP, mediumDate, monthName, nowSP, toSP } from "@/lib/dates";
 import { formatBRL } from "@/lib/money";
 import { getCurrentUser } from "@/lib/auth";
+import { getContaAtiva } from "@/lib/conta-ativa";
+import { ContaFinanceiraSelector } from "@/components/shell/conta-financeira-selector";
 
 export const dynamic = "force-dynamic";
 
 export default async function Page() {
   const user = await getCurrentUser();
+  const { id: contaFinanceiraId, contas } = await getContaAtiva(user.id);
   const hoje = nowSP();
   const [resumo, ativos, devidos, seis, doze, tudo] = await Promise.all([
-    resumoCarteira(user.id, hoje),
-    ativosResumidos(user.id, hoje),
-    aportesDevidos(user.id, 7, hoje),
-    evolucaoPatrimonio(user.id, 6, hoje),
-    evolucaoPatrimonio(user.id, 12, hoje),
-    evolucaoPatrimonio(user.id, 24, hoje),
+    resumoCarteira(contaFinanceiraId, hoje),
+    ativosResumidos(contaFinanceiraId, hoje),
+    aportesDevidos(contaFinanceiraId, 7, hoje),
+    evolucaoPatrimonio(contaFinanceiraId, 6, hoje),
+    evolucaoPatrimonio(contaFinanceiraId, 12, hoje),
+    evolucaoPatrimonio(contaFinanceiraId, 24, hoje),
   ]);
 
   const view: AtivoView[] = ativos.map((a) => ({
@@ -63,6 +66,10 @@ export default async function Page() {
 
   return (
     <div className="stagger grid grid-cols-12 gap-6">
+      <div className="col-span-12 flex justify-end">
+        <ContaFinanceiraSelector contas={contas} ativaId={contaFinanceiraId} />
+      </div>
+
       <Card className="col-span-12 lg:col-span-5">
         <CardLabel>Patrimônio total</CardLabel>
         <div className="mt-3">

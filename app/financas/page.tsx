@@ -662,11 +662,60 @@ async function Cartoes({ contaFinanceiraId, hoje }: { contaFinanceiraId: string;
 
 async function MetasPoupanca({ contaFinanceiraId }: { contaFinanceiraId: string }) {
   const { obterMetasPoupanca } = await import("@/lib/data/metas-poupanca");
-  const metas = await obterMetasPoupanca(contaFinanceiraId);
+
+  const [metas, cartoes, contas, ativos, categorias] = await Promise.all([
+    obterMetasPoupanca(contaFinanceiraId),
+    db.card.findMany({
+      where: { contaFinanceiraId },
+      orderBy: { nome: "asc" }
+    }),
+    db.account.findMany({
+      where: { contaFinanceiraId },
+      orderBy: { nome: "asc" }
+    }),
+    db.asset.findMany({
+      where: { contaFinanceiraId },
+      orderBy: { nome: "asc" },
+      include: {
+        movements: {
+          orderBy: { data: 'desc' },
+          take: 1,
+        }
+      }
+    }),
+    db.category.findMany({
+      where: { contaFinanceiraId, tipo: 'receita' },
+      orderBy: { nome: "asc" }
+    }),
+  ]);
 
   return (
     <Card>
-      <MetasPoupancaClient metas={metas} contaFinanceiraId={contaFinanceiraId} />
+      <MetasPoupancaClient
+        metas={metas}
+        contaFinanceiraId={contaFinanceiraId}
+        cartoes={cartoes.map(c => ({
+          id: c.id,
+          nome: c.nome,
+          saldo: c.limite || 0,
+          bandeira: c.bandeira,
+        }))}
+        contas={contas.map(c => ({
+          id: c.id,
+          nome: c.nome,
+          saldo: c.saldoInicial,
+          tipo: c.tipo,
+        }))}
+        ativos={ativos.map(a => ({
+          id: a.id,
+          nome: a.nome,
+          saldo: a.movements.length > 0 ? a.movements[0].valor : 0,
+        }))}
+        categorias={categorias.map(c => ({
+          id: c.id,
+          nome: c.nome,
+        }))}
+      />
     </Card>
   );
 }

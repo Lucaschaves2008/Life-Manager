@@ -36,16 +36,29 @@ export function AreaEvolution({
   formatValue: (v: number) => string;
   nome?: string;
 }) {
-  const gradId = `grad-${cor.replace(/[^a-zA-Z0-9]/g, "")}`;
+  const idSuffix = cor.replace(/[^a-zA-Z0-9]/g, "");
+  const gradId = `grad-${idSuffix}`;
+  const hachId = `hach-${idSuffix}`;
   return (
     <div style={{ height }} className="w-full">
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
           <defs>
             <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={cor} stopOpacity={0.25} />
+              <stop offset="0%" stopColor={cor} stopOpacity={0.22} />
               <stop offset="100%" stopColor={cor} stopOpacity={0} />
             </linearGradient>
+            {/* hachura diagonal — assinatura do gráfico (referência do DS) */}
+            <pattern
+              id={hachId}
+              width="6"
+              height="6"
+              patternUnits="userSpaceOnUse"
+              patternTransform="rotate(45)"
+            >
+              <rect width="6" height="6" fill={`url(#${gradId})`} />
+              <line x1="0" y1="0" x2="0" y2="6" stroke={cor} strokeWidth={0.6} strokeOpacity={0.35} />
+            </pattern>
           </defs>
           <CartesianGrid horizontal vertical={false} stroke={chart.grid} />
           <XAxis dataKey="label" {...axisProps} minTickGap={24} />
@@ -75,7 +88,7 @@ export function AreaEvolution({
             dataKey="valor"
             stroke={cor}
             strokeWidth={2}
-            fill={`url(#${gradId})`}
+            fill={`url(#${hachId})`}
             dot={(props) => {
               const { key, cx, cy, payload } = props as {
                 key?: string;

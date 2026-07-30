@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Maximize2, Minimize2, Pause, Play, Settings2, Square, X } from "lucide-react";
@@ -30,7 +30,10 @@ function segDaPausa(
 
 function calcular(s: SessaoView, agoraMs: number): Tempos {
   const ini = Date.parse(s.startedAt);
-  const bruto = Math.max(0, Math.round((agoraMs - ini) / 1000));
+  // floor (não round): um cronômetro conta segundos COMPLETOS decorridos —
+  // "00" de 0 a 0.999s, "01" de 1 a 1.999s. Com round, o display saltava pra
+  // "1" já aos 0.5s e a defasagem de fase entre clique e tick fazia pular o 1.
+  const bruto = Math.max(0, Math.floor((agoraMs - ini) / 1000));
   const pausado = s.pausas.reduce((t, p) => t + segDaPausa(p, agoraMs), 0);
   return { bruto, pausado, liquido: Math.max(0, bruto - pausado) };
 }
@@ -53,25 +56,67 @@ export function Cronometro({
 }) {
   const router = useRouter();
   const [local, setLocal] = useState<SessaoView | null>(sessaoInicial);
-  const [pending, startTransition] = useTransition();
   const [agora, setAgora] = useState(() => Date.now());
   const [cheio, setCheio] = useState(false);
   const [subject, setSubject] = useState("");
   const [metaMin, setMetaMin] = useState<number | null>(null);
   const [categoriaId, setCategoriaId] = useState<string | null>(null);
   const [gerenciar, setGerenciar] = useState(false);
+  // conta ações otimistas em voo (pausa/retoma/iniciar/finalizar). A UI nunca
+  // espera a server action ou o router.refresh() pra responder — o clique já
+  // atualiza `local` no mesmo frame. O servidor (em sa-east-1) pode levar
+  // segundos para responder a partir do dev local; se a gente bloqueasse os
+  // botões (disabled={pending}) ou reesperasse `sessaoInicial` a cada ação,
+  // essa latência vazaria pra UI como trava. `emVoo` só evita que o
+  // refresh de uma ação ANTERIOR (ainda em voo) sobrescreva um clique mais
+  // recente do usuário com dados desatualizados.
+  const emVoo = useRef(0);
+  // resolve pro id real assim que iniciarSessao() responde — permite que
+  // pausa/retoma/finaliza disparados ANTES desse id chegar (a sessão ainda
+  // tem id "pending" no otimista) encadeiem a ação no servidor sem se perder
+  const idRealPromise = useRef<Promise<string> | null>(null);
 
-  // adota o estado do servidor quando não há ação otimista em voo
+  // adota o estado do servidor só quando não há ação otimista mais recente
+  // ainda não confirmada — senão um refresh atrasado reverte o clique atual
   useEffect(() => {
-    if (!pending) setLocal(sessaoInicial);
-  }, [pending, sessaoInicial]);
+    if (emVoo.current !== 0) return;
+    setLocal((prev) => {
+      if (!sessaoInicial) return sessaoInicial;
+      // mesma sessão: preserva o `startedAt` do clique (instante em que o
+      // usuário apertou) em vez do gravado no servidor, que fica 1-3s depois
+      // por causa da latência e faria o cronômetro pular/recuar ao chegar
+      if (prev && prev.id === sessaoInicial.id) {
+        const iniLocal = Date.parse(prev.startedAt);
+        const iniServidor = Date.parse(sessaoInicial.startedAt);
+        return iniLocal < iniServidor
+          ? { ...sessaoInicial, startedAt: prev.startedAt }
+          : sessaoInicial;
+      }
+      return sessaoInicial;
+    });
+  }, [sessaoInicial]);
 
-  // tique de 1s enquanto houver sessão viva
+  // tique alinhado à BORDA do segundo do startedAt: sem isso, um setInterval
+  // com fase aleatória atualizaria `agora` no meio do segundo e a virada do
+  // display atrasaria até ~1s. Aqui o 1º timeout leva exatamente ao próximo
+  // múltiplo de 1s desde o início; daí em diante o interval mantém a fase.
+  // Depende só de startedAt (string estável), não de `local` (muda a cada
+  // tick/pausa e recriaria o timer, reintroduzindo defasagem).
+  const inicioMs = local ? Date.parse(local.startedAt) : null;
   useEffect(() => {
-    if (!local) return;
-    const t = setInterval(() => setAgora(Date.now()), 250);
-    return () => clearInterval(t);
-  }, [local]);
+    if (inicioMs == null) return;
+    let intervalo: ReturnType<typeof setInterval>;
+    const desdeInicio = Date.now() - inicioMs;
+    const ateProximoSegundo = 1000 - (((desdeInicio % 1000) + 1000) % 1000);
+    const timeout = setTimeout(() => {
+      setAgora(Date.now());
+      intervalo = setInterval(() => setAgora(Date.now()), 1000);
+    }, ateProximoSegundo);
+    return () => {
+      clearTimeout(timeout);
+      if (intervalo) clearInterval(intervalo);
+    };
+  }, [inicioMs]);
 
   const tempos = useMemo(
     () => (local ? calcular(local, agora) : null),
@@ -79,13 +124,40 @@ export function Cronometro({
   );
   const pausada = local?.pausadaAgora ?? false;
 
+  // dispara a mutação em background: nunca bloqueia o próximo clique do
+  // usuário (ex.: finalizar e já começar outra) esperando o servidor lento
+  const emBackground = (fn: () => Promise<void>) => {
+    emVoo.current += 1;
+    (async () => {
+      try {
+        await fn();
+      } finally {
+        emVoo.current -= 1;
+        router.refresh();
+      }
+    })();
+  };
+
+  // resolve o id real de uma sessão: se já veio do servidor usa direto,
+  // senão encadeia após iniciarSessao() responder (evita perder pausa/
+  // retomada/finalização disparadas nos primeiros instantes da sessão)
+  const resolveId = (idAlvo: string): Promise<string> =>
+    idAlvo === "pending" && idRealPromise.current
+      ? idRealPromise.current
+      : Promise.resolve(idAlvo);
+
   const comeca = () => {
     const cat = categoriaId ? categorias.find((c) => c.id === categoriaId) : null;
     const nome = subject.trim() || cat?.nome || "Estudo";
+    // instante REAL do clique (não o `agora` do state, que pode estar até 1s
+    // atrás): sincroniza o relógio pro mesmo ponto de partida, senão o
+    // cronômetro nasceria já mostrando 1-2s
+    const inicioMs = Date.now();
+    setAgora(inicioMs);
     const otimista: SessaoView = {
       id: "pending",
       subject: nome,
-      startedAt: new Date(agora).toISOString(),
+      startedAt: new Date(inicioMs).toISOString(),
       endedAt: null,
       emAndamento: true,
       pausadaAgora: false,
@@ -99,20 +171,22 @@ export function Cronometro({
       pausas: [],
     };
     setLocal(otimista);
-    startTransition(async () => {
-      const id = await iniciarSessao({
-        subject: subject.trim() || cat?.nome || "",
-        targetMinutes: metaMin,
-        categoryId: categoriaId,
-      });
-      setLocal((prev) => (prev ? { ...prev, id } : prev));
-      router.refresh();
+    const promessaId = iniciarSessao({
+      subject: subject.trim() || cat?.nome || "",
+      targetMinutes: metaMin,
+      categoryId: categoriaId,
+    });
+    idRealPromise.current = promessaId;
+    emBackground(async () => {
+      const id = await promessaId;
+      setLocal((prev) => (prev && prev.id === "pending" ? { ...prev, id } : prev));
     });
   };
 
   const pausa = () => {
-    if (!local || local.id === "pending") return;
+    if (!local || pausada) return;
     const nowISO = new Date().toISOString();
+    const idAlvo = local.id;
     setLocal((prev) =>
       prev
         ? {
@@ -132,16 +206,13 @@ export function Cronometro({
           }
         : prev
     );
-    const id = local.id;
-    startTransition(async () => {
-      await pausarSessao(id);
-      router.refresh();
-    });
+    emBackground(async () => pausarSessao(await resolveId(idAlvo)));
   };
 
   const retoma = () => {
-    if (!local || local.id === "pending") return;
+    if (!local || !pausada) return;
     const nowISO = new Date().toISOString();
+    const idAlvo = local.id;
     setLocal((prev) =>
       prev
         ? {
@@ -153,22 +224,15 @@ export function Cronometro({
           }
         : prev
     );
-    const id = local.id;
-    startTransition(async () => {
-      await retomarSessao(id);
-      router.refresh();
-    });
+    emBackground(async () => retomarSessao(await resolveId(idAlvo)));
   };
 
   const finaliza = () => {
-    if (!local || local.id === "pending") return;
-    const id = local.id;
+    if (!local) return;
+    const idAlvo = local.id;
     setLocal(null);
     setCheio(false);
-    startTransition(async () => {
-      await finalizarSessao(id);
-      router.refresh();
-    });
+    emBackground(async () => finalizarSessao(await resolveId(idAlvo)));
   };
 
   // Esc sai do modo tela cheia
@@ -392,7 +456,6 @@ export function Cronometro({
             <Button
               variant="primary"
               onClick={comeca}
-              disabled={pending}
               className="mt-1 h-11 text-[14px]"
             >
               <Play className="h-4 w-4" strokeWidth={2} fill="currentColor" />

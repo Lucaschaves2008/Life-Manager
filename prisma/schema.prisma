@@ -163,19 +163,22 @@ model MetaPoupanca {
 }
 
 model MetaPoupancaContribuicao {
-  id              String        @id @default(cuid())
+  id              String         @id @default(cuid())
   userId          String
   metaPoupancaId  String
   valor           Int
-  fonte           String        // "receita" | "investimento" | "cartao" | "conta"
-  fonteId         String?       // id do investimento/cartao/conta, quando aplicável
+  fonte           String         // "receita" | "investimento" | "cartao" | "conta" | "manual"
+  fonteId         String?        // id do investimento/cartao/conta/categoria, quando aplicável
   descricao       String?
-  criadoEm        DateTime      @default(now())
-  metaPoupanca    MetaPoupanca  @relation(fields: [metaPoupancaId], references: [id], onDelete: Cascade)
+  transactionId   String?        // transaction criada quando fonte="cartao" ou "conta"
+  assetMovementId String?        // assetMovement criado quando fonte="investimento"
+  criadoEm        DateTime       @default(now())
+  metaPoupanca    MetaPoupanca   @relation(fields: [metaPoupancaId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([metaPoupancaId])
   @@index([criadoEm])
+  @@index([fonte, fonteId])
 }
 
 model Asset {

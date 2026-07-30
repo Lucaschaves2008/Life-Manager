@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { tagUsuario } from "@/lib/cache-tags";
 import { spEndOfDay, spStartOfDay } from "@/lib/dates";
+import { marcarDiaAtivo } from "@/lib/streak";
 import { parseJSON } from "@/lib/utils";
 import type { EscolhaLog, ExtraLog } from "@/lib/data/dieta";
 
@@ -55,6 +56,7 @@ export async function toggleRefeicaoCumprida(dia: string, mealId: string) {
       return;
     }
     proximas = [...atuais, mealId];
+    await marcarDiaAtivo(userId, dia); // marcar refeição conquista o dia
   }
 
   await db.dietDayLog.update({

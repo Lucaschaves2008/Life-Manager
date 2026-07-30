@@ -9,6 +9,7 @@ import {
   ChevronUp,
   Copy,
   Dumbbell,
+  Eye,
   Pencil,
   Play,
   Plus,
@@ -30,6 +31,7 @@ import { Card, CardLabel } from "@/components/caverna/card";
 import { DotsMenu } from "@/components/caverna/dots-menu";
 import { EmptyState } from "@/components/caverna/empty-state";
 import { ExecucaoTreino, type ExercicioExec } from "@/components/treinos/execucao";
+import { FichaPlanilha } from "@/components/treinos/ficha-planilha";
 import {
   createExercise,
   createRoutine,
@@ -96,6 +98,7 @@ export function MusculacaoClient({
   const [pending, startSalvar] = useTransition();
 
   const [treinando, setTreinando] = useState<FichaView | null>(null);
+  const [visualizando, setVisualizando] = useState<FichaView | null>(null);
   const [sheetFicha, setSheetFicha] = useState(false);
   const [fichaEditandoId, setFichaEditandoId] = useState<string | null>(null);
   const [formFicha, setFormFicha] = useState<{
@@ -271,15 +274,27 @@ export function MusculacaoClient({
                   {formatDiasSemana(ficha.dias)}
                 </p>
               </div>
-              <div className="flex items-center gap-1">
+              <div className="flex flex-wrap items-center gap-1.5 lg:gap-1">
                 <Button
                   variant="soft"
                   size="sm"
                   onClick={() => setTreinando(ficha)}
                   disabled={ficha.exercicios.length === 0}
+                  className="lg:w-auto"
                 >
                   <Play className="h-3.5 w-3.5" strokeWidth={1.5} />
-                  Treinar
+                  <span className="hidden lg:inline">Treinar</span>
+                  <span className="lg:hidden">Treino</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setVisualizando(ficha)}
+                  className="lg:w-auto"
+                >
+                  <Eye className="h-3.5 w-3.5" strokeWidth={1.5} />
+                  <span className="hidden lg:inline">Ver ficha</span>
+                  <span className="lg:hidden">Ficha</span>
                 </Button>
                 <DotsMenu
                   items={[
@@ -419,6 +434,21 @@ export function MusculacaoClient({
           exercicios={treinando.exercicios}
         />
       )}
+
+      {/* planilha somente-leitura da ficha — mesma exibição usada no card "Treino de hoje" */}
+      <FichaPlanilha
+        ficha={
+          visualizando
+            ? {
+                nome: visualizando.nome,
+                foco: visualizando.foco,
+                semana,
+                exercicios: visualizando.exercicios,
+              }
+            : null
+        }
+        onOpenChange={(v) => !v && setVisualizando(null)}
+      />
 
       <SheetFicha
         aberto={sheetFicha}

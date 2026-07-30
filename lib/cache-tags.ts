@@ -16,7 +16,8 @@ export type ModuloCache =
   | "estudos"
   | "metas"
   | "checklist"
-  | "settings";
+  | "settings"
+  | "streak";
 
 export function tagUsuario(userId: string, modulo: ModuloCache): string {
   return `u:${userId}:${modulo}`;

@@ -11,7 +11,7 @@ import { DotsMenu } from "@/components/caverna/dots-menu";
 import { UsuarioDrawer } from "@/components/admin/usuario-drawer";
 import {
   bloquearUsuario,
-  convidarUsuario,
+  criarUsuario,
   desbloquearUsuario,
   excluirUsuario,
   promoverParaAdmin,
@@ -33,6 +33,9 @@ export function UsuariosClient({ usuarios }: { usuarios: UsuarioView[] }) {
   const [sheetAberto, setSheetAberto] = useState(false);
   const [email, setEmail] = useState("");
   const [nome, setNome] = useState("");
+  const [senhaCustom, setSenhaCustom] = useState("");
+  const [mostrarSenhaCustom, setMostrarSenhaCustom] = useState(false);
+  const [senhaGerada, setSenhaGerada] = useState<{ email: string; senha: string } | null>(null);
   const [selecionado, setSelecionado] = useState<UsuarioView | null>(null);
 
   const usuarioAtual = usuarios.find((u) => u.id === selecionado?.id) ?? null;
@@ -48,19 +51,36 @@ export function UsuariosClient({ usuarios }: { usuarios: UsuarioView[] }) {
     });
   }
 
-  function convidar() {
+  function criar() {
     if (!email.trim()) return;
     startTransition(async () => {
       try {
-        await convidarUsuario(email.trim(), nome.trim() || undefined);
-        toast.success(`Convite enviado para ${email}.`);
-        setSheetAberto(false);
+        const senha = await criarUsuario(
+          email.trim(),
+          nome.trim() || undefined,
+          senhaCustom.trim() || undefined
+        );
+        setSenhaGerada({ email: email.trim(), senha });
+        toast.success(`Usuário ${email} criado.`);
         setEmail("");
         setNome("");
+        setSenhaCustom("");
+        setMostrarSenhaCustom(false);
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "Algo deu errado.");
       }
     });
+  }
+
+  function fecharSheet(aberto: boolean) {
+    setSheetAberto(aberto);
+    if (!aberto) {
+      setSenhaGerada(null);
+      setEmail("");
+      setNome("");
+      setSenhaCustom("");
+      setMostrarSenhaCustom(false);
+    }
   }
 
   return (
@@ -68,7 +88,7 @@ export function UsuariosClient({ usuarios }: { usuarios: UsuarioView[] }) {
       <div className="flex justify-end">
         <Button variant="primary" size="sm" onClick={() => setSheetAberto(true)}>
           <Plus className="h-4 w-4" strokeWidth={2} />
-          Convidar usuário
+          Adicionar usuário
         </Button>
       </div>
 
@@ -145,33 +165,81 @@ export function UsuariosClient({ usuarios }: { usuarios: UsuarioView[] }) {
         </tbody>
       </Table>
 
-      <Sheet open={sheetAberto} onOpenChange={setSheetAberto}>
+      <Sheet open={sheetAberto} onOpenChange={fecharSheet}>
         <SheetContent>
-          <SheetTitle>Convidar usuário</SheetTitle>
-          <div className="mt-6 space-y-4">
-            <div>
-              <Label htmlFor="nome">Nome (opcional)</Label>
-              <Input id="nome" value={nome} onChange={(e) => setNome(e.target.value)} />
+          <SheetTitle>Adicionar usuário</SheetTitle>
+
+          {senhaGerada ? (
+            <div className="mt-6 space-y-4">
+              <div className="rounded-[12px] border border-stroke bg-surface-2 px-3.5 py-3">
+                <p className="text-[12px] text-steel">Usuário criado</p>
+                <p className="mt-1 text-[13.5px] text-ice">{senhaGerada.email}</p>
+                <p className="mt-3 text-[12px] text-steel">Senha (copie e envie manualmente)</p>
+                <p className="mt-1 font-mono text-[15px] text-ice">{senhaGerada.senha}</p>
+              </div>
+              <p className="text-[12px] text-steel">
+                Nenhum email foi enviado. Repasse email e senha diretamente ao usuário.
+              </p>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => setSenhaGerada(null)}
+              >
+                Adicionar outro usuário
+              </Button>
             </div>
-            <div>
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="pessoa@exemplo.com"
-              />
+          ) : (
+            <div className="mt-6 space-y-4">
+              <div>
+                <Label htmlFor="nome">Nome (opcional)</Label>
+                <Input id="nome" value={nome} onChange={(e) => setNome(e.target.value)} />
+              </div>
+              <div>
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="pessoa@exemplo.com"
+                />
+              </div>
+
+              {mostrarSenhaCustom ? (
+                <div>
+                  <Label htmlFor="senha">Senha</Label>
+                  <Input
+                    id="senha"
+                    type="text"
+                    value={senhaCustom}
+                    onChange={(e) => setSenhaCustom(e.target.value)}
+                    placeholder="Defina a senha do usuário"
+                  />
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="text-[12.5px] text-steel underline underline-offset-2 hover:text-ice"
+                  onClick={() => setMostrarSenhaCustom(true)}
+                >
+                  Definir uma senha específica (opcional)
+                </button>
+              )}
+
+              <Button
+                variant="primary"
+                className="w-full"
+                disabled={pending || !email.trim()}
+                onClick={criar}
+              >
+                Criar usuário
+              </Button>
+              <p className="text-[12px] text-steel">
+                Nenhum email é enviado. A senha ficará disponível aqui para você copiar e enviar
+                manualmente (WhatsApp, etc).
+              </p>
             </div>
-            <Button
-              variant="primary"
-              className="w-full"
-              disabled={pending || !email.trim()}
-              onClick={convidar}
-            >
-              Enviar convite
-            </Button>
-          </div>
+          )}
         </SheetContent>
       </Sheet>
 

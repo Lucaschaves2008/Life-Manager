@@ -1,11 +1,12 @@
 "use server";
 
 import { subDays } from "date-fns";
-import { revalidatePath, revalidateTag } from "next/cache";
+import { revalidatePath, revalidateTag } from "@/lib/cache-revalidate";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { tagUsuario } from "@/lib/cache-tags";
 import { parseJSON } from "@/lib/utils";
+import { syncToGoogle, updateOnGoogle, deleteFromGoogle } from "@/lib/google-calendar/sync";
 
 function revalidar(userId: string) {
   revalidateTag(tagUsuario(userId, "agenda"));
@@ -70,7 +71,19 @@ async function validarCalendario(calendarId: string, userId: string) {
 export async function createEvent(input: EventoInput) {
   const { id: userId } = await requireUser();
   await validarCalendario(input.calendarId, userId);
-  await db.event.create({ data: { ...dados(input), userId } });
+  const evento = await db.event.create({
+    data: { ...dados(input), userId },
+    include: { calendar: true },
+  });
+
+  if (evento.calendar.googleId) {
+    try {
+      await syncToGoogle(userId, evento);
+    } catch (error) {
+      console.error("[Google Calendar] Erro ao sincronizar:", error);
+    }
+  }
+
   revalidar(userId);
 }
 
@@ -86,12 +99,28 @@ export async function updateEvent(
   dayKeyOriginal?: string
 ) {
   const { id: userId } = await requireUser();
-  const original = await db.event.findFirst({ where: { id, userId } });
+  const original = await db.event.findFirst({
+    where: { id, userId },
+    include: { calendar: true },
+  });
   if (!original) return;
   await validarCalendario(input.calendarId, userId);
 
   if (modo === "todos" || !original.rrule || !dayKeyOriginal) {
-    await db.event.update({ where: { id, userId }, data: dados(input) });
+    const updated = await db.event.update({
+      where: { id, userId },
+      data: dados(input),
+      include: { calendar: true },
+    });
+
+    if (updated.calendar.googleId) {
+      try {
+        await updateOnGoogle(userId, id, updated);
+      } catch (error) {
+        console.error("[Google Calendar] Erro ao atualizar:", error);
+      }
+    }
+
     revalidar(userId);
     return;
   }
@@ -102,7 +131,19 @@ export async function updateEvent(
       where: { id, userId },
       data: { exdates: JSON.stringify([...exdates, dayKeyOriginal]) },
     });
-    await db.event.create({ data: { ...dados(input), userId, rrule: null } });
+    const novoEvento = await db.event.create({
+      data: { ...dados(input), userId, rrule: null },
+      include: { calendar: true },
+    });
+
+    if (novoEvento.calendar.googleId) {
+      try {
+        await syncToGoogle(userId, novoEvento);
+      } catch (error) {
+        console.error("[Google Calendar] Erro ao sincronizar:", error);
+      }
+    }
+
     revalidar(userId);
     return;
   }
@@ -114,7 +155,19 @@ export async function updateEvent(
     where: { id, userId },
     data: { rrule: JSON.stringify({ ...rrule, until: until.toISOString() }) },
   });
-  await db.event.create({ data: { ...dados(input), userId } });
+  const novoEvento = await db.event.create({
+    data: { ...dados(input), userId },
+    include: { calendar: true },
+  });
+
+  if (novoEvento.calendar.googleId) {
+    try {
+      await syncToGoogle(userId, novoEvento);
+    } catch (error) {
+      console.error("[Google Calendar] Erro ao sincronizar:", error);
+    }
+  }
+
   revalidar(userId);
 }
 
@@ -124,7 +177,10 @@ export async function deleteEvent(
   dayKey?: string
 ) {
   const { id: userId } = await requireUser();
-  const evento = await db.event.findFirst({ where: { id, userId } });
+  const evento = await db.event.findFirst({
+    where: { id, userId },
+    include: { calendar: true },
+  });
   if (!evento) return null;
 
   if (modo === "unica" && evento.rrule && dayKey) {
@@ -149,6 +205,15 @@ export async function deleteEvent(
   }
 
   await db.event.delete({ where: { id, userId } });
+
+  if (evento.calendar.googleId) {
+    try {
+      await deleteFromGoogle(userId, evento.calendarId, id);
+    } catch (error) {
+      console.error("[Google Calendar] Erro ao deletar:", error);
+    }
+  }
+
   revalidar(userId);
   return evento;
 }

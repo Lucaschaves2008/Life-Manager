@@ -4,7 +4,8 @@ import { revalidatePath, revalidateTag } from "next/cache";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { tagUsuario } from "@/lib/cache-tags";
-import { spStartOfDay } from "@/lib/dates";
+import { dayKeySP, spStartOfDay } from "@/lib/dates";
+import { marcarDiaAtivo } from "@/lib/streak";
 import { templateOcorreNoDia } from "@/lib/rotina-helpers";
 
 function revalidar(userId: string) {
@@ -389,6 +390,7 @@ export async function saveSession(input: {
   // auto-check: item de treino do dia vinculado a esta rotina marca sozinho
   await autoCheckPlano(userId, "routineId", input.routineId, sessao.data);
 
+  await marcarDiaAtivo(userId, dayKeySP(sessao.data)); // conquista o dia
   revalidar(userId);
   return sessao.id;
 }
@@ -410,11 +412,21 @@ export type CorridaInput = {
   notas?: string | null;
   runSessionId?: string | null;
   stravaLink?: string | null;
+  stravaActivityId?: string | null;
 };
 
 export async function createRun(input: CorridaInput) {
   const { id: userId } = await requireUser();
   await validarPosseDaSessao(userId, input.runSessionId);
+
+  if (input.stravaActivityId) {
+    const jaExiste = await db.run.findFirst({
+      where: { userId, stravaActivityId: input.stravaActivityId },
+      select: { id: true },
+    });
+    if (jaExiste) throw new Error("Esta corrida do Strava já foi importada.");
+  }
+
   const data = dataSP(input.data);
   await db.run.create({
     data: {
@@ -426,6 +438,7 @@ export async function createRun(input: CorridaInput) {
       notas: input.notas?.trim() || null,
       runSessionId: input.runSessionId ?? null,
       stravaLink: input.stravaLink?.trim() || null,
+      stravaActivityId: input.stravaActivityId ?? null,
       userId,
     },
   });
@@ -433,12 +446,22 @@ export async function createRun(input: CorridaInput) {
   if (input.runSessionId) {
     await autoCheckPlano(userId, "runSessionId", input.runSessionId, data);
   }
+  await marcarDiaAtivo(userId, dayKeySP(data)); // conquista o dia
   revalidar(userId);
 }
 
 export async function updateRun(id: string, input: CorridaInput) {
   const { id: userId } = await requireUser();
   await validarPosseDaSessao(userId, input.runSessionId);
+
+  if (input.stravaActivityId) {
+    const jaExiste = await db.run.findFirst({
+      where: { userId, stravaActivityId: input.stravaActivityId, NOT: { id } },
+      select: { id: true },
+    });
+    if (jaExiste) throw new Error("Esta corrida do Strava já foi importada.");
+  }
+
   await db.run.update({
     where: { id, userId },
     data: {
@@ -450,6 +473,7 @@ export async function updateRun(id: string, input: CorridaInput) {
       notas: input.notas?.trim() || null,
       runSessionId: input.runSessionId ?? null,
       stravaLink: input.stravaLink?.trim() || null,
+      stravaActivityId: input.stravaActivityId ?? null,
     },
   });
   revalidar(userId);

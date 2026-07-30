@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   CalendarPlus,
@@ -21,22 +20,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { fullDate, nowSP } from "@/lib/dates";
 import { NotificacoesBell } from "@/components/shell/notificacoes-bell";
-
-const titles: [string, string][] = [
-  ["/financas", "Finanças"],
-  ["/investimentos", "Investimentos"],
-  ["/dieta", "Dieta"],
-  ["/treinos", "Treinos"],
-  ["/agenda", "Agenda"],
-  ["/estudos", "Estudos"],
-  ["/metas", "Metas"],
-  ["/configuracoes", "Configurações"],
-];
-
-function pageTitle(pathname: string): string {
-  const found = titles.find(([href]) => pathname.startsWith(href));
-  return found ? found[1] : "Painel LC";
-}
+import { CommandMenu } from "@/components/shell/command-menu";
 
 const novoItems = [
   { label: "Transação", href: "/financas?novo=1", icon: ReceiptText },
@@ -49,11 +33,12 @@ const novoItems = [
 export function Topbar({
   onMenuClick,
   notificacoesSlot,
+  streakSlot,
 }: {
   onMenuClick: () => void;
   notificacoesSlot?: React.ReactNode;
+  streakSlot?: React.ReactNode;
 }) {
-  const pathname = usePathname();
   const [hoje, setHoje] = useState<string>("");
 
   useEffect(() => {
@@ -71,12 +56,14 @@ export function Topbar({
           <Menu className="h-5 w-5" strokeWidth={1.5} />
         </button>
 
-        <h1 className="display text-[22px] text-paper">{pageTitle(pathname)}</h1>
+        <CommandMenu />
 
         <div className="ml-auto flex items-center gap-3">
           <span className="hidden text-[13px] text-mist md:block" suppressHydrationWarning>
             {hoje}
           </span>
+
+          {streakSlot}
 
           {notificacoesSlot ?? <NotificacoesBell notificacoes={[]} />}
 

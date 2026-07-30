@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 
 /**
- * Card base da LC: superfície #0B111E, borda 1px stroke, raio 20px, padding 24px.
+ * Card base MYLIFE: superfície charcoal (--color-surface), borda 1px stroke, raio 20px, padding 24px.
  * `destaque` = o ÚNICO card brand-soft permitido por seção.
  */
 export function Card({

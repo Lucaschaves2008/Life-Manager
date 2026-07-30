@@ -13,6 +13,7 @@ import {
   rotinasParaPlano,
 } from "@/lib/data/rotinas";
 import { sessoesCorridaParaPlano } from "@/lib/data/treinos";
+import { variaveisDoDia } from "@/lib/data/variaveis";
 import { dayKeySP, fullDate, nowSP } from "@/lib/dates";
 import { getCurrentUser } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -37,6 +38,7 @@ export default async function ChecklistPage() {
     todasRotinas,
     planos,
     planoAtivoId,
+    variaveis,
   ] = await Promise.all([
     habitosAtivos(user.id),
     itensFeitosNoDia(user.id, hoje),
@@ -50,11 +52,13 @@ export default async function ChecklistPage() {
     rotinaTemplates(user.id),
     rotinaPlanos(user.id),
     rotinaPlanoDoDia(user.id, hoje),
+    variaveisDoDia(user.id, hoje),
   ]);
 
-  const rotinaFeitos = rotinaOcorrencias.filter((oc) => oc.feito).length;
-  const pctHoje =
-    rotinaOcorrencias.length > 0 ? (rotinaFeitos / rotinaOcorrencias.length) * 100 : 0;
+  const totalItens = rotinaOcorrencias.length + variaveis.length;
+  const totalFeitos =
+    rotinaOcorrencias.filter((oc) => oc.feito).length + variaveis.filter((v) => v.feito).length;
+  const pctHoje = totalItens > 0 ? (totalFeitos / totalItens) * 100 : 0;
   const segundosEstudoHoje = sessoesHoje.reduce((s, sessao) => s + sessao.liquidoSec, 0);
 
   return (
@@ -76,7 +80,7 @@ export default async function ChecklistPage() {
               {Math.round(pctHoje)}%
             </span>
             <span className="text-[13px] text-steel">
-              {rotinaFeitos} de {rotinaOcorrencias.length} itens
+              {totalFeitos} de {totalItens} itens
             </span>
           </div>
           <div className="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
@@ -131,6 +135,7 @@ export default async function ChecklistPage() {
             sessoesCorrida={sessoesCorrida}
             planos={planos}
             planoAtivoId={planoAtivoId}
+            variaveis={variaveis}
             dia={hojeKey}
           />
         </Card>

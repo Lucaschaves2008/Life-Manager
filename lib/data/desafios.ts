@@ -19,9 +19,15 @@ import {
   toSP,
   weekKeySP,
 } from "@/lib/dates";
-import { METRICAS, type MetaMetrica } from "@/lib/data/metas-quantitativas";
+import { METRICAS, type MetaMetrica } from "@/lib/data/metas-quantitativas-constantes";
 import { gerarInsights, type InsightView } from "@/lib/data/desafios-insights";
+import { streakLC } from "@/lib/data/home";
 import { parseJSON } from "@/lib/utils";
+import {
+  PERIODOS_DESAFIO,
+  type DesafioOrigem,
+  type DesafioPeriodo,
+} from "@/lib/data/desafios-constantes";
 
 /**
  * Desafios: grupos de crescimento colaborativos estilo Gymrats. Cada membro
@@ -31,15 +37,8 @@ import { parseJSON } from "@/lib/utils";
  * (ex.: eu "treinos" vs. ele "km_corridos").
  */
 
-export type DesafioPeriodo = "semana" | "mes" | "trimestre" | "semestre";
-export type DesafioOrigem = "metrica" | "checklist";
-
-export const PERIODOS_DESAFIO: { value: DesafioPeriodo; label: string }[] = [
-  { value: "semana", label: "Semanal" },
-  { value: "mes", label: "Mensal" },
-  { value: "trimestre", label: "Trimestral" },
-  { value: "semestre", label: "Semestral" },
-];
+export { PERIODOS_DESAFIO };
+export type { DesafioOrigem, DesafioPeriodo };
 
 /** Converte (periodo, chave) num range de datas estável — mesmo espírito de metas-quantitativas.ts. */
 function rangeDoPeriodo(periodo: DesafioPeriodo, chave: string): { inicio: Date; fim: Date } {
@@ -82,6 +81,7 @@ type MetaRow = {
   origem: string;
   metrica: string | null;
   rotinaTemplateId: string | null;
+  variavelId: string | null;
   alvo: number;
   periodo: string;
 };
@@ -97,6 +97,7 @@ type DadosBrutosUsuario = {
   dietLogs: { data: Date; refeicoesCumpridas: string }[];
   studySessions: { startedAt: Date; netSeconds: number }[];
   rotinaChecks: Map<string, { data: Date }[]>; // por rotinaTemplateId
+  variavelChecks: Map<string, { data: Date }[]>; // por variavelId
 };
 
 function dentro(data: Date, inicio: Date, fim: Date): boolean {
@@ -105,18 +106,26 @@ function dentro(data: Date, inicio: Date, fim: Date): boolean {
 
 /**
  * Carrega os dados brutos de TODOS os membros informados numa única leva de
- * 5 queries (com `userId: { in: [...] }`), em vez de 1 leva por membro —
- * o custo fica fixo em 5 round-trips independente do nº de membros do desafio.
+ * 6 queries (com `userId: { in: [...] }`), em vez de 1 leva por membro —
+ * o custo fica fixo em 6 round-trips independente do nº de membros do desafio.
  */
 async function carregarDadosBrutosMultiUsuario(
-  membros: { userId: string; inicio: Date; fim: Date; rotinaTemplateIds: string[] }[]
+  membros: {
+    userId: string;
+    inicio: Date;
+    fim: Date;
+    rotinaTemplateIds: string[];
+    variavelIds: string[];
+  }[]
 ): Promise<Map<string, DadosBrutosUsuario>> {
   const userIds = membros.map((m) => m.userId);
   const inicioTotal = new Date(Math.min(...membros.map((m) => m.inicio.getTime())));
   const fimTotal = new Date(Math.max(...membros.map((m) => m.fim.getTime())));
   const rotinaIdsUnicos = [...new Set(membros.flatMap((m) => m.rotinaTemplateIds))];
+  const variavelIdsUnicos = [...new Set(membros.flatMap((m) => m.variavelIds))];
 
-  const [workoutSessions, runs, dietLogs, studySessions, rotinaChecksFlat] = await Promise.all([
+  const [workoutSessions, runs, dietLogs, studySessions, rotinaChecksFlat, variavelChecksFlat] =
+    await Promise.all([
     db.workoutSession.findMany({
       where: { userId: { in: userIds }, data: { gte: inicioTotal, lte: fimTotal } },
       select: { userId: true, data: true },
@@ -147,6 +156,16 @@ async function carregarDadosBrutosMultiUsuario(
           select: { userId: true, rotinaId: true, data: true },
         })
       : Promise.resolve([]),
+    variavelIdsUnicos.length > 0
+      ? db.variavelCheckDia.findMany({
+          where: {
+            userId: { in: userIds },
+            variavelId: { in: variavelIdsUnicos },
+            data: { gte: inicioTotal, lte: fimTotal },
+          },
+          select: { userId: true, variavelId: true, data: true },
+        })
+      : Promise.resolve([]),
   ]);
 
   const porUsuario = new Map<string, DadosBrutosUsuario>();
@@ -157,6 +176,7 @@ async function carregarDadosBrutosMultiUsuario(
       dietLogs: [],
       studySessions: [],
       rotinaChecks: new Map(),
+      variavelChecks: new Map(),
     });
   }
   for (const s of workoutSessions) porUsuario.get(s.userId)?.workoutSessions.push({ data: s.data });
@@ -175,6 +195,13 @@ async function carregarDadosBrutosMultiUsuario(
     const lista = dados.rotinaChecks.get(c.rotinaId) ?? [];
     lista.push({ data: c.data });
     dados.rotinaChecks.set(c.rotinaId, lista);
+  }
+  for (const c of variavelChecksFlat) {
+    const dados = porUsuario.get(c.userId);
+    if (!dados) continue;
+    const lista = dados.variavelChecks.get(c.variavelId) ?? [];
+    lista.push({ data: c.data });
+    dados.variavelChecks.set(c.variavelId, lista);
   }
 
   return porUsuario;
@@ -211,6 +238,10 @@ function calcularAtualMeta(meta: MetaRow, dados: DadosBrutosUsuario, inicio: Dat
   }
   if (meta.origem === "checklist" && meta.rotinaTemplateId) {
     const checks = dados.rotinaChecks.get(meta.rotinaTemplateId) ?? [];
+    return checks.filter((c) => dentro(c.data, inicio, fim)).length;
+  }
+  if (meta.origem === "variavel" && meta.variavelId) {
+    const checks = dados.variavelChecks.get(meta.variavelId) ?? [];
     return checks.filter((c) => dentro(c.data, inicio, fim)).length;
   }
   return 0;
@@ -258,6 +289,7 @@ export type DesafioMetaView = {
   origem: DesafioOrigem;
   metrica: MetaMetrica | null;
   rotinaTemplateId: string | null;
+  variavelId: string | null;
   unidade: string;
   atual: number;
   alvo: number;
@@ -272,6 +304,7 @@ export type MembroDesafio = {
   userId: string;
   nome: string | null;
   avatarUrl: string | null;
+  streak: number;
   metasGrandes: DesafioMetaView[];
 };
 
@@ -292,6 +325,7 @@ function unidadeDaMeta(meta: MetaRow): string {
   if (meta.origem === "metrica" && meta.metrica) {
     return METRICAS.find((m) => m.value === meta.metrica)?.unidade ?? "";
   }
+  if (meta.origem === "variavel") return "dias";
   return "checks";
 }
 
@@ -336,6 +370,7 @@ function viewDeMeta(
       origem: meta.origem as DesafioOrigem,
       metrica: meta.metrica as MetaMetrica | null,
       rotinaTemplateId: meta.rotinaTemplateId,
+      variavelId: meta.variavelId,
       unidade,
       atual,
       alvo,
@@ -365,6 +400,7 @@ function viewDeMeta(
     origem: meta.origem as DesafioOrigem,
     metrica: meta.metrica as MetaMetrica | null,
     rotinaTemplateId: meta.rotinaTemplateId,
+    variavelId: meta.variavelId,
     unidade,
     atual,
     alvo: meta.alvo,
@@ -416,12 +452,21 @@ export async function desafioDetalhe(
     const rotinaTemplateIds = minhasMetas
       .filter((m) => m.origem === "checklist" && m.rotinaTemplateId)
       .map((m) => m.rotinaTemplateId as string);
-    return { userId: dm.userId, inicio, fim, rotinaTemplateIds };
+    const variavelIds = minhasMetas
+      .filter((m) => m.origem === "variavel" && m.variavelId)
+      .map((m) => m.variavelId as string);
+    return { userId: dm.userId, inicio, fim, rotinaTemplateIds, variavelIds };
   });
 
-  // 1 única leva de 5 queries (com userId IN [...]) pra TODOS os membros do
+  // 1 única leva de 6 queries (com userId IN [...]) pra TODOS os membros do
   // desafio, em vez de 1 leva por membro — custo fixo independente do tamanho do grupo.
-  const dadosPorUsuario = await carregarDadosBrutosMultiUsuario(rangesPorMembro);
+  const [dadosPorUsuario, streaksPorUsuario] = await Promise.all([
+    carregarDadosBrutosMultiUsuario(rangesPorMembro),
+    Promise.all(desafio.membros.map((dm) => streakLC(dm.userId, agora))),
+  ]);
+  const streakPorUsuario = new Map(
+    desafio.membros.map((dm, i) => [dm.userId, streaksPorUsuario[i].streak])
+  );
 
   const membros: MembroDesafio[] = desafio.membros.map((dm) => {
     const minhasMetas = metasPorMembro.get(dm.userId) ?? [];
@@ -441,6 +486,7 @@ export async function desafioDetalhe(
       userId: dm.userId,
       nome: perfilPorId.get(dm.userId)?.nome ?? null,
       avatarUrl: perfilPorId.get(dm.userId)?.avatarUrl ?? null,
+      streak: streakPorUsuario.get(dm.userId) ?? 0,
       metasGrandes,
     };
   });

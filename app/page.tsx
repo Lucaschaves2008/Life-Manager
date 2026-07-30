@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { ArrowUpRight, CalendarX2, Flame } from "lucide-react";
+import { ArrowUpRight, CalendarX2 } from "lucide-react";
 import { Card, CardLabel } from "@/components/caverna/card";
+import { Flame } from "@/components/caverna/flame";
 import { Donut } from "@/components/caverna/donut";
 import { EmptyState } from "@/components/caverna/empty-state";
 import { Heatmap } from "@/components/caverna/heatmap";
@@ -15,25 +16,30 @@ import {
   metasParaCatalogo,
   HOME_METRICAS_FIXAS,
 } from "@/lib/data/home-metricas";
+import { treinosDeHoje } from "@/lib/data/treinos";
+import { TreinoHojeCard } from "@/components/treinos/treino-hoje-card";
 import { formatBRL, formatBRLCompact } from "@/lib/money";
-import { fullDate, nowSP } from "@/lib/dates";
+import { dayKeySP, fmtSP, fullDate, nowSP } from "@/lib/dates";
 import { getCurrentUser } from "@/lib/auth";
+import { getContaAtiva } from "@/lib/conta-ativa";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
   const user = await getCurrentUser();
+  const { id: contaFinanceiraId } = await getContaAtiva(user.id);
   const agora = nowSP();
 
-  const [carteira, evolucao, fluxo, eventos, streak, configs, metasCatalogo] =
+  const [carteira, evolucao, fluxo, eventos, streak, configs, metasCatalogo, treinosHoje] =
     await Promise.all([
-      resumoCarteira(user.id, agora),
-      evolucaoPatrimonio(user.id, 6, agora),
-      fluxoDeCaixa(user.id, 1, agora),
+      resumoCarteira(contaFinanceiraId, agora),
+      evolucaoPatrimonio(contaFinanceiraId, 6, agora),
+      fluxoDeCaixa(contaFinanceiraId, 1, agora),
       eventosDeHoje(user.id, agora),
       streakLC(user.id, agora),
       homeCardConfigs(user.id),
       metasParaCatalogo(user.id),
+      treinosDeHoje(user.id, agora),
     ]);
 
   const mesAtual = fluxo[0] ?? { receita: 0, despesa: 0, saldo: 0 };
@@ -43,7 +49,7 @@ export default async function HomePage() {
   const cards = await Promise.all(
     configs.map(async (config) => ({
       config,
-      data: await calcularHomeCard(user.id, config, agora),
+      data: await calcularHomeCard(user.id, contaFinanceiraId, config, agora),
     }))
   );
 
@@ -61,6 +67,13 @@ export default async function HomePage() {
 
       {/* 4 cards principais — métrica e período configuráveis por card */}
       <HomeCards cards={cards} opcoes={opcoesMetricas} />
+
+      {/* Treino de hoje — musculação e/ou corrida agendados para o dia */}
+      <TreinoHojeCard
+        treinos={treinosHoje}
+        hoje={dayKeySP(agora)}
+        hojeLabel={fmtSP(agora, "EEEE, d 'de' MMMM")}
+      />
 
       {/* Evolução do patrimônio + distribuição dos investimentos */}
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
@@ -169,20 +182,27 @@ export default async function HomePage() {
               <ArrowUpRight className="h-3.5 w-3.5" strokeWidth={1.5} />
             </Link>
           </div>
-          <div className="mt-4 flex items-center gap-3">
-            <Flame className="h-8 w-8 text-mint" strokeWidth={1.5} />
+          <div className="mt-4 flex items-center gap-4">
+            <Flame streak={streak.streak} size={56} />
             <div>
               <p className="tabular text-[32px] font-semibold leading-none text-paper">
                 {streak.streak}
+                <span className="ml-1.5 text-[13px] font-normal text-mist">
+                  {streak.streak === 1 ? "dia" : "dias"}
+                </span>
               </p>
               <p className="mt-1 text-[12px] text-mist">
-                dias seguidos no mínimo LC
+                {streak.streak === 0
+                  ? "acenda seu foguinho hoje"
+                  : "seguidos no mínimo LC"}
               </p>
             </div>
           </div>
           <p className="mt-3 text-[11.5px] text-steel">
             ≥1 treino ou diário de dieta no dia · recorde:{" "}
-            {Math.max(streak.streak, streak.recordeAnterior)}
+            <span className="tabular text-mist">
+              {Math.max(streak.streak, streak.recordeAnterior)}
+            </span>
           </p>
           <div className="mt-auto pt-4">
             <Heatmap

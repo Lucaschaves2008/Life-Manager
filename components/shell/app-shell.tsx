@@ -15,11 +15,13 @@ export function AppShell({
   isSuperAdmin = false,
   user,
   notificacoesSlot,
+  streakSlot,
 }: {
   children: React.ReactNode;
   isSuperAdmin?: boolean;
   user: ShellUser;
   notificacoesSlot?: React.ReactNode;
+  streakSlot?: React.ReactNode;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -82,7 +84,11 @@ export function AppShell({
           collapsed ? "lg:ml-16" : "lg:ml-[232px]"
         )}
       >
-        <Topbar onMenuClick={() => setMobileOpen(true)} notificacoesSlot={notificacoesSlot} />
+        <Topbar
+          onMenuClick={() => setMobileOpen(true)}
+          notificacoesSlot={notificacoesSlot}
+          streakSlot={streakSlot}
+        />
         <main className="mx-auto w-full max-w-[1440px] flex-1 px-4 pb-16 pt-6 md:px-8">
           {children}
         </main>

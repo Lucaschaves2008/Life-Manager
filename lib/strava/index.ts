@@ -6,6 +6,8 @@ const STRAVA_API = "https://www.strava.com/api/v3";
 
 /** Cookie httpOnly que carrega o state anti-CSRF entre connect e callback. */
 export const STRAVA_STATE_COOKIE = "strava_oauth_state";
+/** Cookie httpOnly que lembra de qual página o usuário iniciou a conexão. */
+export const STRAVA_NEXT_COOKIE = "strava_oauth_next";
 export const STRAVA_STATE_COOKIE_OPTIONS = {
   httpOnly: true,
   // secure em produção; em dev (http://localhost) o Safari rejeita cookies Secure.
@@ -159,4 +161,54 @@ export async function sincronizarCorridas(userId: string): Promise<number> {
 export async function stravaConectado(userId: string): Promise<boolean> {
   const conta = await db.stravaAccount.findUnique({ where: { userId } });
   return Boolean(conta);
+}
+
+/** Extrai o ID numérico de uma atividade a partir de uma URL do Strava. */
+export function extrairActivityId(link: string): string | null {
+  const m = link.trim().match(/strava\.com\/activities\/(\d+)/);
+  return m ? m[1] : null;
+}
+
+export type CorridaImportada = {
+  activityId: string;
+  data: string; // yyyy-MM-dd (data local da atividade)
+  km: number;
+  segundos: number;
+  nome: string;
+  link: string;
+};
+
+/**
+ * Busca uma atividade específica do Strava pelo ID (via link colado pelo usuário)
+ * e devolve os campos prontos para preencher o formulário de corrida.
+ */
+export async function buscarAtividadePorLink(
+  userId: string,
+  link: string
+): Promise<CorridaImportada> {
+  const activityId = extrairActivityId(link);
+  if (!activityId) throw new Error("Link do Strava inválido.");
+
+  const token = await accessTokenValido(userId);
+  if (!token) throw new Error("Conecte sua conta Strava antes de importar.");
+
+  const res = await fetch(`${STRAVA_API}/activities/${activityId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (res.status === 404)
+    throw new Error("Atividade não encontrada (ou não pertence à sua conta Strava).");
+  if (res.status === 401)
+    throw new Error("Sessão do Strava expirada. Reconecte sua conta.");
+  if (!res.ok) throw new Error(`Strava activity falhou: ${res.status}`);
+
+  const a = (await res.json()) as StravaActivity;
+
+  return {
+    activityId,
+    data: a.start_date_local.slice(0, 10),
+    km: Math.round((a.distance / 1000) * 100) / 100,
+    segundos: Math.round(a.moving_time),
+    nome: a.name,
+    link: `https://www.strava.com/activities/${activityId}`,
+  };
 }

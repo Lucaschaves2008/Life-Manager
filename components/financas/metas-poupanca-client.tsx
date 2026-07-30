@@ -34,18 +34,35 @@ type Meta = {
   }[]
 }
 
+type Opcao = {
+  id: string
+  nome: string
+  saldo?: number
+  bandeira?: string
+  tipo?: string
+}
+
 export function MetasPoupancaClient({
   metas: metasInitial,
   contaFinanceiraId,
+  cartoes,
+  contas,
+  ativos,
+  categorias,
 }: {
   metas: Meta[]
   contaFinanceiraId: string
+  cartoes: Opcao[]
+  contas: Opcao[]
+  ativos: Opcao[]
+  categorias: Opcao[]
 }) {
   const [metas, setMetas] = useState(metasInitial)
   const [sheetOpen, setSheetOpen] = useState(false)
   const [sheetMode, setSheetMode] = useState<'criar' | 'detalhe'>('criar')
   const [metaSelecionada, setMetaSelecionada] = useState<Meta | null>(null)
   const [loading, setLoading] = useState(false)
+  const [erro, setErro] = useState('')
 
   const [novaMetaForm, setNovaMetaForm] = useState({
     nome: '',
@@ -56,7 +73,8 @@ export function MetasPoupancaClient({
 
   const [contribuicaoForm, setContribuicaoForm] = useState({
     valor: '',
-    fonte: 'receita',
+    fonte: 'manual',
+    fonteId: '',
     descricao: '',
   })
 
@@ -64,6 +82,7 @@ export function MetasPoupancaClient({
     if (!novaMetaForm.nome || !novaMetaForm.valorAlvo) return
 
     setLoading(true)
+    setErro('')
     try {
       const resultado = await criarMetaPoupanca({
         nome: novaMetaForm.nome,
@@ -89,8 +108,8 @@ export function MetasPoupancaClient({
 
       setNovaMetaForm({ nome: '', emoji: '💰', descricao: '', valorAlvo: '' })
       setSheetOpen(false)
-    } catch (err) {
-      console.error(err)
+    } catch (err: any) {
+      setErro(err.message || 'Erro ao criar meta')
     } finally {
       setLoading(false)
     }
@@ -100,15 +119,16 @@ export function MetasPoupancaClient({
     if (!metaSelecionada || !contribuicaoForm.valor) return
 
     setLoading(true)
+    setErro('')
     try {
       await adicionarContribuicao({
         metaPoupancaId: metaSelecionada.id,
         valor: parseFloat(contribuicaoForm.valor),
-        fonte: contribuicaoForm.fonte,
+        fonte: contribuicaoForm.fonte as any,
+        fonteId: contribuicaoForm.fonteId || undefined,
         descricao: contribuicaoForm.descricao,
       })
 
-      // Atualiza a lista de metas
       const metaAtualizada = {
         ...metaSelecionada,
         valorAtual: metaSelecionada.valorAtual + parseFloat(contribuicaoForm.valor),
@@ -117,13 +137,11 @@ export function MetasPoupancaClient({
           metaSelecionada.valorAlvo,
       }
 
-      setMetas(
-        metas.map((m) => (m.id === metaSelecionada.id ? metaAtualizada : m))
-      )
+      setMetas(metas.map((m) => (m.id === metaSelecionada.id ? metaAtualizada : m)))
       setMetaSelecionada(metaAtualizada)
-      setContribuicaoForm({ valor: '', fonte: 'receita', descricao: '' })
-    } catch (err) {
-      console.error(err)
+      setContribuicaoForm({ valor: '', fonte: 'manual', fonteId: '', descricao: '' })
+    } catch (err: any) {
+      setErro(err.message || 'Erro ao adicionar contribuição')
     } finally {
       setLoading(false)
     }
@@ -133,13 +151,14 @@ export function MetasPoupancaClient({
     if (!window.confirm('Tem certeza que quer remover esta meta?')) return
 
     setLoading(true)
+    setErro('')
     try {
       await removerMetaPoupanca(metaId)
       setMetas(metas.filter((m) => m.id !== metaId))
       setSheetOpen(false)
       setMetaSelecionada(null)
-    } catch (err) {
-      console.error(err)
+    } catch (err: any) {
+      setErro(err.message || 'Erro ao remover meta')
     } finally {
       setLoading(false)
     }
@@ -149,6 +168,7 @@ export function MetasPoupancaClient({
     if (!window.confirm('Remover esta contribuição?')) return
 
     setLoading(true)
+    setErro('')
     try {
       await removerContribuicao(contribuicaoId)
       if (metaSelecionada) {
@@ -164,14 +184,12 @@ export function MetasPoupancaClient({
               (c) => c.id !== contribuicaoId
             ),
           }
-          setMetas(
-            metas.map((m) => (m.id === metaSelecionada.id ? metaAtualizada : m))
-          )
+          setMetas(metas.map((m) => (m.id === metaSelecionada.id ? metaAtualizada : m)))
           setMetaSelecionada(metaAtualizada)
         }
       }
-    } catch (err) {
-      console.error(err)
+    } catch (err: any) {
+      setErro(err.message || 'Erro ao remover contribuição')
     } finally {
       setLoading(false)
     }
@@ -180,7 +198,23 @@ export function MetasPoupancaClient({
   const abrirDetalhes = (meta: Meta) => {
     setMetaSelecionada(meta)
     setSheetMode('detalhe')
+    setErro('')
     setSheetOpen(true)
+  }
+
+  const getOpcoesParaFonte = (fonte: string): Opcao[] => {
+    switch (fonte) {
+      case 'cartao':
+        return cartoes
+      case 'conta':
+        return contas
+      case 'investimento':
+        return ativos
+      case 'receita':
+        return categorias
+      default:
+        return []
+    }
   }
 
   const rotulFonte: Record<string, string> = {
@@ -188,6 +222,19 @@ export function MetasPoupancaClient({
     investimento: 'Investimento',
     cartao: 'Cartão',
     conta: 'Conta',
+    manual: 'Manual',
+  }
+
+  const saldoDisponivel = (): string | null => {
+    if (contribuicaoForm.fonte === 'manual' || !contribuicaoForm.fonteId) return null
+
+    const opcoes = getOpcoesParaFonte(contribuicaoForm.fonte)
+    const opcao = opcoes.find((o) => o.id === contribuicaoForm.fonteId)
+
+    if (opcao?.saldo !== undefined) {
+      return formatBRL(opcao.saldo)
+    }
+    return null
   }
 
   return (
@@ -203,6 +250,7 @@ export function MetasPoupancaClient({
           size="sm"
           onClick={() => {
             setSheetMode('criar')
+            setErro('')
             setSheetOpen(true)
           }}
         >
@@ -243,10 +291,10 @@ export function MetasPoupancaClient({
                     <div className="mt-3 space-y-2">
                       <div className="flex items-baseline gap-3">
                         <span className="text-[13px] text-mist">
-                          {formatBRL(meta.valorAtual)}
+                          {formatBRL(meta.valorAtual * 100)}
                         </span>
                         <span className="text-[12.5px] text-steel">
-                          de {formatBRL(meta.valorAlvo)}
+                          de {formatBRL(meta.valorAlvo * 100)}
                         </span>
                       </div>
 
@@ -263,7 +311,7 @@ export function MetasPoupancaClient({
                         </span>
                         {!meta.concluida && (
                           <span className="text-[11.5px] text-mist">
-                            Faltam {formatBRL(faltam)}
+                            Faltam {formatBRL(faltam * 100)}
                           </span>
                         )}
                       </div>
@@ -281,6 +329,12 @@ export function MetasPoupancaClient({
           <SheetTitle>
             {sheetMode === 'criar' ? 'Nova meta de poupança' : 'Detalhes da meta'}
           </SheetTitle>
+
+          {erro && (
+            <div className="mt-4 p-3 bg-red-500/10 border border-red-500/30 rounded-md text-[12.5px] text-red-400">
+              {erro}
+            </div>
+          )}
 
           {sheetMode === 'criar' ? (
             <div className="mt-6 space-y-4">
@@ -367,10 +421,10 @@ export function MetasPoupancaClient({
               <div>
                 <div className="flex items-baseline gap-3 mb-2">
                   <span className="text-[13px] text-mist">
-                    {formatBRL(metaSelecionada.valorAtual)}
+                    {formatBRL(metaSelecionada.valorAtual * 100)}
                   </span>
                   <span className="text-[12.5px] text-steel">
-                    de {formatBRL(metaSelecionada.valorAlvo)}
+                    de {formatBRL(metaSelecionada.valorAlvo * 100)}
                   </span>
                 </div>
                 <div className="w-full h-2 bg-stroke rounded-full overflow-hidden">
@@ -394,12 +448,13 @@ export function MetasPoupancaClient({
                   <input
                     type="number"
                     value={contribuicaoForm.valor}
-                    onChange={(e) =>
+                    onChange={(e) => {
                       setContribuicaoForm({
                         ...contribuicaoForm,
                         valor: e.target.value,
                       })
-                    }
+                      setErro('')
+                    }}
                     placeholder="Valor (R$)"
                     step="0.01"
                     className="w-full px-3 py-2 text-[13px] bg-canvas border border-stroke rounded-md focus:outline-none focus:border-mint"
@@ -407,19 +462,53 @@ export function MetasPoupancaClient({
 
                   <select
                     value={contribuicaoForm.fonte}
-                    onChange={(e) =>
+                    onChange={(e) => {
                       setContribuicaoForm({
                         ...contribuicaoForm,
                         fonte: e.target.value,
+                        fonteId: '',
                       })
-                    }
+                      setErro('')
+                    }}
                     className="w-full px-3 py-2 text-[13px] bg-canvas border border-stroke rounded-md focus:outline-none focus:border-mint"
                   >
+                    <option value="manual">Manual</option>
                     <option value="receita">Receita</option>
-                    <option value="investimento">Investimento</option>
                     <option value="cartao">Cartão</option>
-                    <option value="conta">Conta corrente</option>
+                    <option value="conta">Conta</option>
+                    <option value="investimento">Investimento</option>
                   </select>
+
+                  {contribuicaoForm.fonte !== 'manual' && (
+                    <div>
+                      <select
+                        value={contribuicaoForm.fonteId}
+                        onChange={(e) => {
+                          setContribuicaoForm({
+                            ...contribuicaoForm,
+                            fonteId: e.target.value,
+                          })
+                          setErro('')
+                        }}
+                        className="w-full px-3 py-2 text-[13px] bg-canvas border border-stroke rounded-md focus:outline-none focus:border-mint"
+                      >
+                        <option value="">Selecione...</option>
+                        {getOpcoesParaFonte(contribuicaoForm.fonte).map((opcao) => (
+                          <option key={opcao.id} value={opcao.id}>
+                            {opcao.nome}
+                            {opcao.saldo !== undefined &&
+                              ` · ${formatBRL(opcao.saldo)}`}
+                          </option>
+                        ))}
+                      </select>
+
+                      {saldoDisponivel() && (
+                        <p className="mt-1 text-[11.5px] text-steel">
+                          Disponível: {saldoDisponivel()}
+                        </p>
+                      )}
+                    </div>
+                  )}
 
                   <input
                     type="text"
@@ -459,7 +548,7 @@ export function MetasPoupancaClient({
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <span className="text-[12.5px] text-ice font-medium">
-                              {formatBRL(contrib.valor)}
+                              {formatBRL(contrib.valor * 100)}
                             </span>
                             <span className="text-[11.5px] text-steel">
                               {rotulFonte[contrib.fonte]}

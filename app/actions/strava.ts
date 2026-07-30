@@ -4,7 +4,7 @@ import { revalidatePath, revalidateTag } from "next/cache";
 import { requireUser } from "@/lib/auth";
 import { tagUsuario } from "@/lib/cache-tags";
 import { db } from "@/lib/db";
-import { sincronizarCorridas } from "@/lib/strava";
+import { buscarAtividadePorLink, sincronizarCorridas, type CorridaImportada } from "@/lib/strava";
 
 /** Puxa as corridas recentes do Strava e importa as novas. Retorna quantas. */
 export async function sincronizarStrava(): Promise<number> {
@@ -22,4 +22,10 @@ export async function desconectarStrava(): Promise<void> {
   const { id: userId } = await requireUser();
   await db.stravaAccount.deleteMany({ where: { userId } });
   revalidatePath("/treinos");
+}
+
+/** Busca uma atividade específica pelo link colado no formulário de corrida. */
+export async function buscarCorridaStrava(link: string): Promise<CorridaImportada> {
+  const { id: userId } = await requireUser();
+  return buscarAtividadePorLink(userId, link);
 }

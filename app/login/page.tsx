@@ -15,7 +15,7 @@ export default async function LoginPage({
       {/* Coluna do formulário */}
       <div className="flex w-full flex-col justify-center px-6 py-12 sm:px-12 lg:w-[440px] lg:shrink-0 lg:px-14 xl:w-[480px]">
         <div className="mx-auto w-full max-w-[340px]">
-          <LcLogo className="h-8" />
+          <LcLogo className="h-5" />
 
           <div className="mt-10 mb-8">
             <h1 className="display text-[26px] text-paper">Bem-vindo de volta</h1>
@@ -93,7 +93,7 @@ export default async function LoginPage({
           <div />
 
           <div className="max-w-md">
-            <LcLogo className="h-14 text-paper opacity-90" />
+            <LcLogo className="h-8 text-paper opacity-90" />
             <p className="display mt-6 text-[30px] leading-[1.25] text-paper">
               Finanças, saúde e rotina em um único painel.
             </p>

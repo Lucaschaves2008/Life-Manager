@@ -94,12 +94,15 @@ export function Donut({
                 />
               )}
         </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="tabular text-[24px] font-semibold leading-none text-paper">
+        <div className="absolute inset-0 flex flex-col items-center justify-center px-3">
+          <span
+            className="tabular w-full whitespace-nowrap text-center font-semibold leading-none tracking-tight text-paper"
+            style={{ fontSize: `clamp(11px, ${size * 0.145}px, 24px)` }}
+          >
             {center ?? `${Math.round(pct ?? 0)}%`}
           </span>
           {centerSub && (
-            <span className="mt-1 text-[11px] text-steel">{centerSub}</span>
+            <span className="mt-1.5 text-[11px] text-steel">{centerSub}</span>
           )}
         </div>
       </div>

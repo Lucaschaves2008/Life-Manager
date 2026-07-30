@@ -1,6 +1,6 @@
 import {
-  unstable_cacheLife as cacheLife,
-  unstable_cacheTag as cacheTag,
+  cacheLife,
+  cacheTag,
 } from "next/cache";
 import {
   differenceInCalendarDays,
@@ -14,6 +14,7 @@ import { db } from "@/lib/db";
 import { tagUsuario } from "@/lib/cache-tags";
 import {
   kmDaSemana,
+  weekConfig,
   type PlanoCorridaView,
   type SessaoCorridaOpcao,
 } from "./treinos-format";
@@ -444,6 +445,149 @@ function parseDias(raw: string): number[] {
   } catch {
     return [];
   }
+}
+
+export type ExercicioHojeView = {
+  id: string;
+  nome: string;
+  grupoMuscular: string;
+  metodo: string;
+  tipoAlvo: string;
+  series: number;
+  repsAlvo: string;
+  cargaAtual: number;
+  tempoAlvoSeg: number;
+  descansoSeg: number;
+  observacao: string | null;
+};
+
+export type FichaHojeView = {
+  tipo: "musculacao";
+  id: string;
+  nome: string;
+  foco: string | null;
+  semana: number;
+  exercicios: ExercicioHojeView[];
+};
+
+export type SessaoCorridaHojeView = {
+  tipo: "corrida";
+  id: string;
+  planoId: string;
+  planoNome: string;
+  nome: string;
+  tipoSessao: string;
+  kmAlvo: number;
+  semana: number;
+  cumprida: boolean;
+};
+
+export type TreinoHojeView = FichaHojeView | SessaoCorridaHojeView;
+
+/** Fichas de musculação e sessões de corrida agendadas para o dia da semana de hoje. */
+export async function treinosDeHoje(
+  userId: string,
+  ref: Date = new Date()
+): Promise<TreinoHojeView[]> {
+  const semana = await semanaCicloAtual(userId);
+  return treinosDeHojeDoDia(userId, semana, dayKeySP(ref));
+}
+
+async function treinosDeHojeDoDia(
+  userId: string,
+  semana: number,
+  dia: string
+): Promise<TreinoHojeView[]> {
+  "use cache";
+  cacheTag(tagUsuario(userId, "treinos"));
+  cacheLife("days");
+
+  const ref = refDoDiaSP(dia);
+  const diaSemana = toSP(ref).getDay();
+  const inicioSemana = spStartOfWeek(ref);
+  const fimSemana = spEndOfWeek(ref);
+
+  const [rotinas, planos, runs] = await Promise.all([
+    db.routine.findMany({
+      where: { userId },
+      orderBy: { ordem: "asc" },
+      include: {
+        exercises: {
+          orderBy: { ordem: "asc" },
+          include: { weeks: { orderBy: { semana: "asc" } } },
+        },
+      },
+    }),
+    db.runRoutine.findMany({
+      where: { userId },
+      orderBy: { ordem: "asc" },
+      include: {
+        sessions: {
+          orderBy: { ordem: "asc" },
+          include: { weeks: { orderBy: { semana: "asc" } } },
+        },
+      },
+    }),
+    db.run.findMany({
+      where: { userId, data: { gte: inicioSemana, lte: fimSemana } },
+      select: { runSessionId: true },
+    }),
+  ]);
+
+  const sessoesCumpridas = new Set(
+    runs.flatMap((r) => (r.runSessionId ? [r.runSessionId] : []))
+  );
+
+  const fichas: FichaHojeView[] = rotinas
+    .filter((r) => parseDias(r.diasSemana).includes(diaSemana))
+    .map((r) => ({
+      tipo: "musculacao" as const,
+      id: r.id,
+      nome: r.nome,
+      foco: r.foco,
+      semana,
+      exercicios: r.exercises.map((e) => {
+        const cfg = weekConfig(
+          { series: e.series, repsAlvo: e.repsAlvo, cargaAtual: e.cargaAtual },
+          e.weeks,
+          semana
+        );
+        return {
+          id: e.id,
+          nome: e.nome,
+          grupoMuscular: e.grupoMuscular,
+          metodo: e.metodo,
+          tipoAlvo: e.tipoAlvo,
+          series: cfg.series,
+          repsAlvo: cfg.repsAlvo,
+          cargaAtual: cfg.cargaAtual,
+          tempoAlvoSeg: e.tempoAlvoSeg,
+          descansoSeg: e.descansoSeg,
+          observacao: e.observacao,
+        };
+      }),
+    }));
+
+  const sessoesCorrida: SessaoCorridaHojeView[] = planos
+    .filter((p) => parseDias(p.diasSemana).includes(diaSemana))
+    .flatMap((p) =>
+      p.sessions.map((s) => {
+        const km = kmDaSemana(s.kmAlvo, s.weeks, semana);
+        return {
+          tipo: "corrida" as const,
+          id: s.id,
+          planoId: p.id,
+          planoNome: p.nome,
+          nome: s.nome,
+          tipoSessao: s.tipo,
+          kmAlvo: km.kmAlvo,
+          semana,
+          cumprida: sessoesCumpridas.has(s.id),
+        };
+      })
+    );
+
+  return [...fichas, ...sessoesCorrida];
 }
 
 /** Sessões de corrida (achatadas) para o seletor de vínculo do checklist. */

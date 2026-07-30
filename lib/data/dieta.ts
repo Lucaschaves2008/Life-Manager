@@ -1,6 +1,6 @@
 import {
-  unstable_cacheLife as cacheLife,
-  unstable_cacheTag as cacheTag,
+  cacheLife,
+  cacheTag,
 } from "next/cache";
 import { subDays, subYears } from "date-fns";
 import { db } from "@/lib/db";

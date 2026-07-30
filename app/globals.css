@@ -2,6 +2,8 @@
 
 @theme {
   /* ---- Tipografia ---- */
+  /* DS pede Söhne (licença paga, ausente). Geist Sans é a grotesca geométrica
+     equivalente já instalada; Inter como fallback próximo. */
   --font-sans: var(--font-geist-sans), "Inter", system-ui, sans-serif;
 
   /* ---- Raios ---- */
@@ -15,94 +17,99 @@
   /* ---- Sombras (apenas popover/modal) ---- */
   --shadow-pop: 0 16px 48px rgba(0, 0, 0, 0.5);
 
-  /* ---- Dark mode palette ---- */
-  --color-bg: #05070d;
-  --color-surface: #0b111e;
-  --color-surface-2: #101a2e;
-  --color-elevated: #16213a;
-  --color-stroke: #1c2a47;
-  --color-navy: #1a3f75;
-  --color-steel: #4e6a9c;
-  --color-mist: #8fa9cd;
-  --color-ice: #dce7f5;
-  --color-paper: #f4f8fe;
+  /* ---- Dark mode palette — MYLIFE: preto predominante ---- */
+  --color-bg: #0a0a0b;
+  --color-surface: #101011;
+  --color-surface-2: #161617;
+  --color-elevated: #1c1c1e;
+  --color-stroke: #262628;
+  --color-navy: #33333a;
+  --color-steel: #5a5a63;
+  --color-mist: #8a8a93;
+  --color-ice: #c9c9d0;
+  --color-paper: #ffffff;
 
-  /* ---- Accent palette ---- */
-  --color-brand: #0d6efd;
-  --color-brand-soft: rgba(13, 110, 253, 0.14);
+  /* ---- Accent — grafite puro (a "cor" de ação é a luz: branco/gelo) ---- */
+  --color-brand: #f3f4f6;
+  --color-brand-soft: rgba(216, 219, 224, 0.1);
   --color-mint: var(--color-brand);
   --color-mint-soft: var(--color-brand-soft);
-  --color-coral: #ff6b6b;
-  --color-coral-soft: rgba(255, 107, 107, 0.12);
-  --color-amber: #f5b14c;
-  --color-amber-soft: rgba(245, 177, 76, 0.12);
+  /* ---- Funcionais — preservadas (status precisa de cor) ---- */
+  --color-success: #22c55e;
+  --color-success-soft: rgba(34, 197, 94, 0.12);
+  --color-coral: #ef4444;
+  --color-coral-soft: rgba(239, 68, 68, 0.12);
+  --color-amber: #f59e0b;
+  --color-amber-soft: rgba(245, 158, 11, 0.12);
 
-  /* ---- Cores de agenda/categorias ---- */
-  --color-cal-brand: #0d6efd;
-  --color-cal-mint: var(--color-brand);
-  --color-cal-blue: #6b96d6;
-  --color-cal-amber: #f5b14c;
-  --color-cal-coral: #ff6b6b;
-  --color-cal-teal: #4ec9c0;
-  --color-cal-lilac: #a78bdb;
+  /* ---- Cores de agenda/categorias — grafite em degraus de luz ---- */
+  --color-cal-brand: #d8dbe0;
+  --color-cal-mint: #8d9199;
+  --color-cal-blue: #6d737d;
+  --color-cal-amber: #f59e0b;
+  --color-cal-coral: #ef4444;
+  --color-cal-teal: #22c55e;
+  --color-cal-lilac: #b0b4bc;
 }
 
 :root {
   color-scheme: dark;
   /* aliases usados fora do Tailwind (gráficos, estilos inline) */
-  --cal-mint: var(--color-brand);
-  --cal-blue: #6b96d6;
-  --cal-amber: #f5b14c;
-  --cal-coral: #ff6b6b;
-  --cal-teal: #4ec9c0;
-  --cal-lilac: #a78bdb;
-  --grid-line: rgba(143, 169, 205, 0.06);
-  --stroke-soft: rgba(143, 169, 205, 0.1);
-  --stroke-hover: rgba(143, 169, 205, 0.22);
-  --mint-border: rgba(13, 110, 253, 0.25);
+  --cal-mint: #8d9199;
+  --cal-blue: #6d737d;
+  --cal-amber: #f59e0b;
+  --cal-coral: #ef4444;
+  --cal-teal: #22c55e;
+  --cal-lilac: #b0b4bc;
+  --grid-line: rgba(167, 173, 183, 0.06);
+  --stroke-soft: rgba(167, 173, 183, 0.1);
+  --stroke-hover: rgba(167, 173, 183, 0.22);
+  --mint-border: rgba(216, 219, 224, 0.22);
 }
 
 [data-theme="light"] {
   color-scheme: light;
-  --color-bg: #f7f9fc;
+  --color-bg: #f4f5f6;
   --color-surface: #ffffff;
-  --color-surface-2: #edf2fb;
-  --color-elevated: #e2ebfa;
-  --color-stroke: rgba(52, 71, 103, 0.12);
-  --color-navy: #1d3d72;
-  --color-steel: #4c6a95;
-  --color-mist: #5f718f;
-  --color-ice: #0f172a;
-  --color-paper: #020617;
-  --color-brand-soft: rgba(13, 110, 253, 0.16);
-  --color-coral-soft: rgba(255, 107, 107, 0.14);
-  --color-amber-soft: rgba(245, 177, 76, 0.14);
-  --grid-line: rgba(52, 71, 103, 0.08);
-  --stroke-soft: rgba(52, 71, 103, 0.09);
-  --stroke-hover: rgba(52, 71, 103, 0.16);
-  --mint-border: rgba(13, 110, 253, 0.18);
+  --color-surface-2: #ebecee;
+  --color-elevated: #e2e4e7;
+  --color-stroke: rgba(28, 30, 34, 0.12);
+  --color-navy: #2c3036;
+  --color-steel: #4c4e51;
+  --color-mist: #6d737d;
+  --color-ice: #1e1f22;
+  --color-paper: #0a0a0b;
+  --color-brand: #1e1f22;
+  --color-brand-soft: rgba(28, 30, 34, 0.08);
+  --color-coral-soft: rgba(239, 68, 68, 0.14);
+  --color-amber-soft: rgba(245, 158, 11, 0.14);
+  --grid-line: rgba(28, 30, 34, 0.08);
+  --stroke-soft: rgba(28, 30, 34, 0.09);
+  --stroke-hover: rgba(28, 30, 34, 0.16);
+  --mint-border: rgba(28, 30, 34, 0.18);
 }
 
 @media (prefers-color-scheme: light) {
   :root:not([data-theme]) {
     color-scheme: light;
-    --color-bg: #f7f9fc;
+    --color-bg: #f4f5f6;
     --color-surface: #ffffff;
-    --color-surface-2: #edf2fb;
-    --color-elevated: #e2ebfa;
-    --color-stroke: rgba(52, 71, 103, 0.12);
-    --color-navy: #1d3d72;
-    --color-steel: #4c6a95;
-    --color-mist: #5f718f;
-    --color-ice: #0f172a;
-    --color-paper: #020617;
+    --color-surface-2: #ebecee;
+    --color-elevated: #e2e4e7;
+    --color-stroke: rgba(28, 30, 34, 0.12);
+    --color-navy: #2c3036;
+    --color-steel: #4c4e51;
+    --color-mist: #6d737d;
+    --color-ice: #1e1f22;
+    --color-paper: #0a0a0b;
+    --color-brand: #1e1f22;
     --color-mint-soft: var(--color-brand-soft);
-    --color-coral-soft: rgba(255, 107, 107, 0.14);
-    --color-amber-soft: rgba(245, 177, 76, 0.14);
-    --grid-line: rgba(52, 71, 103, 0.08);
-    --stroke-soft: rgba(52, 71, 103, 0.09);
-    --stroke-hover: rgba(52, 71, 103, 0.16);
-    --mint-border: rgba(13, 110, 253, 0.18);
+    --color-coral-soft: rgba(239, 68, 68, 0.14);
+    --color-amber-soft: rgba(245, 158, 11, 0.14);
+    --grid-line: rgba(28, 30, 34, 0.08);
+    --stroke-soft: rgba(28, 30, 34, 0.09);
+    --stroke-hover: rgba(28, 30, 34, 0.16);
+    --mint-border: rgba(28, 30, 34, 0.18);
   }
 }
 
@@ -128,7 +135,7 @@ body {
 }
 
 ::selection {
-  background: rgba(13, 110, 253, 0.25);
+  background: rgba(216, 219, 224, 0.22);
   color: var(--color-paper);
 }
 
@@ -175,6 +182,16 @@ body {
 .display {
   font-weight: 600;
   letter-spacing: -0.02em;
+}
+
+/* wordmark MYLIFE: caixa-alta, peso leve, tracking largo (assinatura do DS) */
+.wordmark {
+  font-weight: 300;
+  text-transform: uppercase;
+  letter-spacing: 0.28em;
+  color: var(--color-paper);
+  /* compensa o tracking à direita para o bloco ficar óptico-centrado */
+  text-indent: 0.28em;
 }
 
 /* ---------- Motion (mínimo e intencional) ---------- */
@@ -370,4 +387,226 @@ body {
 }
 .card-hover:hover {
   border-color: var(--stroke-hover);
+}
+
+/* ============================================================
+   Foguinho de streak (components/caverna/flame.tsx)
+   Chama viva: corpo respira, camadas fazem flicker orgânico em
+   ritmos levemente diferentes (dessincronizados de propósito p/
+   parecer fogo real), halo pulsa. Tudo contido — sem exagero.
+   ============================================================ */
+
+/* corpo inteiro: leve respiração vertical + oscilação sutil */
+@keyframes flame-body-breathe {
+  0%,
+  100% {
+    transform: scale(1) translateY(0) rotate(-0.5deg);
+  }
+  50% {
+    transform: scale(1.04, 1.07) translateY(-1px) rotate(0.5deg);
+  }
+}
+
+/* camada externa: flicker de "língua" da chama */
+@keyframes flame-outer-flicker {
+  0% {
+    transform: scale(1) skewX(0deg);
+  }
+  25% {
+    transform: scale(1.03, 0.98) skewX(1.5deg);
+  }
+  50% {
+    transform: scale(0.97, 1.05) skewX(-1deg);
+  }
+  75% {
+    transform: scale(1.02, 0.99) skewX(0.8deg);
+  }
+  100% {
+    transform: scale(1) skewX(0deg);
+  }
+}
+
+/* núcleo quente: flicker mais rápido e independente */
+@keyframes flame-inner-flicker {
+  0% {
+    transform: scale(1) translateY(0);
+    opacity: 0.92;
+  }
+  33% {
+    transform: scale(1.06, 0.94) translateY(1px);
+    opacity: 1;
+  }
+  66% {
+    transform: scale(0.92, 1.08) translateY(-1px);
+    opacity: 0.85;
+  }
+  100% {
+    transform: scale(1) translateY(0);
+    opacity: 0.92;
+  }
+}
+
+/* halo âmbar: pulsa de intensidade/tamanho */
+@keyframes flame-glow-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.85;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 1;
+  }
+}
+
+.flame-body {
+  animation: flame-body-breathe 2.4s ease-in-out infinite;
+  transform-origin: 50% 92%;
+}
+.flame-outer {
+  animation: flame-outer-flicker 1.5s ease-in-out infinite;
+  transform-origin: 50% 90%;
+  transform-box: fill-box;
+}
+.flame-inner {
+  animation: flame-inner-flicker 0.9s ease-in-out infinite;
+  transform-origin: 50% 85%;
+  transform-box: fill-box;
+}
+.flame-glow {
+  animation: flame-glow-pulse 2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flame-body,
+  .flame-outer,
+  .flame-inner,
+  .flame-glow {
+    animation: none;
+  }
+}
+
+/* ============================================================
+   Celebração de streak (components/caverna/streak-celebration.tsx)
+   A TELA INTEIRA embaça e o foguinho aparece grande no centro por ~2-3s.
+   O desfoque é do overlay (backdrop-filter), então todo o sistema atrás
+   fica borrado. Sem card/caixa — o conteúdo flutua no centro.
+   ============================================================ */
+
+/* overlay glassmorphism.
+   IMPORTANTE: o backdrop-filter fica FIXO no elemento (não animado e sem
+   opacity no mesmo nó) — animar opacity ou o próprio blur ANULA o
+   backdrop-filter em Chrome/Safari (ele passa a filtrar o próprio conteúdo,
+   não o fundo). A aparição é feita só pelo background-color, que pode animar
+   sem quebrar o blur. */
+@keyframes streak-overlay-in {
+  0% {
+    background-color: rgba(10, 10, 11, 0);
+  }
+  100% {
+    background-color: rgba(10, 10, 11, 0.6);
+  }
+}
+@keyframes streak-overlay-out {
+  0% {
+    background-color: rgba(10, 10, 11, 0.6);
+  }
+  100% {
+    background-color: rgba(10, 10, 11, 0);
+  }
+}
+
+/* foguinho entra com "pop" e assenta */
+@keyframes streak-flame-pop {
+  0% {
+    transform: scale(0.3) translateY(20px);
+    opacity: 0;
+  }
+  55% {
+    transform: scale(1.16) translateY(-6px);
+    opacity: 1;
+  }
+  75% {
+    transform: scale(0.95) translateY(3px);
+  }
+  100% {
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* número e texto sobem entrando */
+@keyframes streak-copy-in {
+  0% {
+    transform: translateY(12px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* raios girando atrás (marcos) — rotate puro; a centralização é do wrapper */
+@keyframes streak-rays-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* faíscas sobem e somem */
+@keyframes streak-spark {
+  0% {
+    transform: translate(0, 0) scale(1);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--spark-dx, 0), var(--spark-dy, -80px)) scale(0.2);
+    opacity: 0;
+  }
+}
+
+.streak-overlay {
+  /* blur FIXO — nunca animado, nunca com opacity neste nó (senão anula) */
+  backdrop-filter: blur(80px) saturate(1.4) brightness(0.55);
+  -webkit-backdrop-filter: blur(80px) saturate(1.4) brightness(0.55);
+  animation: streak-overlay-in 440ms var(--ease-lc) both;
+}
+.streak-overlay[data-leaving="true"] {
+  animation: streak-overlay-out 400ms ease both;
+}
+.streak-pop {
+  animation: streak-flame-pop 720ms var(--ease-lc) 120ms both;
+}
+.streak-copy {
+  animation: streak-copy-in 480ms var(--ease-lc) 280ms both;
+}
+.streak-rays {
+  animation: streak-rays-spin 22s linear infinite;
+}
+.streak-spark {
+  animation: streak-spark 1.4s ease-out 200ms infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .streak-overlay,
+  .streak-overlay[data-leaving="true"],
+  .streak-pop,
+  .streak-copy,
+  .streak-rays {
+    animation: none;
+  }
+  .streak-overlay {
+    background-color: rgba(10, 10, 11, 0.62);
+    backdrop-filter: blur(40px) saturate(1.3);
+    -webkit-backdrop-filter: blur(40px) saturate(1.3);
+  }
+  .streak-spark {
+    display: none;
+  }
 }

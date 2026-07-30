@@ -5,12 +5,13 @@ import { revalidatePath, revalidateTag } from "next/cache";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { tagUsuario } from "@/lib/cache-tags";
+import { getContaAtiva } from "@/lib/conta-ativa";
 
 /** Revalida as rotas e derruba o cache "use cache" do módulo finanças. */
-function revalidar(userId: string) {
+function revalidar(contaFinanceiraId: string) {
   revalidatePath("/financas");
   revalidatePath("/");
-  revalidateTag(tagUsuario(userId, "financas"));
+  revalidateTag(tagUsuario(contaFinanceiraId, "financas"));
 }
 
 export type TipoPonta = "conta" | "cartao" | "ativo";
@@ -38,9 +39,9 @@ function dataSP(dia: string): Date {
   return new Date(`${dia}T12:00:00-03:00`);
 }
 
-/** Garante que os FKs vindos do cliente pertencem ao usuário. */
+/** Garante que os FKs vindos do cliente pertencem à conta financeira ativa. */
 async function validarPosse(
-  userId: string,
+  contaFinanceiraId: string,
   ids: {
     accountId?: string | null;
     categoryId?: string | null;
@@ -50,15 +51,15 @@ async function validarPosse(
   const checks: Promise<{ id: string } | null>[] = [];
   if (ids.accountId)
     checks.push(
-      db.account.findFirst({ where: { id: ids.accountId, userId }, select: { id: true } })
+      db.account.findFirst({ where: { id: ids.accountId, contaFinanceiraId }, select: { id: true } })
     );
   if (ids.categoryId)
     checks.push(
-      db.category.findFirst({ where: { id: ids.categoryId, userId }, select: { id: true } })
+      db.category.findFirst({ where: { id: ids.categoryId, contaFinanceiraId }, select: { id: true } })
     );
   if (ids.cardId)
     checks.push(
-      db.card.findFirst({ where: { id: ids.cardId, userId }, select: { id: true } })
+      db.card.findFirst({ where: { id: ids.cardId, contaFinanceiraId }, select: { id: true } })
     );
   const encontrados = await Promise.all(checks);
   if (encontrados.some((r) => !r)) throw new Error("Recurso não encontrado.");
@@ -73,17 +74,17 @@ type Ponta = { tipo: TipoPonta; id: string };
  * antigo contraAccountId, agora estendido às 3 pontas possíveis.
  */
 async function pontaValida(
-  userId: string,
+  contaFinanceiraId: string,
   tipo?: TipoPonta | null,
   id?: string | null
 ): Promise<Ponta | null> {
   if (!tipo || !id) return null;
   const registro =
     tipo === "conta"
-      ? await db.account.findFirst({ where: { id, userId }, select: { id: true } })
+      ? await db.account.findFirst({ where: { id, contaFinanceiraId }, select: { id: true } })
       : tipo === "cartao"
-        ? await db.card.findFirst({ where: { id, userId }, select: { id: true } })
-        : await db.asset.findFirst({ where: { id, userId }, select: { id: true } });
+        ? await db.card.findFirst({ where: { id, contaFinanceiraId }, select: { id: true } })
+        : await db.asset.findFirst({ where: { id, contaFinanceiraId }, select: { id: true } });
   return registro ? { tipo, id } : null;
 }
 
@@ -95,6 +96,7 @@ async function pontaValida(
  */
 async function sincronizarMovimentoDoAtivo(
   userId: string,
+  contaFinanceiraId: string,
   transactionId: string,
   origem: Ponta | null,
   destino: Ponta | null,
@@ -111,6 +113,7 @@ async function sincronizarMovimentoDoAtivo(
     await db.assetMovement.createMany({
       data: novos.map((n) => ({
         userId,
+        contaFinanceiraId,
         assetId: n.assetId,
         tipo: n.tipo,
         valor,
@@ -122,10 +125,10 @@ async function sincronizarMovimentoDoAtivo(
 }
 
 /** Resolve as pontas de uma transferência e deriva accountId/cardId legados a partir delas. */
-async function resolverPontasTransferencia(userId: string, input: TransacaoInput) {
+async function resolverPontasTransferencia(contaFinanceiraId: string, input: TransacaoInput) {
   const [origem, destino] = await Promise.all([
-    pontaValida(userId, input.origemTipo, input.origemId),
-    pontaValida(userId, input.destinoTipo, input.destinoId),
+    pontaValida(contaFinanceiraId, input.origemTipo, input.origemId),
+    pontaValida(contaFinanceiraId, input.destinoTipo, input.destinoId),
   ]);
   const pontaDoTipo = (t: TipoPonta) =>
     origem?.tipo === t ? origem : destino?.tipo === t ? destino : null;
@@ -139,11 +142,15 @@ async function resolverPontasTransferencia(userId: string, input: TransacaoInput
 
 export async function createTransacao(input: TransacaoInput) {
   const { id: userId } = await requireUser();
+  const { id: contaFinanceiraId } = await getContaAtiva(userId);
   const transferencia = input.tipo === "transferencia";
-  const pontas = transferencia ? await resolverPontasTransferencia(userId, input) : null;
+  const pontas = transferencia
+    ? await resolverPontasTransferencia(contaFinanceiraId, input)
+    : null;
 
   const base = {
     userId,
+    contaFinanceiraId,
     tipo: input.tipo,
     valor: input.valor,
     descricao: input.descricao,
@@ -157,7 +164,7 @@ export async function createTransacao(input: TransacaoInput) {
     destinoTipo: pontas?.destino?.tipo ?? null,
     destinoId: pontas?.destino?.id ?? null,
   };
-  if (!transferencia) await validarPosse(userId, base);
+  if (!transferencia) await validarPosse(contaFinanceiraId, base);
 
   const parcelas = Math.max(1, Math.floor(input.parcelas ?? 1));
 
@@ -178,6 +185,7 @@ export async function createTransacao(input: TransacaoInput) {
     if (transferencia) {
       await sincronizarMovimentoDoAtivo(
         userId,
+        contaFinanceiraId,
         tx.id,
         pontas!.origem,
         pontas!.destino,
@@ -187,13 +195,16 @@ export async function createTransacao(input: TransacaoInput) {
     }
   }
 
-  revalidar(userId);
+  revalidar(contaFinanceiraId);
 }
 
 export async function updateTransacao(id: string, input: TransacaoInput) {
   const { id: userId } = await requireUser();
+  const { id: contaFinanceiraId } = await getContaAtiva(userId);
   const transferencia = input.tipo === "transferencia";
-  const pontas = transferencia ? await resolverPontasTransferencia(userId, input) : null;
+  const pontas = transferencia
+    ? await resolverPontasTransferencia(contaFinanceiraId, input)
+    : null;
 
   const data = {
     tipo: input.tipo,
@@ -209,12 +220,13 @@ export async function updateTransacao(id: string, input: TransacaoInput) {
     destinoTipo: pontas?.destino?.tipo ?? null,
     destinoId: pontas?.destino?.id ?? null,
   };
-  if (!transferencia) await validarPosse(userId, data);
-  await db.transaction.update({ where: { id, userId }, data });
+  if (!transferencia) await validarPosse(contaFinanceiraId, data);
+  await db.transaction.update({ where: { id, userId, contaFinanceiraId }, data });
 
   if (transferencia) {
     await sincronizarMovimentoDoAtivo(
       userId,
+      contaFinanceiraId,
       id,
       pontas!.origem,
       pontas!.destino,
@@ -225,12 +237,13 @@ export async function updateTransacao(id: string, input: TransacaoInput) {
     await db.assetMovement.deleteMany({ where: { userId, transactionId: id } });
   }
 
-  revalidar(userId);
+  revalidar(contaFinanceiraId);
 }
 
 export async function duplicateTransacao(id: string) {
   const { id: userId } = await requireUser();
-  const tx = await db.transaction.findFirst({ where: { id, userId } });
+  const { id: contaFinanceiraId } = await getContaAtiva(userId);
+  const tx = await db.transaction.findFirst({ where: { id, userId, contaFinanceiraId } });
   if (!tx) return;
   const { id: _id, criadoEm: _criadoEm, ...resto } = tx;
   const nova = await db.transaction.create({
@@ -239,6 +252,7 @@ export async function duplicateTransacao(id: string) {
   if (tx.tipo === "transferencia") {
     await sincronizarMovimentoDoAtivo(
       userId,
+      contaFinanceiraId,
       nova.id,
       tx.origemTipo === "ativo" && tx.origemId ? { tipo: "ativo", id: tx.origemId } : null,
       tx.destinoTipo === "ativo" && tx.destinoId ? { tipo: "ativo", id: tx.destinoId } : null,
@@ -246,20 +260,21 @@ export async function duplicateTransacao(id: string) {
       tx.data.toISOString().slice(0, 10)
     );
   }
-  revalidar(userId);
+  revalidar(contaFinanceiraId);
 }
 
 /** Exclui e devolve os dados (+ movimentos de ativo espelho) para o "Desfazer" recriar a transação. */
 export async function deleteTransacao(id: string) {
   const { id: userId } = await requireUser();
-  const tx = await db.transaction.findFirst({ where: { id, userId } });
+  const { id: contaFinanceiraId } = await getContaAtiva(userId);
+  const tx = await db.transaction.findFirst({ where: { id, userId, contaFinanceiraId } });
   if (!tx) return null;
   const movimentosAtivo = await db.assetMovement.findMany({
     where: { userId, transactionId: id },
   });
   await db.assetMovement.deleteMany({ where: { userId, transactionId: id } });
   await db.transaction.delete({ where: { id, userId } });
-  revalidar(userId);
+  revalidar(contaFinanceiraId);
   return { ...tx, movimentosAtivo };
 }
 
@@ -291,22 +306,31 @@ export async function restoreTransacao(dados: {
   }[];
 }) {
   const { id: userId } = await requireUser();
+  const { id: contaFinanceiraId } = await getContaAtiva(userId);
   const { movimentosAtivo, ...dadosTx } = dados;
-  await validarPosse(userId, dadosTx);
-  const nova = await db.transaction.create({ data: { ...dadosTx, userId } });
+  await validarPosse(contaFinanceiraId, dadosTx);
+  const nova = await db.transaction.create({
+    data: { ...dadosTx, userId, contaFinanceiraId },
+  });
   if (movimentosAtivo && movimentosAtivo.length > 0) {
     await db.assetMovement.createMany({
-      data: movimentosAtivo.map((m) => ({ ...m, userId, transactionId: nova.id })),
+      data: movimentosAtivo.map((m) => ({
+        ...m,
+        userId,
+        contaFinanceiraId,
+        transactionId: nova.id,
+      })),
     });
   }
-  revalidar(userId);
+  revalidar(contaFinanceiraId);
 }
 
 /** Exclui todas as parcelas de um parcelamento. */
 export async function deleteParcelamento(grupo: string) {
   const { id: userId } = await requireUser();
-  await db.transaction.deleteMany({ where: { userId, parcelaGrupo: grupo } });
-  revalidar(userId);
+  const { id: contaFinanceiraId } = await getContaAtiva(userId);
+  await db.transaction.deleteMany({ where: { userId, contaFinanceiraId, parcelaGrupo: grupo } });
+  revalidar(contaFinanceiraId);
 }
 
 export type ParcelamentoInput = {
@@ -323,19 +347,21 @@ export type ParcelamentoInput = {
 /** Recria as parcelas do grupo com os novos dados, mantendo o mesmo parcelaGrupo. */
 export async function updateParcelamento(grupo: string, input: ParcelamentoInput) {
   const { id: userId } = await requireUser();
+  const { id: contaFinanceiraId } = await getContaAtiva(userId);
   const parcelas = Math.max(1, Math.floor(input.parcelas));
   const inicio = dataSP(input.data);
-  await validarPosse(userId, {
+  await validarPosse(contaFinanceiraId, {
     accountId: input.accountId,
     categoryId: input.categoryId,
     cardId: input.cardId,
   });
 
   await db.$transaction([
-    db.transaction.deleteMany({ where: { userId, parcelaGrupo: grupo } }),
+    db.transaction.deleteMany({ where: { userId, contaFinanceiraId, parcelaGrupo: grupo } }),
     db.transaction.createMany({
       data: Array.from({ length: parcelas }, (_, i) => ({
         userId,
+        contaFinanceiraId,
         tipo: "despesa",
         valor: input.valorParcela,
         descricao: input.descricao,
@@ -352,7 +378,7 @@ export async function updateParcelamento(grupo: string, input: ParcelamentoInput
     }),
   ]);
 
-  revalidar(userId);
+  revalidar(contaFinanceiraId);
 }
 
 // ---------- Categorias ----------
@@ -367,26 +393,29 @@ export type CategoriaInput = {
 
 export async function createCategoria(input: CategoriaInput) {
   const { id: userId } = await requireUser();
+  const { id: contaFinanceiraId } = await getContaAtiva(userId);
   const cat = await db.category.create({
-    data: { ...input, orcamentoMensal: input.orcamentoMensal ?? null, userId },
+    data: { ...input, orcamentoMensal: input.orcamentoMensal ?? null, userId, contaFinanceiraId },
   });
-  revalidar(userId);
+  revalidar(contaFinanceiraId);
   return cat;
 }
 
 export async function updateCategoria(id: string, input: CategoriaInput) {
   const { id: userId } = await requireUser();
+  const { id: contaFinanceiraId } = await getContaAtiva(userId);
   await db.category.update({
-    where: { id, userId },
+    where: { id, userId, contaFinanceiraId },
     data: { ...input, orcamentoMensal: input.orcamentoMensal ?? null },
   });
-  revalidar(userId);
+  revalidar(contaFinanceiraId);
 }
 
 export async function deleteCategoria(id: string) {
   const { id: userId } = await requireUser();
-  await db.category.delete({ where: { id, userId } });
-  revalidar(userId);
+  const { id: contaFinanceiraId } = await getContaAtiva(userId);
+  await db.category.delete({ where: { id, userId, contaFinanceiraId } });
+  revalidar(contaFinanceiraId);
 }
 
 // ---------- Cartões ----------
@@ -416,20 +445,26 @@ function normalizarCartao(input: CartaoInput) {
 
 export async function createCartao(input: CartaoInput) {
   const { id: userId } = await requireUser();
-  await db.card.create({ data: { ...normalizarCartao(input), userId } });
-  revalidar(userId);
+  const { id: contaFinanceiraId } = await getContaAtiva(userId);
+  await db.card.create({ data: { ...normalizarCartao(input), userId, contaFinanceiraId } });
+  revalidar(contaFinanceiraId);
 }
 
 export async function updateCartao(id: string, input: CartaoInput) {
   const { id: userId } = await requireUser();
-  await db.card.update({ where: { id, userId }, data: normalizarCartao(input) });
-  revalidar(userId);
+  const { id: contaFinanceiraId } = await getContaAtiva(userId);
+  await db.card.update({
+    where: { id, userId, contaFinanceiraId },
+    data: normalizarCartao(input),
+  });
+  revalidar(contaFinanceiraId);
 }
 
 export async function deleteCartao(id: string) {
   const { id: userId } = await requireUser();
-  await db.card.delete({ where: { id, userId } });
-  revalidar(userId);
+  const { id: contaFinanceiraId } = await getContaAtiva(userId);
+  await db.card.delete({ where: { id, userId, contaFinanceiraId } });
+  revalidar(contaFinanceiraId);
 }
 
 // ---------- Assinaturas ----------
@@ -444,34 +479,38 @@ export type AssinaturaInput = {
 
 export async function createAssinatura(input: AssinaturaInput) {
   const { id: userId } = await requireUser();
-  await db.subscription.create({ data: { ...input, userId } });
-  revalidar(userId);
+  const { id: contaFinanceiraId } = await getContaAtiva(userId);
+  await db.subscription.create({ data: { ...input, userId, contaFinanceiraId } });
+  revalidar(contaFinanceiraId);
 }
 
 export async function updateAssinatura(id: string, input: AssinaturaInput) {
   const { id: userId } = await requireUser();
-  const atual = await db.subscription.findFirst({ where: { id, userId } });
+  const { id: contaFinanceiraId } = await getContaAtiva(userId);
+  const atual = await db.subscription.findFirst({ where: { id, userId, contaFinanceiraId } });
   await db.subscription.update({
-    where: { id, userId },
+    where: { id, userId, contaFinanceiraId },
     data: {
       ...input,
       valorAnterior:
         atual && atual.valor !== input.valor ? atual.valor : atual?.valorAnterior,
     },
   });
-  revalidar(userId);
+  revalidar(contaFinanceiraId);
 }
 
 export async function deleteAssinatura(id: string) {
   const { id: userId } = await requireUser();
-  const s = await db.subscription.findFirst({ where: { id, userId } });
-  await db.subscription.delete({ where: { id, userId } });
-  revalidar(userId);
+  const { id: contaFinanceiraId } = await getContaAtiva(userId);
+  const s = await db.subscription.findFirst({ where: { id, userId, contaFinanceiraId } });
+  await db.subscription.delete({ where: { id, userId, contaFinanceiraId } });
+  revalidar(contaFinanceiraId);
   return s;
 }
 
 export async function restoreAssinatura(dados: AssinaturaInput) {
   const { id: userId } = await requireUser();
-  await db.subscription.create({ data: { ...dados, userId } });
-  revalidar(userId);
+  const { id: contaFinanceiraId } = await getContaAtiva(userId);
+  await db.subscription.create({ data: { ...dados, userId, contaFinanceiraId } });
+  revalidar(contaFinanceiraId);
 }

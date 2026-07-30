@@ -265,7 +265,9 @@ async function Corrida({ userId, hoje }: { userId: string; hoje: Date }) {
   const configurado = stravaConfigurado();
   // A conexão passa pela rota /api/strava/connect, que gera o state CSRF
   // aleatório e grava o cookie antes de redirecionar para o Strava.
-  const authorizeUrl = configurado ? "/api/strava/connect" : null;
+  const authorizeUrl = configurado
+    ? "/api/strava/connect?next=" + encodeURIComponent("/treinos?tab=corrida")
+    : null;
 
   const metaKm = await db.setting.findUnique({
     where: { userId_key: { userId, key: "meta_km_mes" } },

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import {
   Area,
   AreaChart,
@@ -97,8 +97,18 @@ export function CalculadoraClient() {
   const [aporte, setAporte] = useState(50000); // R$ 500,00 em centavos
   const [taxaAnual, setTaxaAnual] = useState("15");
   const [anos, setAnos] = useState("10");
-  const [aumento, setAumento] = useState("10");
+  const [aumento, setAumento] = useState("1");
   const [cadencia, setCadencia] = useState<Cadencia>("mensal");
+
+  useEffect(() => {
+    const saved = localStorage.getItem("calc-aumento");
+    if (saved) setAumento(saved);
+  }, []);
+
+  const handleAumentoChange = (value: string) => {
+    setAumento(value);
+    localStorage.setItem("calc-aumento", value);
+  };
 
   const pontos = useMemo(
     () =>
@@ -167,8 +177,8 @@ export function CalculadoraClient() {
           <Input
             inputMode="decimal"
             value={aumento}
-            onChange={(e) => setAumento(e.target.value)}
-            placeholder="10"
+            onChange={(e) => handleAumentoChange(e.target.value)}
+            placeholder="1"
             className="tabular"
           />
         </div>

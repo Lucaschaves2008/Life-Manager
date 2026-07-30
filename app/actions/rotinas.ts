@@ -4,6 +4,7 @@ import { revalidatePath, revalidateTag } from "next/cache";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { tagUsuario } from "@/lib/cache-tags";
+import { marcarDiaAtivo } from "@/lib/streak";
 import { spStartOfDay } from "@/lib/dates";
 import type { Rrule } from "@/lib/recurrence";
 import { TIPOS_ROTINA, type TipoRotina } from "@/lib/data/rotinas";
@@ -283,11 +284,13 @@ export async function toggleRotinaCheckDia(templateId: string, dia: string) {
   });
   if (existente) {
     await db.rotinaCheckDia.delete({ where: { id: existente.id } });
+    // NÃO desfaz o StreakDia: a ofensiva do dia é permanente (só desmarcou).
   } else {
     // toggle manual: nunca marca feitoAuto (esse flag é só da execução real)
     await db.rotinaCheckDia.create({
       data: { userId, rotinaId: templateId, data, feitoAuto: false },
     });
+    await marcarDiaAtivo(userId, dia); // conquista o dia (permanente)
   }
   revalidar(userId);
 }

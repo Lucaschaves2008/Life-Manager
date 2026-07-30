@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ExternalLink, Footprints, Pencil, Plus, Trash2 } from "lucide-react";
+import { Download, ExternalLink, Footprints, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Textarea } from "@/components/ui/input";
@@ -24,6 +24,7 @@ import {
   updateRun,
   type CorridaInput,
 } from "@/app/actions/treinos";
+import { buscarCorridaStrava } from "@/app/actions/strava";
 import { formatDuracao, formatPace } from "@/lib/data/treinos-format";
 import { cn } from "@/lib/utils";
 
@@ -52,6 +53,7 @@ export function CorridaClient({
   const params = useSearchParams();
   const [, startTransition] = useTransition();
   const [pending, startSalvar] = useTransition();
+  const [buscando, startBuscar] = useTransition();
   const [aberto, setAberto] = useState(false);
   const [editandoId, setEditandoId] = useState<string | null>(null);
 
@@ -64,6 +66,7 @@ export function CorridaClient({
   const [sensacao, setSensacao] = useState(3);
   const [notas, setNotas] = useState("");
   const [stravaLink, setStravaLink] = useState("");
+  const [stravaActivityId, setStravaActivityId] = useState<string | null>(null);
 
   const abrirNovo = params.get("novo") === "1";
   useEffect(() => {
@@ -86,7 +89,30 @@ export function CorridaClient({
     setSensacao(corrida?.sensacao ?? 3);
     setNotas(corrida?.notas ?? "");
     setStravaLink(corrida?.stravaLink ?? "");
+    setStravaActivityId(null);
     setAberto(true);
+  }
+
+  function buscarDoStrava() {
+    const link = stravaLink.trim();
+    if (!link) return;
+    startBuscar(async () => {
+      try {
+        const importada = await buscarCorridaStrava(link);
+        setData(importada.data);
+        setKm(String(importada.km));
+        const seg = importada.segundos;
+        setH(String(Math.floor(seg / 3600)));
+        setMin(String(Math.floor((seg % 3600) / 60)));
+        setSeg(String(seg % 60));
+        setNotas(importada.nome);
+        setStravaLink(importada.link);
+        setStravaActivityId(importada.activityId);
+        toast.success("Métricas importadas do Strava");
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Não foi possível importar essa corrida.");
+      }
+    });
   }
 
   function fechar(v: boolean) {
@@ -107,16 +133,21 @@ export function CorridaClient({
       sensacao,
       notas,
       stravaLink: stravaLink.trim() || null,
+      stravaActivityId,
     };
     startSalvar(async () => {
-      if (editandoId) {
-        await updateRun(editandoId, payload);
-        toast.success("Corrida atualizada");
-      } else {
-        await createRun(payload);
-        toast.success(`Corrida registrada · ${formatPace(pace)}`);
+      try {
+        if (editandoId) {
+          await updateRun(editandoId, payload);
+          toast.success("Corrida atualizada");
+        } else {
+          await createRun(payload);
+          toast.success(`Corrida registrada · ${formatPace(pace)}`);
+        }
+        fechar(false);
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Não foi possível salvar a corrida.");
       }
-      fechar(false);
     });
   }
 
@@ -338,12 +369,32 @@ export function CorridaClient({
 
             <div>
               <Label htmlFor="run-strava">Link do Strava</Label>
-              <Input
-                id="run-strava"
-                value={stravaLink}
-                onChange={(e) => setStravaLink(e.target.value)}
-                placeholder="https://www.strava.com/activities/…"
-              />
+              <div className="flex gap-2">
+                <Input
+                  id="run-strava"
+                  value={stravaLink}
+                  onChange={(e) => {
+                    setStravaLink(e.target.value);
+                    setStravaActivityId(null);
+                  }}
+                  placeholder="https://www.strava.com/activities/…"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={!stravaLink.trim() || buscando}
+                  onClick={buscarDoStrava}
+                >
+                  <Download className={cn("h-4 w-4", buscando && "animate-pulse")} strokeWidth={1.5} />
+                  {buscando ? "Buscando…" : "Buscar"}
+                </Button>
+              </div>
+              {stravaActivityId && (
+                <p className="mt-1.5 text-[12px] text-mint">
+                  Métricas importadas do Strava — confira antes de salvar.
+                </p>
+              )}
             </div>
 
             <div className="flex items-center gap-3">

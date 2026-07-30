@@ -11,54 +11,29 @@ import {
   spStartOfQuarter,
   spStartOfYear,
 } from "@/lib/dates";
+import { contarOcorrenciasEmLote } from "@/lib/data/variaveis";
+import {
+  METRICAS,
+  PERIODOS,
+  type MetaMetrica,
+  type MetaOrigem,
+  type MetaPeriodo,
+} from "@/lib/data/metas-quantitativas-constantes";
 
 /**
  * Metas quantitativas: alvo numérico com progresso calculado automaticamente
  * a partir de dados que já existem em outros módulos — sem contador manual.
  */
 
-export type MetaMetrica =
-  | "treinos"
-  | "corridas_completas"
-  | "km_corridos"
-  | "refeicoes_cumpridas"
-  | "horas_estudo";
-
-export type MetaPeriodo = "mes" | "trimestre" | "ano";
-
-export const METRICAS: {
-  value: MetaMetrica;
-  label: string;
-  unidade: string;
-  placeholder: string;
-}[] = [
-  { value: "treinos", label: "Treinos concluídos", unidade: "treinos", placeholder: "Ex.: 75" },
-  {
-    value: "corridas_completas",
-    label: "Corridas completas",
-    unidade: "corridas",
-    placeholder: "Ex.: 20",
-  },
-  { value: "km_corridos", label: "Km corridos", unidade: "km", placeholder: "Ex.: 150" },
-  {
-    value: "refeicoes_cumpridas",
-    label: "Refeições cumpridas",
-    unidade: "refeições",
-    placeholder: "Ex.: 50",
-  },
-  { value: "horas_estudo", label: "Horas de estudo", unidade: "horas", placeholder: "Ex.: 40" },
-];
-
-export const PERIODOS: { value: MetaPeriodo; label: string }[] = [
-  { value: "mes", label: "Este mês" },
-  { value: "trimestre", label: "Este trimestre" },
-  { value: "ano", label: "Este ano" },
-];
+export { METRICAS, PERIODOS };
+export type { MetaMetrica, MetaOrigem, MetaPeriodo };
 
 export type MetaQuantitativaView = {
   id: string;
   titulo: string;
-  metrica: MetaMetrica;
+  origem: MetaOrigem;
+  metrica: MetaMetrica | null;
+  variavelId: string | null;
   unidade: string;
   alvo: number;
   atual: number;
@@ -228,19 +203,27 @@ export async function metasQuantitativas(
   if (metas.length === 0) return [];
 
   const ranges = metas.map((m) => rangeDoPeriodo(m.periodo as MetaPeriodo, m.chave));
+  const atuais = new Array<number>(metas.length);
 
-  // Agrupa por métrica pra fazer 1 leva de queries por métrica usada (não por meta).
+  // origem="metrica": agrupa por métrica pra fazer 1 leva de queries por
+  // métrica usada (não por meta).
   const indicesPorMetrica = new Map<MetaMetrica, number[]>();
+  // origem="variavel": todas resolvidas juntas em 1 chamada (já em lote).
+  const indicesVariavel: number[] = [];
+
   metas.forEach((m, i) => {
+    if (m.origem === "variavel" && m.variavelId) {
+      indicesVariavel.push(i);
+      return;
+    }
     const metrica = m.metrica as MetaMetrica;
     const lista = indicesPorMetrica.get(metrica) ?? [];
     lista.push(i);
     indicesPorMetrica.set(metrica, lista);
   });
 
-  const atuais = new Array<number>(metas.length);
-  await Promise.all(
-    [...indicesPorMetrica.entries()].map(async ([metrica, indices]) => {
+  await Promise.all([
+    ...[...indicesPorMetrica.entries()].map(async ([metrica, indices]) => {
       const valores = await calcularAtualEmLote(
         userId,
         metrica,
@@ -249,11 +232,26 @@ export async function metasQuantitativas(
       indices.forEach((i, k) => {
         atuais[i] = valores[k];
       });
-    })
-  );
+    }),
+    (async () => {
+      if (indicesVariavel.length === 0) return;
+      const valores = await contarOcorrenciasEmLote(
+        userId,
+        indicesVariavel.map((i) => ({
+          variavelId: metas[i].variavelId!,
+          inicio: ranges[i].inicio,
+          fim: ranges[i].fim,
+        }))
+      );
+      indicesVariavel.forEach((i, k) => {
+        atuais[i] = valores[k];
+      });
+    })(),
+  ]);
 
   return metas.map((m, i) => {
-    const metrica = m.metrica as MetaMetrica;
+    const origem = (m.origem as MetaOrigem) ?? "metrica";
+    const metrica = origem === "metrica" ? (m.metrica as MetaMetrica) : null;
     const periodo = m.periodo as MetaPeriodo;
     const { inicio, fim } = ranges[i];
     const atual = atuais[i];
@@ -268,12 +266,15 @@ export async function metasQuantitativas(
     );
     const noPrazo = pct >= 100 || pct >= pctTempo;
 
-    const unidade = METRICAS.find((met) => met.value === metrica)?.unidade ?? "";
+    const unidade =
+      origem === "metrica" ? METRICAS.find((met) => met.value === metrica)?.unidade ?? "" : "dias";
 
     return {
       id: m.id,
       titulo: m.titulo,
+      origem,
       metrica,
+      variavelId: m.variavelId,
       unidade,
       alvo: m.alvo,
       atual,

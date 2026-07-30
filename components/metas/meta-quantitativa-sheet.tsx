@@ -21,14 +21,18 @@ import {
   METRICAS,
   PERIODOS,
   type MetaMetrica,
+  type MetaOrigem,
   type MetaPeriodo,
-} from "@/lib/data/metas-quantitativas";
+} from "@/lib/data/metas-quantitativas-constantes";
+import type { VariavelView } from "@/lib/data/variaveis";
 import { monthKeySP, nowSP, quarterKeySP, yearKeySP } from "@/lib/dates";
 
 export type MetaQuantitativaEditavel = {
   id: string;
   titulo: string;
-  metrica: MetaMetrica;
+  origem: MetaOrigem;
+  metrica: MetaMetrica | null;
+  variavelId: string | null;
   alvo: number;
   periodo: MetaPeriodo;
   chave: string;
@@ -45,24 +49,34 @@ export function MetaQuantitativaSheet({
   open,
   onOpenChange,
   editando,
+  variaveis,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   editando?: MetaQuantitativaEditavel | null;
+  variaveis: VariavelView[];
 }) {
   const [pending, startTransition] = useTransition();
   const [titulo, setTitulo] = useState(editando?.titulo ?? "");
+  const [origem, setOrigem] = useState<MetaOrigem>(editando?.origem ?? "metrica");
   const [metrica, setMetrica] = useState<MetaMetrica>(editando?.metrica ?? "treinos");
+  const [variavelId, setVariavelId] = useState(editando?.variavelId ?? variaveis[0]?.id ?? "");
   const [alvo, setAlvo] = useState(editando?.alvo ?? 0);
   const [periodo, setPeriodo] = useState<MetaPeriodo>(editando?.periodo ?? "mes");
 
   const metricaInfo = METRICAS.find((m) => m.value === metrica)!;
-  const valido = titulo.trim().length > 0 && alvo > 0;
+  const variavelInfo = variaveis.find((v) => v.id === variavelId);
+  const valido =
+    titulo.trim().length > 0 &&
+    alvo > 0 &&
+    (origem === "metrica" || (origem === "variavel" && !!variavelId));
 
   function salvar() {
     const payload: MetaQuantitativaInput = {
       titulo: titulo.trim(),
-      metrica,
+      origem,
+      metrica: origem === "metrica" ? metrica : null,
+      variavelId: origem === "variavel" ? variavelId : null,
       alvo,
       periodo,
       chave: editando?.chave ?? chaveAtual(periodo),
@@ -98,28 +112,71 @@ export function MetaQuantitativaSheet({
           </div>
 
           <div>
-            <Label>Métrica</Label>
+            <Label>Origem do progresso</Label>
             <Select
-              value={metrica}
-              onValueChange={(v) => setMetrica(v as MetaMetrica)}
+              value={origem}
+              onValueChange={(v) => setOrigem(v as MetaOrigem)}
               disabled={!!editando}
             >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {METRICAS.map((m) => (
-                  <SelectItem key={m.value} value={m.value}>
-                    {m.label}
-                  </SelectItem>
-                ))}
+                <SelectItem value="metrica">Métrica automática</SelectItem>
+                <SelectItem value="variavel">Variável pessoal</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
+          {origem === "metrica" ? (
+            <div>
+              <Label>Métrica</Label>
+              <Select
+                value={metrica}
+                onValueChange={(v) => setMetrica(v as MetaMetrica)}
+                disabled={!!editando}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {METRICAS.map((m) => (
+                    <SelectItem key={m.value} value={m.value}>
+                      {m.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : (
+            <div>
+              <Label>Variável</Label>
+              {variaveis.length === 0 ? (
+                <p className="text-[12.5px] text-steel">
+                  Crie uma variável no checklist (tipo &quot;Variável&quot;) para usar aqui.
+                </p>
+              ) : (
+                <Select value={variavelId} onValueChange={setVariavelId} disabled={!!editando}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {variaveis.map((v) => (
+                      <SelectItem key={v.id} value={v.id}>
+                        {v.emoji} {v.nome}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="alvo">Alvo ({metricaInfo.unidade})</Label>
+              <Label htmlFor="alvo">
+                Alvo ({origem === "metrica" ? metricaInfo.unidade : `dias · ${variavelInfo?.nome ?? ""}`})
+              </Label>
               <Input
                 id="alvo"
                 type="number"
@@ -127,7 +184,7 @@ export function MetaQuantitativaSheet({
                 step="any"
                 value={alvo || ""}
                 onChange={(e) => setAlvo(Number(e.target.value) || 0)}
-                placeholder={metricaInfo.placeholder}
+                placeholder={origem === "metrica" ? metricaInfo.placeholder : "Ex.: 10"}
                 className="tabular"
               />
             </div>

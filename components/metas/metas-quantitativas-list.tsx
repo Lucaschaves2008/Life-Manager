@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { excluirMetaQuantitativa } from "@/app/actions/metas-quantitativas";
 import type { MetaQuantitativaView } from "@/lib/data/metas-quantitativas";
+import type { VariavelView } from "@/lib/data/variaveis";
 import { MetaQuantitativaSheet } from "@/components/metas/meta-quantitativa-sheet";
 import { cn } from "@/lib/utils";
 
@@ -83,7 +84,13 @@ function LinhaMeta({ meta }: { meta: MetaQuantitativaView }) {
   );
 }
 
-export function MetasQuantitativasList({ metas }: { metas: MetaQuantitativaView[] }) {
+export function MetasQuantitativasList({
+  metas,
+  variaveis,
+}: {
+  metas: MetaQuantitativaView[];
+  variaveis: VariavelView[];
+}) {
   const [sheetAberto, setSheetAberto] = useState(false);
 
   return (
@@ -106,7 +113,11 @@ export function MetasQuantitativasList({ metas }: { metas: MetaQuantitativaView[
         Nova meta quantitativa
       </Button>
 
-      <MetaQuantitativaSheet open={sheetAberto} onOpenChange={setSheetAberto} />
+      <MetaQuantitativaSheet
+        open={sheetAberto}
+        onOpenChange={setSheetAberto}
+        variaveis={variaveis}
+      />
     </div>
   );
 }

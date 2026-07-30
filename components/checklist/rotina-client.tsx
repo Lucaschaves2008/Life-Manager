@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, CalendarDays, Check, Clock, GripVertical, Pencil, Plus, SkipForward, Star, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, CalendarDays, Check, Clock, Flame, GripVertical, Pencil, Plus, SkipForward, Star, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
@@ -30,6 +30,13 @@ import {
   toggleRotinaCheckDia,
   type RotinaTemplateInput,
 } from "@/app/actions/rotinas";
+import {
+  atualizarVariavel,
+  criarVariavel,
+  excluirVariavel,
+  moverVariavel,
+  toggleVariavelCheckDia,
+} from "@/app/actions/variaveis";
 import type {
   RotinaOcorrenciaView,
   RotinaOpcao,
@@ -37,6 +44,7 @@ import type {
   RotinaTemplateView,
   TipoRotina,
 } from "@/lib/data/rotinas";
+import type { VariavelChecklistItem } from "@/lib/data/variaveis";
 import type { CategoriaView } from "@/lib/data/estudos";
 import type { SessaoCorridaOpcao } from "@/lib/data/treinos-format";
 import { formatHoras } from "@/lib/data/estudos-format";
@@ -51,6 +59,13 @@ const TIPO_META: Record<TipoRotina, { label: string; emoji: string }> = {
   corrida: { label: "Corrida", emoji: "🏃" },
 };
 
+const VARIAVEL_META = { label: "Variável", emoji: "🔥" };
+
+/** Tipo de item exibido na lista — "rotina" (RotinaTemplate) ou "variavel" (Variavel). */
+type ItemChecklist =
+  | (RotinaOcorrenciaView & { origem: "rotina"; itemId: string })
+  | (VariavelChecklistItem & { origem: "variavel"; itemId: string });
+
 const METAS = [
   { label: "Sem meta", min: null },
   { label: "25 min", min: 25 },
@@ -62,6 +77,9 @@ const METAS = [
 
 type TipoRecorrencia = "nunca" | "todoDia" | "diasSemana" | "intervalo";
 
+/** "variavel" é um tipo de item do checklist à parte de TipoRotina — não vira RotinaTemplate. */
+type TipoItemForm = TipoRotina | "variavel";
+
 type FormState = {
   id: string | null;
   nome: string;
@@ -70,12 +88,14 @@ type FormState = {
   tipoRecorrencia: TipoRecorrencia;
   diasSemana: number[];
   dataFim: string;
-  tipo: TipoRotina;
+  tipo: TipoItemForm;
   studyCategoryId: string;
   routineId: string;
   runSessionId: string;
   metaMinutos: number | null;
   planoId: string;
+  medeStreak: boolean;
+  medeContagem: boolean;
 };
 
 function formVazio(planoId: string = ""): FormState {
@@ -93,6 +113,8 @@ function formVazio(planoId: string = ""): FormState {
     runSessionId: "",
     metaMinutos: null,
     planoId,
+    medeStreak: true,
+    medeContagem: true,
   };
 }
 
@@ -118,6 +140,7 @@ export function MinhaRotina({
   sessoesCorrida,
   planos,
   planoAtivoId,
+  variaveis,
   dia,
 }: {
   ocorrencias: RotinaOcorrenciaView[];
@@ -127,6 +150,7 @@ export function MinhaRotina({
   sessoesCorrida: SessaoCorridaOpcao[];
   planos: RotinaPlanoView[];
   planoAtivoId: string | null;
+  variaveis: VariavelChecklistItem[];
   /** yyyy-MM-dd */
   dia: string;
 }) {
@@ -136,12 +160,27 @@ export function MinhaRotina({
   const [novoPlanoNome, setNovoPlanoNome] = useState("");
   const [form, setForm] = useState<FormState | null>(null);
   const [ordemOtimista, setOrdemOtimista] = useState(ocorrencias);
+  const [variaveisOtimista, setVariaveisOtimista] = useState(variaveis);
 
   useEffect(() => {
     setOrdemOtimista(ocorrencias);
   }, [ocorrencias]);
 
+  useEffect(() => {
+    setVariaveisOtimista(variaveis);
+  }, [variaveis]);
+
   const catPorId = useMemo(() => new Map(categorias.map((c) => [c.id, c])), [categorias]);
+
+  // Lista unificada exibida: rotinas (arrastáveis entre si) seguidas de
+  // variáveis (sempre no fim, ordem própria — ver decisão no plano).
+  const itens: ItemChecklist[] = useMemo(
+    () => [
+      ...ordemOtimista.map((oc) => ({ ...oc, origem: "rotina" as const, itemId: oc.templateId })),
+      ...variaveisOtimista.map((v) => ({ ...v, origem: "variavel" as const, itemId: v.id })),
+    ],
+    [ordemOtimista, variaveisOtimista]
+  );
 
   function toggle(templateId: string) {
     setOrdemOtimista((atuais) =>
@@ -154,15 +193,38 @@ export function MinhaRotina({
     startTransition(() => toggleRotinaCheckDia(templateId, dia));
   }
 
+  function toggleVariavel(variavelId: string) {
+    setVariaveisOtimista((atuais) =>
+      atuais.map((v) => (v.id === variavelId ? { ...v, feito: !v.feito } : v))
+    );
+    startTransition(() => toggleVariavelCheckDia(variavelId, dia));
+  }
+
   function reordenar(deIndex: number, paraIndex: number) {
     if (deIndex === paraIndex) return;
-    const proxima = ordemOtimista.slice();
-    const [item] = proxima.splice(deIndex, 1);
-    proxima.splice(paraIndex, 0, item);
-    setOrdemOtimista(proxima);
-    startTransition(async () => {
-      await reordenarRotinaTemplates(proxima.map((o) => o.templateId));
-    });
+    // Arraste só é permitido dentro do próprio grupo (rotinas ou variáveis).
+    const dentroDeRotinas = deIndex < ordemOtimista.length && paraIndex < ordemOtimista.length;
+    const dentroDeVariaveis = deIndex >= ordemOtimista.length && paraIndex >= ordemOtimista.length;
+
+    if (dentroDeRotinas) {
+      const proxima = ordemOtimista.slice();
+      const [item] = proxima.splice(deIndex, 1);
+      proxima.splice(paraIndex, 0, item);
+      setOrdemOtimista(proxima);
+      startTransition(async () => {
+        await reordenarRotinaTemplates(proxima.map((o) => o.templateId));
+      });
+      return;
+    }
+    if (dentroDeVariaveis) {
+      const offset = ordemOtimista.length;
+      const proxima = variaveisOtimista.slice();
+      const [item] = proxima.splice(deIndex - offset, 1);
+      proxima.splice(paraIndex - offset, 0, item);
+      setVariaveisOtimista(proxima);
+      const direcao = paraIndex > deIndex ? 1 : -1;
+      startTransition(() => moverVariavel(item.id, direcao));
+    }
   }
 
   function pular(templateId: string) {
@@ -192,6 +254,19 @@ export function MinhaRotina({
       runSessionId: t.runSessionId ?? "",
       metaMinutos: t.metaMinutos,
       planoId: t.planoId ?? "",
+      medeStreak: true,
+      medeContagem: true,
+    });
+  }
+
+  function abrirEdicaoVariavel(v: VariavelChecklistItem) {
+    setForm({
+      ...formVazio(),
+      id: v.id,
+      nome: v.nome,
+      tipo: "variavel",
+      medeStreak: v.medeStreak,
+      medeContagem: v.medeContagem,
     });
   }
 
@@ -199,6 +274,22 @@ export function MinhaRotina({
     if (!form) return;
     const nome = form.nome.trim();
     if (!nome) return;
+
+    if (form.tipo === "variavel") {
+      startTransition(async () => {
+        try {
+          const payload = { nome, medeStreak: form.medeStreak, medeContagem: form.medeContagem };
+          if (form.id) await atualizarVariavel(form.id, payload);
+          else await criarVariavel(payload);
+          setForm(null);
+          toast.success(form.id ? "Variável atualizada" : "Variável criada");
+        } catch (e) {
+          toast.error(e instanceof Error ? e.message : "Não foi possível salvar");
+        }
+      });
+      return;
+    }
+
     const payload: RotinaTemplateInput = {
       nome,
       horaInicio: form.horaInicio || null,
@@ -223,6 +314,13 @@ export function MinhaRotina({
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "Não foi possível salvar");
       }
+    });
+  }
+
+  function excluirVariavelItem(id: string) {
+    startTransition(async () => {
+      await excluirVariavel(id);
+      toast.success("Variável removida");
     });
   }
 
@@ -305,26 +403,35 @@ export function MinhaRotina({
       </div>
 
       <div className="mt-4">
-        {ordemOtimista.length === 0 ? (
+        {itens.length === 0 ? (
           <EmptyState
             icon={CalendarDays}
-            title="Nenhum item planejado para hoje. Adicione um treino, estudo ou tarefa e organize seu dia."
+            title="Nenhum item planejado para hoje. Adicione um treino, estudo, tarefa ou variável e organize seu dia."
             className="py-12"
           />
         ) : (
-          <ListaArrastavel itens={ordemOtimista} onReordenar={reordenar}>
-            {(oc) => (
-              <ItemLinha
-                item={oc}
-                categoria={oc.studyCategoryId ? catPorId.get(oc.studyCategoryId) : undefined}
-                onToggle={() => toggle(oc.templateId)}
-                onEditar={() => {
-                  const t = templates.find((tt) => tt.id === oc.templateId);
-                  if (t) abrirEdicao(t);
-                }}
-                onPular={() => pular(oc.templateId)}
-              />
-            )}
+          <ListaArrastavel itens={itens} onReordenar={reordenar}>
+            {(item) =>
+              item.origem === "rotina" ? (
+                <ItemLinha
+                  item={item}
+                  categoria={item.studyCategoryId ? catPorId.get(item.studyCategoryId) : undefined}
+                  onToggle={() => toggle(item.templateId)}
+                  onEditar={() => {
+                    const t = templates.find((tt) => tt.id === item.templateId);
+                    if (t) abrirEdicao(t);
+                  }}
+                  onPular={() => pular(item.templateId)}
+                />
+              ) : (
+                <ItemLinhaVariavel
+                  item={item}
+                  onToggle={() => toggleVariavel(item.id)}
+                  onEditar={() => abrirEdicaoVariavel(item)}
+                  onExcluir={() => excluirVariavelItem(item.id)}
+                />
+              )
+            }
           </ListaArrastavel>
         )}
       </div>
@@ -481,7 +588,29 @@ export function MinhaRotina({
                       {TIPO_META[t].label}
                     </button>
                   ))}
+                  {!form.id || form.tipo === "variavel" ? (
+                    <button
+                      type="button"
+                      onClick={() => setForm({ ...form, tipo: "variavel" })}
+                      className={cn(
+                        "flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-[12.5px] transition-colors",
+                        form.tipo === "variavel"
+                          ? "border-[rgba(13,110,253,.4)] bg-mint-soft text-mint"
+                          : "border-stroke text-mist hover:border-[rgba(143,169,205,.22)]"
+                      )}
+                    >
+                      <span>{VARIAVEL_META.emoji}</span>
+                      {VARIAVEL_META.label}
+                    </button>
+                  ) : null}
                 </div>
+                {form.tipo === "variavel" && (
+                  <p className="mt-2 text-[12px] text-steel">
+                    Uma variável é uma métrica pessoal (ex.: &quot;Corrida&quot;, &quot;Sem
+                    pornografia&quot;) que fica marcável todo dia e pode ser usada como progresso
+                    em Metas e Desafios.
+                  </p>
+                )}
               </div>
 
               {/* Nome */}
@@ -493,10 +622,52 @@ export function MinhaRotina({
                   value={form.nome}
                   onChange={(e) => setForm({ ...form, nome: e.target.value })}
                   onKeyDown={(e) => e.key === "Enter" && salvar()}
-                  placeholder="Ex.: Estudar inglês, Treino de peito, Acordar…"
+                  placeholder="Ex.: Estudar inglês, Treino de peito, Sem pornografia…"
                 />
               </div>
 
+              {/* Tipo de progresso (só tipo variável) */}
+              {form.tipo === "variavel" && (
+                <div>
+                  <Label>Tipo de progresso</Label>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setForm({ ...form, medeStreak: !form.medeStreak })}
+                      className={cn(
+                        "flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-[12.5px] transition-colors",
+                        form.medeStreak
+                          ? "border-[rgba(13,110,253,.4)] bg-mint-soft text-mint"
+                          : "border-stroke text-mist hover:border-[rgba(143,169,205,.22)]"
+                      )}
+                    >
+                      <Flame className="h-3.5 w-3.5" strokeWidth={1.5} />
+                      Streak (dias seguidos)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setForm({ ...form, medeContagem: !form.medeContagem })}
+                      className={cn(
+                        "flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-[12.5px] transition-colors",
+                        form.medeContagem
+                          ? "border-[rgba(13,110,253,.4)] bg-mint-soft text-mint"
+                          : "border-stroke text-mist hover:border-[rgba(143,169,205,.22)]"
+                      )}
+                    >
+                      Contagem no período
+                    </button>
+                  </div>
+                  {!form.medeStreak && !form.medeContagem && (
+                    <p className="mt-2 text-[12px] text-amber">
+                      Escolha ao menos um tipo de progresso.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Campos específicos de rotina (não se aplicam a variável) */}
+              {form.tipo !== "variavel" && (
+                <>
               {/* Categoria de estudo (só tipo estudo) */}
               {form.tipo === "estudo" && (
                 <div>
@@ -713,11 +884,13 @@ export function MinhaRotina({
                   </Select>
                 </div>
               )}
+                </>
+              )}
 
               <Button
                 variant="primary"
                 onClick={salvar}
-                disabled={pending}
+                disabled={pending || (form.tipo === "variavel" && !form.medeStreak && !form.medeContagem)}
                 className="mt-1 h-11 text-[14px]"
               >
                 {form.id ? "Salvar" : "Adicionar ao checklist"}
@@ -828,6 +1001,76 @@ function ItemLinha({
   );
 }
 
+function ItemLinhaVariavel({
+  item,
+  onToggle,
+  onEditar,
+  onExcluir,
+}: {
+  item: VariavelChecklistItem;
+  onToggle: () => void;
+  onEditar: () => void;
+  onExcluir: () => void;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-3 rounded-[14px] border px-4 py-3 transition-colors",
+        item.feito
+          ? "border-mint/30 bg-mint-soft"
+          : "border-stroke bg-surface-2 hover:border-[rgba(143,169,205,.25)]"
+      )}
+    >
+      <span
+        data-drag-handle
+        aria-label="Arrastar para reordenar"
+        className="-ml-1 flex h-8 w-5 shrink-0 cursor-grab touch-none items-center justify-center text-steel/50 transition-colors hover:text-steel active:cursor-grabbing"
+      >
+        <GripVertical className="h-4 w-4" strokeWidth={1.5} />
+      </span>
+
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-label={item.feito ? "Desmarcar" : "Marcar como feito"}
+        className={cn(
+          "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-colors",
+          item.feito ? "border-mint bg-mint" : "border-stroke hover:border-mint/60"
+        )}
+      >
+        {item.feito && (
+          <svg viewBox="0 0 12 12" className="h-3 w-3 fill-none stroke-[var(--color-bg)]">
+            <path d="M2 6l2.5 2.5L10 3" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
+      </button>
+
+      <span className="w-11 shrink-0 text-center text-[12px] text-steel/60">–</span>
+
+      <span className="text-[15px] leading-none">{item.emoji}</span>
+
+      <div className="min-w-0 flex-1">
+        <p className={cn("truncate text-[13.5px]", item.feito ? "text-ice" : "text-mist")}>
+          {item.nome}
+        </p>
+        {item.streakAtual !== null && item.streakAtual > 0 && (
+          <span className="tabular mt-1 flex items-center gap-1 text-[11px] text-amber">
+            <Flame className="h-3 w-3" strokeWidth={1.5} />
+            {item.streakAtual} {item.streakAtual === 1 ? "dia" : "dias"}
+          </span>
+        )}
+      </div>
+
+      <DotsMenu
+        items={[
+          { label: "Editar", icon: Pencil, onSelect: onEditar },
+          { label: "Excluir", icon: Trash2, destructive: true, onSelect: onExcluir },
+        ]}
+      />
+    </div>
+  );
+}
+
 /**
  * Lista reordenável por arraste (pointer events — funciona com mouse e touch).
  * O arraste só inicia a partir do handle `[data-drag-handle]` de cada linha,
@@ -835,7 +1078,7 @@ function ItemLinha({
  * segue o dedo/cursor e as demais deslizam para abrir espaço; ao soltar,
  * `onReordenar(deIndex, paraIndex)` é chamado com os índices finais.
  */
-function ListaArrastavel<T extends { templateId: string }>({
+function ListaArrastavel<T extends { itemId: string }>({
   itens,
   onReordenar,
   children,
@@ -890,7 +1133,7 @@ function ListaArrastavel<T extends { templateId: string }>({
         const estaArrastando = arrastando?.index === index;
         return (
           <div
-            key={item.templateId}
+            key={item.itemId}
             data-linha-index={index}
             onPointerDown={(e) => onPointerDown(e, index)}
             onPointerMove={onPointerMove}

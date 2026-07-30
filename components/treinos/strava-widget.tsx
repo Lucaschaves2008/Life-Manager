@@ -21,12 +21,9 @@ export function StravaWidget({
 
   if (!configurado) {
     return (
-      <div className="flex items-center gap-3 rounded-[14px] border border-dashed border-stroke bg-surface-2 px-4 py-3">
-        <Link2 className="h-4 w-4 text-steel" strokeWidth={1.5} />
-        <p className="text-[12.5px] text-steel">
-          Integração com Strava ainda não configurada (defina STRAVA_CLIENT_ID/SECRET).
-        </p>
-      </div>
+      <p className="max-w-[220px] text-right text-[12px] text-steel">
+        Integração não configurada (defina STRAVA_CLIENT_ID/SECRET).
+      </p>
     );
   }
 

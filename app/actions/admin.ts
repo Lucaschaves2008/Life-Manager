@@ -53,6 +53,40 @@ export async function convidarUsuario(email: string, nome?: string) {
   revalidar(data.user?.id);
 }
 
+/**
+ * Cria um usuário diretamente com email e senha, sem enviar nenhum email.
+ * A senha é retornada em texto plano para o admin repassar manualmente.
+ * Se `senha` não for informada, gera uma senha aleatória.
+ */
+export async function criarUsuario(
+  email: string,
+  nome?: string,
+  senha?: string
+): Promise<string> {
+  await requireSuperAdmin();
+  const supabaseAdmin = createAdminClient();
+  const senhaFinal = senha?.trim() || crypto.randomUUID().replace(/-/g, "").slice(0, 12);
+
+  const { data, error } = await supabaseAdmin.auth.admin.createUser({
+    email,
+    password: senhaFinal,
+    email_confirm: true,
+    user_metadata: nome ? { nome } : undefined,
+  });
+  if (error) throw new Error(error.message);
+
+  if (data.user) {
+    await db.profile.upsert({
+      where: { id: data.user.id },
+      create: { id: data.user.id, email: data.user.email!, nome: nome || null },
+      update: { nome: nome || undefined },
+    });
+  }
+
+  revalidar(data.user?.id);
+  return senhaFinal;
+}
+
 export async function excluirUsuario(id: string) {
   const admin = await requireSuperAdmin();
   if (id === admin.id) throw new Error("Você não pode excluir a si mesmo.");

@@ -13,8 +13,13 @@ import {
 } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { criarMetaGrande, criarMetaPequena, type DesafioMetaInput } from "@/app/actions/desafios";
-import { PERIODOS_DESAFIO, type DesafioOrigem, type DesafioPeriodo } from "@/lib/data/desafios";
-import { METRICAS, type MetaMetrica } from "@/lib/data/metas-quantitativas";
+import {
+  PERIODOS_DESAFIO,
+  type DesafioOrigem,
+  type DesafioPeriodo,
+} from "@/lib/data/desafios-constantes";
+import { METRICAS, type MetaMetrica } from "@/lib/data/metas-quantitativas-constantes";
+import type { VariavelView } from "@/lib/data/variaveis";
 
 export function DesafioMetaSheet({
   open,
@@ -23,6 +28,7 @@ export function DesafioMetaSheet({
   tipo,
   metaPaiId,
   templatesChecklist,
+  variaveis,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -30,25 +36,30 @@ export function DesafioMetaSheet({
   tipo: "grande" | "pequena";
   metaPaiId?: string;
   templatesChecklist: { id: string; nome: string }[];
+  variaveis: VariavelView[];
 }) {
   const [pending, startTransition] = useTransition();
   const [titulo, setTitulo] = useState("");
   const [origem, setOrigem] = useState<DesafioOrigem>("metrica");
   const [metrica, setMetrica] = useState<MetaMetrica>("treinos");
   const [rotinaTemplateId, setRotinaTemplateId] = useState<string>("");
+  const [variavelId, setVariavelId] = useState<string>("");
   const [alvo, setAlvo] = useState(0);
   const [periodo, setPeriodo] = useState<DesafioPeriodo>(tipo === "grande" ? "trimestre" : "mes");
 
   const valido =
     titulo.trim().length > 0 &&
     alvo > 0 &&
-    (origem === "metrica" || (origem === "checklist" && rotinaTemplateId !== ""));
+    (origem === "metrica" ||
+      (origem === "checklist" && rotinaTemplateId !== "") ||
+      (origem === "variavel" && variavelId !== ""));
 
   function fechar() {
     onOpenChange(false);
     setTitulo("");
     setAlvo(0);
     setRotinaTemplateId("");
+    setVariavelId("");
   }
 
   function salvar() {
@@ -57,6 +68,7 @@ export function DesafioMetaSheet({
       origem,
       metrica: origem === "metrica" ? metrica : undefined,
       rotinaTemplateId: origem === "checklist" ? rotinaTemplateId : undefined,
+      variavelId: origem === "variavel" ? variavelId : undefined,
       alvo,
       periodo,
     };
@@ -102,6 +114,7 @@ export function DesafioMetaSheet({
               <SelectContent>
                 <SelectItem value="metrica">Métrica automática</SelectItem>
                 <SelectItem value="checklist">Item do meu checklist</SelectItem>
+                <SelectItem value="variavel">Variável pessoal</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -138,6 +151,30 @@ export function DesafioMetaSheet({
                     {templatesChecklist.map((t) => (
                       <SelectItem key={t.id} value={t.id}>
                         {t.nome}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+          )}
+
+          {origem === "variavel" && (
+            <div>
+              <Label>Variável</Label>
+              {variaveis.length === 0 ? (
+                <p className="text-[12px] text-steel">
+                  Crie uma variável no checklist (tipo &quot;Variável&quot;) para usar aqui.
+                </p>
+              ) : (
+                <Select value={variavelId} onValueChange={setVariavelId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Escolher variável" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {variaveis.map((v) => (
+                      <SelectItem key={v.id} value={v.id}>
+                        {v.emoji} {v.nome}
                       </SelectItem>
                     ))}
                   </SelectContent>

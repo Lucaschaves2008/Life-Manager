@@ -109,6 +109,7 @@ export async function metasParaCatalogo(userId: string) {
 
 export async function calcularHomeCard(
   userId: string,
+  contaFinanceiraId: string,
   config: HomeCardConfig,
   hoje: Date
 ): Promise<HomeCardData> {
@@ -116,25 +117,28 @@ export async function calcularHomeCard(
   const { inicio, fim } = rangeDoPeriodo(periodo, hoje);
   const contexto = HOME_PERIODOS.find((p) => p.value === periodo)!.contexto;
 
-  if (config.metrica === "patrimonio") return patrimonioCard(userId, hoje);
-  if (config.metrica === "investimentos") return investimentosCard(userId, hoje);
-  if (config.metrica === "receitas") return receitasCard(userId, inicio, fim, contexto);
-  if (config.metrica === "despesas") return despesasCard(userId, inicio, fim, contexto);
+  if (config.metrica === "patrimonio") return patrimonioCard(contaFinanceiraId, hoje);
+  if (config.metrica === "investimentos") return investimentosCard(contaFinanceiraId, hoje);
+  if (config.metrica === "receitas") return receitasCard(contaFinanceiraId, inicio, fim, contexto);
+  if (config.metrica === "despesas") return despesasCard(contaFinanceiraId, inicio, fim, contexto);
   if (config.metrica === "treinos") return treinosCard(userId, inicio, fim, contexto);
   if (config.metrica === "corridas_km") return corridasCard(userId, inicio, fim, contexto);
   if (config.metrica === "estudos_horas") return estudosCard(userId, inicio, fim, contexto);
   if (config.metrica.startsWith("meta:")) {
     return metaCard(userId, config.metrica.slice("meta:".length));
   }
-  return despesasCard(userId, inicio, fim, contexto);
+  return despesasCard(contaFinanceiraId, inicio, fim, contexto);
 }
 
 // ---------- Financeiro (patrimônio/investimentos ignoram período — são "hoje") ----------
 
-async function patrimonioCard(userId: string, hoje: Date): Promise<HomeCardData> {
+async function patrimonioCard(contaFinanceiraId: string, hoje: Date): Promise<HomeCardData> {
   const { resumoCarteira } = await import("@/lib/data/investimentos");
   const { contasComSaldo } = await import("@/lib/data/financas");
-  const [carteira, contas] = await Promise.all([resumoCarteira(userId, hoje), contasComSaldo(userId)]);
+  const [carteira, contas] = await Promise.all([
+    resumoCarteira(contaFinanceiraId, hoje),
+    contasComSaldo(contaFinanceiraId),
+  ]);
   const saldoContas = contas.reduce((s, c) => s + c.saldo, 0);
   const total = carteira.patrimonio + saldoContas;
 
@@ -173,9 +177,12 @@ async function patrimonioCard(userId: string, hoje: Date): Promise<HomeCardData>
   };
 }
 
-async function investimentosCard(userId: string, hoje: Date): Promise<HomeCardData> {
+async function investimentosCard(contaFinanceiraId: string, hoje: Date): Promise<HomeCardData> {
   const { resumoCarteira, ativosResumidos } = await import("@/lib/data/investimentos");
-  const [carteira, ativos] = await Promise.all([resumoCarteira(userId, hoje), ativosResumidos(userId, hoje)]);
+  const [carteira, ativos] = await Promise.all([
+    resumoCarteira(contaFinanceiraId, hoje),
+    ativosResumidos(contaFinanceiraId, hoje),
+  ]);
 
   const perf = [
     { label: "Total aportado", valor: formatBRL(carteira.aportado), cor: "var(--color-steel)" },
@@ -217,25 +224,34 @@ async function investimentosCard(userId: string, hoje: Date): Promise<HomeCardDa
 // ---------- Finanças por período ----------
 
 /** Cobrança mensal das assinaturas ativas — conta inteira se o período tocar o mês atual. */
-async function assinaturasNoPeriodo(userId: string, inicio: Date, fim: Date): Promise<number> {
+async function assinaturasNoPeriodo(
+  contaFinanceiraId: string,
+  inicio: Date,
+  fim: Date
+): Promise<number> {
   const hoje = new Date();
   const tocaMesAtual = inicio <= spEndOfMonth(hoje) && fim >= spStartOfMonth(hoje);
   if (!tocaMesAtual) return 0;
   const agg = await db.subscription.aggregate({
-    where: { userId, status: "ativa" },
+    where: { contaFinanceiraId, status: "ativa" },
     _sum: { valor: true },
   });
   return agg._sum.valor ?? 0;
 }
 
-async function receitasCard(userId: string, inicio: Date, fim: Date, contexto: string): Promise<HomeCardData> {
+async function receitasCard(
+  contaFinanceiraId: string,
+  inicio: Date,
+  fim: Date,
+  contexto: string
+): Promise<HomeCardData> {
   const [agg, assinaturas] = await Promise.all([
     db.transaction.groupBy({
       by: ["tipo"],
-      where: { userId, data: { gte: inicio, lte: fim } },
+      where: { contaFinanceiraId, data: { gte: inicio, lte: fim } },
       _sum: { valor: true },
     }),
-    assinaturasNoPeriodo(userId, inicio, fim),
+    assinaturasNoPeriodo(contaFinanceiraId, inicio, fim),
   ]);
   const receita = agg.find((a) => a.tipo === "receita")?._sum.valor ?? 0;
   const despesa = (agg.find((a) => a.tipo === "despesa")?._sum.valor ?? 0) + assinaturas;
@@ -262,10 +278,15 @@ async function receitasCard(userId: string, inicio: Date, fim: Date, contexto: s
   };
 }
 
-async function despesasCard(userId: string, inicio: Date, fim: Date, contexto: string): Promise<HomeCardData> {
+async function despesasCard(
+  contaFinanceiraId: string,
+  inicio: Date,
+  fim: Date,
+  contexto: string
+): Promise<HomeCardData> {
   const [transacoes, assinaturas] = await Promise.all([
     db.transaction.findMany({
-      where: { userId, tipo: "despesa", data: { gte: inicio, lte: fim } },
+      where: { contaFinanceiraId, tipo: "despesa", data: { gte: inicio, lte: fim } },
       include: { category: true },
     }),
     (async () => {
@@ -273,7 +294,7 @@ async function despesasCard(userId: string, inicio: Date, fim: Date, contexto: s
       const tocaMesAtual = inicio <= spEndOfMonth(hoje) && fim >= spStartOfMonth(hoje);
       if (!tocaMesAtual) return [];
       return db.subscription.findMany({
-        where: { userId, status: "ativa" },
+        where: { contaFinanceiraId, status: "ativa" },
         select: { nome: true, emoji: true, valor: true },
       });
     })(),

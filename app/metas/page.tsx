@@ -9,6 +9,7 @@ import { MetasQuantitativasList } from "@/components/metas/metas-quantitativas-l
 import { db } from "@/lib/db";
 import { evolucaoAreas } from "@/lib/data/metas";
 import { metasQuantitativas } from "@/lib/data/metas-quantitativas";
+import { variaveisAtivas } from "@/lib/data/variaveis";
 import { monthKeySP, monthYear, nowSP } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import { getCurrentUser } from "@/lib/auth";
@@ -32,7 +33,7 @@ export default async function Page({
   const referencia = mesParaData(mes);
   const ehMesAtual = mes === hojeMes;
 
-  const [goals, historicoRaw, areas, metasQtd] = await Promise.all([
+  const [goals, historicoRaw, areas, metasQtd, variaveis] = await Promise.all([
     db.goal.findMany({
       where: { userId: user.id, mes },
       orderBy: [{ ordem: "asc" }, { id: "asc" }],
@@ -46,6 +47,7 @@ export default async function Page({
     ehMesAtual ? evolucaoAreas(user.id, agora) : Promise.resolve([]),
     // metas quantitativas: sempre "de agora", período próprio de cada meta
     metasQuantitativas(user.id, agora),
+    variaveisAtivas(user.id),
   ]);
 
   const feitas = goals.filter((g) => g.feito).length;
@@ -181,7 +183,7 @@ export default async function Page({
           )}
         </div>
         <div className="mt-4">
-          <MetasQuantitativasList metas={metasQtd} />
+          <MetasQuantitativasList metas={metasQtd} variaveis={variaveis} />
         </div>
       </Card>
 

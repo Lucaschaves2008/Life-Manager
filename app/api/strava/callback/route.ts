@@ -1,10 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import {
+  STRAVA_NEXT_COOKIE,
   STRAVA_STATE_COOKIE,
   STRAVA_STATE_COOKIE_OPTIONS,
   trocarCodePorTokens,
 } from "@/lib/strava";
+
+const DESTINOS_PERMITIDOS = ["/treinos?tab=corrida", "/configuracoes"];
 
 export async function GET(request: NextRequest) {
   const user = await getCurrentUser();
@@ -14,16 +17,24 @@ export async function GET(request: NextRequest) {
   const state = request.nextUrl.searchParams.get("state");
   const erro = request.nextUrl.searchParams.get("error");
   const stateCookie = request.cookies.get(STRAVA_STATE_COOKIE)?.value;
+  const nextCookie = request.cookies.get(STRAVA_NEXT_COOKIE)?.value;
+  const next = DESTINOS_PERMITIDOS.includes(nextCookie ?? "")
+    ? nextCookie!
+    : "/treinos?tab=corrida";
 
   const destino = (msg?: string, ok = false) => {
     const res = NextResponse.redirect(
       new URL(
-        `/treinos?tab=corrida${ok ? "&strava=ok" : msg ? `&erro=${encodeURIComponent(msg)}` : ""}`,
+        `${next}${next.includes("?") ? "&" : "?"}${ok ? "strava=ok" : msg ? `erro=${encodeURIComponent(msg)}` : ""}`,
         appUrl
       )
     );
-    // apaga o cookie de state após o uso
+    // apaga os cookies de OAuth após o uso
     res.cookies.set(STRAVA_STATE_COOKIE, "", {
+      ...STRAVA_STATE_COOKIE_OPTIONS,
+      maxAge: 0,
+    });
+    res.cookies.set(STRAVA_NEXT_COOKIE, "", {
       ...STRAVA_STATE_COOKIE_OPTIONS,
       maxAge: 0,
     });
