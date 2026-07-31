@@ -65,10 +65,11 @@ export function CommandMenu() {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="flex h-9 w-full max-w-[280px] items-center gap-2.5 rounded-[10px] border border-stroke bg-surface px-3 text-[13px] text-steel transition-colors hover:border-stroke-hover hover:text-mist"
+        aria-label="Pesquisar"
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border border-stroke bg-surface text-steel transition-colors hover:border-stroke-hover hover:text-mist md:w-full md:max-w-[280px] md:justify-start md:gap-2.5 md:px-3"
       >
         <Search className="h-[15px] w-[15px] shrink-0" strokeWidth={1.5} />
-        <span className="truncate">Pesquisar…</span>
+        <span className="hidden truncate md:inline">Pesquisar…</span>
         <kbd className="ml-auto hidden shrink-0 items-center gap-0.5 rounded-[5px] border border-stroke bg-surface-2 px-1.5 py-0.5 text-[10.5px] text-steel md:inline-flex">
           ⌘K
         </kbd>

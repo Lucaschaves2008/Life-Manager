@@ -69,7 +69,8 @@ export function Topbar({
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="primary" size="sm">
+              {/* No mobile o FAB da tab bar já cobre "novo registro" — some daqui. */}
+              <Button variant="primary" size="sm" className="hidden lg:inline-flex">
                 <Plus className="h-4 w-4" strokeWidth={2} />
                 Novo
               </Button>

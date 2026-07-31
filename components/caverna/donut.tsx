@@ -52,7 +52,7 @@ export function Donut({
   const progress = Math.max(0, Math.min(pct ?? 0, 200)) / 100;
 
   return (
-    <div className={cn("flex items-center gap-5", className)}>
+    <div className={cn("flex flex-wrap items-center gap-5", className)}>
       <div className="relative shrink-0" style={{ width: size, height: size }}>
         <svg width={size} height={size} className="-rotate-90">
           <circle
@@ -108,21 +108,21 @@ export function Donut({
       </div>
 
       {legend && segments && (
-        <ul className="flex flex-col gap-2">
+        <ul className="flex min-w-0 flex-1 flex-col gap-2">
           {segments.map((seg) => (
-            <li key={seg.label} className="flex items-center gap-2 text-[13px]">
+            <li key={seg.label} className="flex min-w-0 items-center gap-2 text-[13px]">
               <span
                 className="h-2 w-2 shrink-0 rounded-full"
                 style={{ background: seg.cor }}
               />
-              <span className="text-mist">{seg.label}</span>
+              <span className="min-w-0 flex-1 truncate text-mist">{seg.label}</span>
               {total > 0 && (
-                <span className="tabular ml-1 text-steel">
+                <span className="tabular shrink-0 text-steel">
                   {Math.round((seg.value / total) * 100)}%
                 </span>
               )}
               {formatValue && (
-                <span className="tabular ml-auto pl-3 text-ice">
+                <span className="tabular shrink-0 pl-3 text-ice">
                   {formatValue(seg.value)}
                 </span>
               )}
