@@ -290,6 +290,8 @@ export type EvolucaoPeso = {
   atual: number | null;
   variacao30d: number | null;
   alvo: number;
+  /** false quando `alvo` é só o fallback (78kg) — nenhuma meta foi definida pelo usuário. */
+  temMeta: boolean;
 };
 
 export async function evolucaoPeso(
@@ -319,7 +321,8 @@ async function evolucaoPesoDoDia(userId: string, dia: string): Promise<EvolucaoP
     }),
     db.setting.findUnique({ where: { userId_key: { userId, key: "peso_alvo_kg" } } }),
   ]);
-  const alvo = Number(alvoSetting?.value ?? 78) || 78;
+  const temMeta = alvoSetting != null && Number(alvoSetting.value) > 0;
+  const alvo = temMeta ? Number(alvoSetting!.value) : 78;
 
   const todos = [...anteriores.reverse(), ...registros];
   const base = todos.length - registros.length;
@@ -351,5 +354,6 @@ async function evolucaoPesoDoDia(userId: string, dia: string): Promise<EvolucaoP
         ? ((atual - antigo.pesoKg) / antigo.pesoKg) * 100
         : null,
     alvo,
+    temMeta,
   };
 }

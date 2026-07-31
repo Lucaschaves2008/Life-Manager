@@ -12,7 +12,7 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { ExecucaoTreino, type ExercicioExec } from "@/components/treinos/execucao";
 import { FichaPlanilha } from "@/components/treinos/ficha-planilha";
 import { createRun } from "@/app/actions/treinos";
-import { formatPace } from "@/lib/data/treinos-format";
+import { formatDistancia, formatPace } from "@/lib/data/treinos-format";
 import type { TreinoHojeView } from "@/lib/data/treinos";
 import { cn } from "@/lib/utils";
 
@@ -81,9 +81,7 @@ export function TreinoHojeCard({
                     <p className="tabular mt-0.5 text-[11.5px] text-steel">
                       {t.tipo === "musculacao"
                         ? `${t.foco ?? "Musculação"} · ${t.exercicios.length} exercícios`
-                        : `${t.tipoSessao} · alvo ${t.kmAlvo.toLocaleString("pt-BR", {
-                            maximumFractionDigits: 1,
-                          })} km`}
+                        : `${t.tipoSessao} · alvo ${formatDistancia(t.kmAlvo)}`}
                     </p>
                   </div>
                 </div>
@@ -212,7 +210,7 @@ function SessaoCorridaSheet({
             <div className="rounded-[14px] border border-stroke bg-surface-2 px-4 py-3.5">
               <p className="text-[13px] text-mist">Km alvo</p>
               <p className="tabular mt-0.5 text-[14px] text-paper">
-                {treino.kmAlvo.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} km
+                {formatDistancia(treino.kmAlvo)}
               </p>
             </div>
           </div>

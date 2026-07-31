@@ -3,9 +3,19 @@ import { cn } from "@/lib/utils";
 import { formatPercent } from "@/lib/money";
 
 /**
+ * Polaridade de uma métrica: decide se "subir" é bom, ruim, ou nem uma coisa
+ * nem outra. Nunca deriva do sinal do número — patrimônio subindo é ótimo,
+ * gasto subindo é ruim, cadência não significa nada. `"neutral"` é o caso de
+ * métrica sem meta definida pelo usuário (ex.: peso sem meta) — não pode
+ * pintar de vermelho um ganho de peso de quem está em bulking.
+ */
+export type Polaridade = boolean | "neutral";
+
+/**
  * Badge de variação ↗/↘.
- * Semântica fixa: verde = positivo p/ o usuário, coral = negativo.
+ * Semântica fixa: verde = positivo p/ o usuário, coral = negativo, cinza = neutro.
  * `upIsBad` inverte a cor (gastos: subir é ruim), nunca a seta.
+ * `upIsBad="neutral"` remove a cor de sinal por completo (sem meta definida).
  */
 export function VariationBadge({
   pct,
@@ -14,18 +24,23 @@ export function VariationBadge({
   className,
 }: {
   pct: number;
-  upIsBad?: boolean;
+  upIsBad?: Polaridade;
   suffix?: string;
   className?: string;
 }) {
   const up = pct >= 0;
-  const good = upIsBad ? !up : up;
+  const neutral = upIsBad === "neutral";
+  const good = upIsBad === true ? !up : up;
   const Icon = up ? ArrowUpRight : ArrowDownRight;
   return (
     <span
       className={cn(
         "tabular inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[12px] font-medium",
-        good ? "bg-mint-soft text-mint" : "bg-coral-soft text-coral",
+        neutral
+          ? "bg-surface-2 text-mist"
+          : good
+          ? "bg-mint-soft text-mint"
+          : "bg-coral-soft text-coral",
         className
       )}
     >

@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { ArrowUpRight, SlidersHorizontal } from "lucide-react";
 import { Card, CardLabel } from "@/components/caverna/card";
-import { VariationBadge } from "@/components/caverna/variation-badge";
+import { VariationBadge, type Polaridade } from "@/components/caverna/variation-badge";
 import {
   Dialog,
   DialogContent,
@@ -55,7 +55,7 @@ export function StatCardDetalhe({
   label: string;
   value: string;
   pct?: number | null;
-  upIsBad?: boolean;
+  upIsBad?: Polaridade;
   contexto?: string;
   /** texto abaixo do título no dialog */
   descricao: string;

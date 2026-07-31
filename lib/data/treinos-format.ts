@@ -2,12 +2,31 @@
 // components importam daqui sem puxar o grafo server de lib/data/treinos.ts
 // ("use cache" + cache-tags/server-only não podem entrar no bundle do cliente).
 
-/** Formata segundos como pace "5'32\"/km". */
+/** Formata segundos como pace "5′32″/km" (primes tipográficos, segundos sempre 2 dígitos). */
 export function formatPace(segundosPorKm: number): string {
   if (!isFinite(segundosPorKm) || segundosPorKm <= 0) return "—";
   const min = Math.floor(segundosPorKm / 60);
   const seg = Math.round(segundosPorKm % 60);
-  return `${min}'${String(seg).padStart(2, "0")}"/km`;
+  return `${min}′${String(seg).padStart(2, "0")}″/km`;
+}
+
+/** Formata km: 2 casas abaixo de 100, 1 casa a partir de 100. "8,42 km" / "142,3 km". */
+export function formatDistancia(km: number): string {
+  if (!isFinite(km)) return "—";
+  const casas = Math.abs(km) < 100 ? 2 : 1;
+  return `${km.toLocaleString("pt-BR", {
+    minimumFractionDigits: casas,
+    maximumFractionDigits: casas,
+  })} km`;
+}
+
+/** Formata carga em kg com 1 casa fixa — meia placa (1,25kg) não pode ser truncada. */
+export function formatCarga(kg: number): string {
+  if (!isFinite(kg)) return "—";
+  return `${kg.toLocaleString("pt-BR", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  })} kg`;
 }
 
 /** Formata segundos como h:mm:ss (ou mm:ss). */

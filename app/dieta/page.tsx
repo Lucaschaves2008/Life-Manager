@@ -255,7 +255,7 @@ async function Alimentos({ userId }: { userId: string }) {
 }
 
 async function Metricas({ userId, hoje }: { userId: string; hoje: Date }) {
-  const [{ pontos, atual, variacao30d, alvo }, registros] = await Promise.all([
+  const [{ pontos, atual, variacao30d, alvo, temMeta }, registros] = await Promise.all([
     evolucaoPeso(userId, hoje),
     db.weightLog.findMany({
       where: { userId },
@@ -274,6 +274,10 @@ async function Metricas({ userId, hoje }: { userId: string; hoje: Date }) {
   }));
 
   const distancia = atual != null ? atual - alvo : null;
+  // Polaridade vem da direção da meta, nunca do sinal cru: emagrecer = subir é ruim,
+  // ganhar peso = subir é bom. Sem meta definida, a variação de peso é neutra —
+  // não faz sentido pintar de vermelho o ganho de peso de quem está em bulking.
+  const pesoUpIsBad = !temMeta ? ("neutral" as const) : alvo < (atual ?? alvo);
 
   return (
     <div className="stagger grid grid-cols-12 gap-6">
@@ -301,7 +305,7 @@ async function Metricas({ userId, hoje }: { userId: string; hoje: Date }) {
             : "—"
         }
         pct={variacao30d}
-        upIsBad
+        upIsBad={pesoUpIsBad}
         contexto="contra 30 dias atrás"
       />
       <StatCard

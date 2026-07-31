@@ -45,7 +45,7 @@ import {
   type RunSessionInput,
 } from "@/app/actions/treinos";
 import type { PlanoCorridaView, SessaoCorridaView } from "@/lib/data/treinos-format";
-import { DIAS_SEMANA_LABEL, formatDiasSemana } from "@/lib/data/treinos-format";
+import { DIAS_SEMANA_LABEL, formatDiasSemana, formatDistancia } from "@/lib/data/treinos-format";
 import { cn } from "@/lib/utils";
 
 const tipos = ["Leve", "Moderado", "Intervalado", "Longão"];
@@ -250,11 +250,8 @@ export function PlanoCorridaClient({
                         )}
                       </div>
                       <p className="tabular text-[11.5px] text-steel">
-                        alvo {s.kmAlvoSemana.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} km
-                        {s.cumprida &&
-                          ` · feito ${s.cumprida.km.toLocaleString("pt-BR", {
-                            maximumFractionDigits: 1,
-                          })} km`}
+                        alvo {formatDistancia(s.kmAlvoSemana)}
+                        {s.cumprida && ` · feito ${formatDistancia(s.cumprida.km)}`}
                       </p>
                     </div>
                     <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">

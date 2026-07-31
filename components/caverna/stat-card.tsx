@@ -1,5 +1,5 @@
 import { Card, CardLabel } from "@/components/caverna/card";
-import { VariationBadge } from "@/components/caverna/variation-badge";
+import { VariationBadge, type Polaridade } from "@/components/caverna/variation-badge";
 import { cn } from "@/lib/utils";
 
 /**
@@ -19,7 +19,7 @@ export function StatCard({
   label: string;
   value: React.ReactNode;
   pct?: number | null;
-  upIsBad?: boolean;
+  upIsBad?: Polaridade;
   contexto?: string;
   extra?: React.ReactNode;
   destaque?: boolean;
