@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { Sidebar } from "@/components/shell/sidebar";
 import { Topbar } from "@/components/shell/topbar";
+import { MobileTabBar } from "@/components/shell/mobile-tab-bar";
 import { cn } from "@/lib/utils";
 
 const SEM_SHELL = ["/login", "/bloqueado"];
@@ -39,11 +40,11 @@ export function AppShell({
   }, []);
 
   if (SEM_SHELL.some((p) => pathname.startsWith(p))) {
-    return <div className="min-h-screen bg-bg">{children}</div>;
+    return <div className="min-h-dvh bg-bg">{children}</div>;
   }
 
   return (
-    <div className="flex min-h-screen bg-bg">
+    <div className="flex min-h-dvh bg-bg">
       {/* Sidebar desktop */}
       <aside
         className={cn(
@@ -89,10 +90,12 @@ export function AppShell({
           notificacoesSlot={notificacoesSlot}
           streakSlot={streakSlot}
         />
-        <main className="mx-auto w-full max-w-[1440px] flex-1 px-4 pb-16 pt-6 md:px-8">
+        <main className="mx-auto w-full max-w-[1440px] flex-1 px-4 pt-6 pb-[calc(var(--nav-height)+var(--safe-bottom)+16px)] md:px-8 lg:pb-16">
           {children}
         </main>
       </div>
+
+      <MobileTabBar />
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Suspense } from "react";
 import { GeistSans } from "geist/font/sans";
 import { Toaster } from "sonner";
@@ -13,6 +13,13 @@ import { ThemeScript } from "@/components/shell/theme-script";
 export const metadata: Metadata = {
   title: "MYLIFE",
   description: "Painel premium pessoal para finanças, investimentos, dieta, treinos e agenda.",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#0a0a0b",
 };
 
 export default async function RootLayout({

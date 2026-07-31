@@ -17,6 +17,16 @@
   /* ---- Sombras (apenas popover/modal) ---- */
   --shadow-pop: 0 16px 48px rgba(0, 0, 0, 0.5);
 
+  /* ---- Alvos de toque — dois conjuntos: revisão (calmo) e captura (treino/corrida em movimento) ---- */
+  --tap-min: 44px;
+  --tap-comfortable: 48px;
+  --tap-capture: 56px;
+  --tap-capture-primary: 64px;
+  --tap-gap-min: 8px;
+
+  /* ---- Navegação mobile ---- */
+  --nav-height: 56px;
+
   /* ---- Dark mode palette — MYLIFE: preto predominante ---- */
   --color-bg: #0a0a0b;
   --color-surface: #101011;
@@ -125,6 +135,7 @@ html {
 body {
   margin: 0;
   min-height: 100vh;
+  min-height: 100dvh;
   background: var(--color-bg);
   color: var(--color-ice);
   font-family: var(--font-sans);
@@ -132,6 +143,14 @@ body {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/* ---------- Safe area (notch / home indicator) ---------- */
+:root {
+  --safe-top: env(safe-area-inset-top);
+  --safe-bottom: env(safe-area-inset-bottom);
+  --safe-left: env(safe-area-inset-left);
+  --safe-right: env(safe-area-inset-right);
 }
 
 ::selection {
@@ -279,6 +298,10 @@ body {
 @keyframes sheet-in {
   from { transform: translateX(24px); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
+}
+@keyframes sheet-in-bottom {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
 }
 
 /* skeleton de carregamento */

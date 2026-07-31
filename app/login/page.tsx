@@ -11,7 +11,7 @@ export default async function LoginPage({
   const { erro, next } = await searchParams;
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-dvh">
       {/* Coluna do formulário */}
       <div className="flex w-full flex-col justify-center px-6 py-12 sm:px-12 lg:w-[440px] lg:shrink-0 lg:px-14 xl:w-[480px]">
         <div className="mx-auto w-full max-w-[340px]">
