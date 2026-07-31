@@ -18,6 +18,7 @@ import { Textarea } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { saveSession, type SerieRealizada } from "@/app/actions/treinos";
 import { formatDuracao } from "@/lib/data/treinos-format";
+import { useWakeLock } from "@/lib/use-wake-lock";
 import { cn } from "@/lib/utils";
 
 export type ExercicioExec = {
@@ -126,6 +127,8 @@ export function ExecucaoTreino({
     const t = setInterval(() => setSegundos((s) => s + 1), 1000);
     return () => clearInterval(t);
   }, [aberto, pausado]);
+
+  useWakeLock(aberto && !pausado);
 
   useEffect(() => {
     if (descanso == null || pausado) return;
@@ -470,47 +473,92 @@ function SerieAtual({
     );
   }
 
-  return (
-    <div className="flex w-full items-center gap-3 rounded-[16px] border border-stroke bg-surface-2 px-4 py-3.5">
-      <span className="tabular shrink-0 text-[12px] text-steel">
-        Série {indice + 1}/{linhas.length}
-      </span>
+  function passo(campo: "reps" | "carga", delta: number) {
+    const atual = Number(linha[campo]) || 0;
+    const casas = campo === "carga" ? 2 : 0;
+    const novo = Math.max(0, Number((atual + delta).toFixed(casas)));
+    onChange(indice, campo, campo === "carga" ? novo.toString() : String(Math.round(novo)));
+  }
 
-      <div className="flex flex-1 items-center justify-center gap-2">
-        <input
-          aria-label="Repetições"
-          value={linha.reps}
-          inputMode="numeric"
-          onChange={(ev) => onChange(indice, "reps", ev.target.value)}
-          className="tabular h-10 w-14 rounded-[10px] border border-stroke bg-surface text-center text-[17px] text-paper outline-none focus:border-[var(--mint-border)]"
-        />
-        <span className="text-[11px] text-steel">reps</span>
-        <input
-          aria-label="Carga em kg"
-          value={linha.carga}
-          inputMode="decimal"
-          onChange={(ev) => onChange(indice, "carga", ev.target.value)}
-          className="tabular h-10 w-16 rounded-[10px] border border-stroke bg-surface text-center text-[17px] text-paper outline-none focus:border-[var(--mint-border)]"
-        />
-        <span className="text-[11px] text-steel">kg</span>
+  return (
+    <div className="flex w-full flex-col gap-3 rounded-[16px] border border-stroke bg-surface-2 px-4 py-3.5">
+      <div className="flex items-center justify-between">
+        <span className="tabular text-[12px] text-steel">
+          Série {indice + 1}/{linhas.length}
+        </span>
+        {indice > 0 && (
+          <button
+            onClick={() => onVoltar(indice)}
+            aria-label="Voltar série"
+            className="text-[11px] text-steel hover:text-ice"
+          >
+            Voltar
+          </button>
+        )}
       </div>
 
-      {indice > 0 && (
-        <button
-          onClick={() => onVoltar(indice)}
-          aria-label="Voltar série"
-          className="shrink-0 text-[11px] text-steel hover:text-ice"
-        >
-          Voltar
-        </button>
-      )}
+      {/* Steppers — ajuste fino sem teclado, alvo de toque de captura (56px). */}
+      <div className="flex items-center justify-center gap-4">
+        <Stepper
+          label="reps"
+          value={linha.reps}
+          onDecrement={() => passo("reps", -1)}
+          onIncrement={() => passo("reps", 1)}
+        />
+        <Stepper
+          label="kg"
+          value={linha.carga}
+          onDecrement={() => passo("carga", -2.5)}
+          onIncrement={() => passo("carga", 2.5)}
+        />
+      </div>
+
+      {/* Confirmar é a ação primária: largura total, 64px, zero modal. */}
       <button
         onClick={() => onConcluir(indice)}
         aria-label="Concluir série"
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-transparent bg-mint text-[var(--color-bg)] transition-colors hover:opacity-90"
+        className="flex min-h-[var(--tap-capture-primary)] w-full items-center justify-center gap-2 rounded-[var(--radius-inner)] bg-mint text-[15px] font-medium text-[var(--color-bg)] transition-transform active:scale-[0.98]"
       >
-        <Check className="h-4 w-4" strokeWidth={2} />
+        <Check className="h-5 w-5" strokeWidth={2.5} />
+        Concluir série
       </button>
+    </div>
+  );
+}
+
+function Stepper({
+  label,
+  value,
+  onDecrement,
+  onIncrement,
+}: {
+  label: string;
+  value: string;
+  onDecrement: () => void;
+  onIncrement: () => void;
+}) {
+  return (
+    <div className="flex flex-col items-center gap-1.5">
+      <div className="flex items-center gap-1">
+        <button
+          onClick={onDecrement}
+          aria-label={`Diminuir ${label}`}
+          className="flex h-[var(--tap-capture)] w-[var(--tap-capture)] shrink-0 items-center justify-center rounded-full border border-stroke text-[20px] text-ice transition-colors active:bg-surface"
+        >
+          −
+        </button>
+        <span className="tabular w-16 shrink-0 text-center text-[19px] text-paper">
+          {value}
+        </span>
+        <button
+          onClick={onIncrement}
+          aria-label={`Aumentar ${label}`}
+          className="flex h-[var(--tap-capture)] w-[var(--tap-capture)] shrink-0 items-center justify-center rounded-full border border-stroke text-[20px] text-ice transition-colors active:bg-surface"
+        >
+          +
+        </button>
+      </div>
+      <span className="text-[11px] text-steel">{label}</span>
     </div>
   );
 }
