@@ -22,17 +22,34 @@ function dataDoDia(dia: string): Date {
 
 export type VariavelInput = {
   nome: string;
+  nota?: string | null;
+  /** Onde a variável aparece: lista do dia ou bloco de Hábitos. */
+  local?: "checklist" | "habitos";
   emoji?: string;
   cor?: string;
   medeStreak: boolean;
   medeContagem: boolean;
 };
 
-function validarInput(input: VariavelInput): { nome: string; medeStreak: boolean; medeContagem: boolean } | null {
+type VariavelValidada = {
+  nome: string;
+  nota: string | null;
+  local: "checklist" | "habitos";
+  medeStreak: boolean;
+  medeContagem: boolean;
+};
+
+function validarInput(input: VariavelInput): VariavelValidada | null {
   const nome = input.nome.trim();
   if (!nome) return null;
   if (!input.medeStreak && !input.medeContagem) return null;
-  return { nome, medeStreak: input.medeStreak, medeContagem: input.medeContagem };
+  return {
+    nome,
+    nota: input.nota?.trim() || null,
+    local: input.local === "habitos" ? "habitos" : "checklist",
+    medeStreak: input.medeStreak,
+    medeContagem: input.medeContagem,
+  };
 }
 
 export async function criarVariavel(input: VariavelInput) {
@@ -44,6 +61,8 @@ export async function criarVariavel(input: VariavelInput) {
   await db.variavel.create({
     data: {
       nome: validado.nome,
+      nota: validado.nota,
+      local: validado.local,
       medeStreak: validado.medeStreak,
       medeContagem: validado.medeContagem,
       emoji: input.emoji || undefined,
@@ -67,6 +86,8 @@ export async function atualizarVariavel(id: string, input: VariavelInput) {
     where: { id, userId },
     data: {
       nome: validado.nome,
+      nota: validado.nota,
+      local: validado.local,
       medeStreak: validado.medeStreak,
       medeContagem: validado.medeContagem,
       emoji: input.emoji || undefined,

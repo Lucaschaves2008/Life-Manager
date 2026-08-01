@@ -710,10 +710,17 @@ model Variavel {
   id           String   @id @default(cuid())
   userId       String
   nome         String
+  nota         String? // porquê da variável — texto livre, exibido ao abrir o card
   emoji        String   @default("🔥")
   cor          String   @default("#6B96D6")
   medeStreak   Boolean  @default(true)
   medeContagem Boolean  @default(true)
+  // Onde a variável é exibida: "checklist" (na lista por horário) ou "habitos"
+  // (no bloco de Hábitos). Variável sem horário fica solta no meio da agenda
+  // do dia; em Hábitos ela vira um card compacto "todo dia, sempre igual".
+  // Só muda a VITRINE — marcação, streak, contagem e uso em Metas/Desafios
+  // continuam idênticos nos dois lugares (mesmo VariavelCheckDia).
+  local        String   @default("checklist") // "checklist" | "habitos"
   ordem        Int      @default(0)
   ativo        Boolean  @default(true)
   criadoEm     DateTime @default(now())
@@ -915,6 +922,12 @@ model RotinaTemplate {
   id         String   @id @default(cuid())
   userId     String
   nome       String
+  nota       String? // porquê do item — texto livre, exibido ao abrir o card em Hábitos
+  // Vitrine do item: "checklist" (lista do dia, ordenada por horário) ou
+  // "habitos" (bloco de Hábitos, cards compactos). Item sem horário fica solto
+  // no meio da agenda; em Hábitos ele vira "todo dia, sempre igual". Só muda
+  // ONDE aparece — marcação, vínculos e contagem continuam idênticos.
+  local      String   @default("checklist") // "checklist" | "habitos"
   horaInicio String? // "HH:mm" — opcional; item "livre" pode ficar sem hora
   horaFim    String? // "HH:mm" — só exigido junto com horaInicio
   dataInicio DateTime // início do dia em SP: âncora da recorrência (e do dia único, se rrule=null)
@@ -924,24 +937,50 @@ model RotinaTemplate {
   ordem      Int      @default(0)
   criadoEm   DateTime @default(now())
 
-  tipo            String         @default("livre") // "livre" | "estudo" | "treino" | "corrida"
+  tipo            String         @default("livre") // "livre" | "estudo" | "treino" | "corrida" | "refeicao"
   studyCategoryId String?
   studyCategory   StudyCategory? @relation(fields: [studyCategoryId], references: [id], onDelete: SetNull)
   routineId       String? // tipo "treino" → Routine (musculação)
   runSessionId    String? // tipo "corrida" → RunSession (plano de corrida)
   runSession      RunSession?    @relation(fields: [runSessionId], references: [id], onDelete: SetNull)
+  // tipo "refeicao" → Meal da dieta. Vínculo fraco (sem FK), mesmo padrão de
+  // routineId: a refeição escolhida na dieta passa a aparecer no checklist no
+  // horário/plano/recorrência definidos aqui, mas o "feito" continua morando
+  // no DietDayLog — este template só decide QUANDO ela aparece, nunca duplica
+  // a marcação (senão a métrica "refeicoes_cumpridas" contaria duas vezes).
+  mealId          String?
   metaMinutos     Int? // meta de tempo p/ estudo/corrida (ex.: 60) — mostra 47/60
   planoId         String? // null = item comum a todos os planos
   plano           RotinaPlano?   @relation(fields: [planoId], references: [id], onDelete: SetNull)
 
   checks RotinaCheckDia[]
+  opcoes RotinaTemplateOpcao[]
 
   @@index([userId])
   @@index([userId, ativo])
   @@index([studyCategoryId])
   @@index([routineId])
   @@index([runSessionId])
+  @@index([mealId])
   @@index([planoId])
+}
+
+// Alternativa de um item do checklist ("hoje faço corrida OU musculação OU
+// caminhada"). Um item com opções continua sendo UM item — conta uma vez só
+// para metas e desafios; a opção só registra QUAL das alternativas foi feita
+// naquele dia (RotinaCheckDia.opcaoId). Item sem opções continua sendo um
+// toggle direto, como sempre foi.
+model RotinaTemplateOpcao {
+  id       String @id @default(cuid())
+  userId   String
+  rotinaId String
+  nome     String
+  ordem    Int    @default(0)
+
+  rotina RotinaTemplate @relation(fields: [rotinaId], references: [id], onDelete: Cascade)
+
+  @@index([rotinaId])
+  @@index([userId])
 }
 
 // "Feito" de uma ocorrência específica (rotinaId + dia). Linha só existe
@@ -955,6 +994,10 @@ model RotinaCheckDia {
   rotinaId  String
   data      DateTime // início do dia em SP a que o check pertence
   feitoAuto Boolean        @default(false)
+  // Qual alternativa foi feita, quando o item tem opções (RotinaTemplateOpcao).
+  // Vínculo fraco de propósito: opção excluída depois não apaga o histórico do
+  // dia — a linha continua valendo como "feito", só perde o rótulo.
+  opcaoId   String?
   rotina    RotinaTemplate @relation(fields: [rotinaId], references: [id], onDelete: Cascade)
 
   @@unique([rotinaId, data])

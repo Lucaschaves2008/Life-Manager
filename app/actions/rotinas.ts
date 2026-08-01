@@ -32,6 +32,10 @@ function normalizarHora(hora?: string | null): string | null {
 
 export type RotinaTemplateInput = {
   nome: string;
+  /** Texto livre ("por que esse item") — usado no card em Hábitos */
+  nota?: string | null;
+  /** Vitrine do item: lista do dia ("checklist") ou bloco de Hábitos */
+  local?: "checklist" | "habitos";
   /** "HH:mm" opcional — item "livre" pode não ter hora */
   horaInicio?: string | null;
   /** "HH:mm" opcional — deve ser > horaInicio quando ambos presentes */
@@ -47,9 +51,13 @@ export type RotinaTemplateInput = {
   studyCategoryId?: string | null;
   routineId?: string | null;
   runSessionId?: string | null;
+  /** tipo "refeicao" → Meal da dieta ativa */
+  mealId?: string | null;
   metaMinutos?: number | null;
   /** null = item comum (aparece em qualquer plano ativo no dia) */
   planoId?: string | null;
+  /** Alternativas do item ("corrida OU treino") — nomes livres, na ordem dada */
+  opcoes?: string[];
 };
 
 function montarRrule(input: RotinaTemplateInput): string | null {
@@ -87,6 +95,7 @@ async function resolverVinculos(userId: string, input: RotinaTemplateInput) {
   let studyCategoryId: string | null = null;
   let routineId: string | null = null;
   let runSessionId: string | null = null;
+  let mealId: string | null = null;
 
   if (tipo === "estudo" && input.studyCategoryId) {
     const cat = await db.studyCategory.findFirst({
@@ -109,8 +118,22 @@ async function resolverVinculos(userId: string, input: RotinaTemplateInput) {
     });
     runSessionId = sessao?.id ?? null;
   }
+  if (tipo === "refeicao" && input.mealId) {
+    const meal = await db.meal.findFirst({
+      where: { id: input.mealId, userId },
+      select: { id: true },
+    });
+    mealId = meal?.id ?? null;
+  }
 
-  return { tipo, studyCategoryId, routineId, runSessionId };
+  return { tipo, studyCategoryId, routineId, runSessionId, mealId };
+}
+
+/** Nomes de opção limpos, sem vazios/duplicados. Menos de 2 = item sem escolha. */
+function normalizarOpcoes(opcoes?: string[]): string[] {
+  const limpas = (opcoes ?? []).map((o) => o.trim()).filter(Boolean);
+  const unicas = [...new Set(limpas)];
+  return unicas.length >= 2 ? unicas.slice(0, 6) : [];
 }
 
 /** null se planoId vier vazio, ou se não pertencer ao usuário. */
@@ -181,13 +204,19 @@ export async function criarRotinaTemplate(input: RotinaTemplateInput): Promise<I
   const validado = validarHorarios(input);
   if (!validado) throw new Error("Horário inválido: o fim deve ser depois do início.");
 
-  const { tipo, studyCategoryId, routineId, runSessionId } = await resolverVinculos(userId, input);
+  const { tipo, studyCategoryId, routineId, runSessionId, mealId } = await resolverVinculos(
+    userId,
+    input
+  );
   const planoId = await resolverPlano(userId, input.planoId);
+  const opcoes = normalizarOpcoes(input.opcoes);
   const total = await db.rotinaTemplate.count({ where: { userId, ativo: true } });
 
   const criado = await db.rotinaTemplate.create({
     data: {
       nome: validado.nome,
+      nota: input.nota?.trim() || null,
+      local: input.local === "habitos" ? "habitos" : "checklist",
       horaInicio: validado.horaInicio,
       horaFim: validado.horaFim,
       dataInicio: dataDoDia(input.dataInicio),
@@ -197,9 +226,13 @@ export async function criarRotinaTemplate(input: RotinaTemplateInput): Promise<I
       studyCategoryId,
       routineId,
       runSessionId,
+      mealId,
       metaMinutos: input.metaMinutos ?? null,
       planoId,
       userId,
+      opcoes: {
+        create: opcoes.map((nome, ordem) => ({ nome, ordem, userId })),
+      },
     },
   });
   revalidar(userId);
@@ -219,13 +252,18 @@ export async function atualizarRotinaTemplate(
   // ter sido gravado. Falhar em voz alta é o único jeito de o usuário saber.
   if (!existente) throw new Error("Item não encontrado — recarregue a página.");
 
-  const { tipo, studyCategoryId, routineId, runSessionId } = await resolverVinculos(userId, input);
+  const { tipo, studyCategoryId, routineId, runSessionId, mealId } = await resolverVinculos(
+    userId,
+    input
+  );
   const planoId = await resolverPlano(userId, input.planoId);
 
   await db.rotinaTemplate.update({
     where: { id, userId },
     data: {
       nome: validado.nome,
+      nota: input.nota?.trim() || null,
+      local: input.local === "habitos" ? "habitos" : "checklist",
       horaInicio: validado.horaInicio,
       horaFim: validado.horaFim,
       dataInicio: dataDoDia(input.dataInicio),
@@ -234,12 +272,41 @@ export async function atualizarRotinaTemplate(
       studyCategoryId,
       routineId,
       runSessionId,
+      mealId,
       metaMinutos: input.metaMinutos ?? null,
       planoId,
     },
   });
+  await sincronizarOpcoes(userId, id, normalizarOpcoes(input.opcoes));
   revalidar(userId);
   return diagnosticarItem(userId, id, input.dataInicio);
+}
+
+/**
+ * Reconcilia as opções do item POR NOME em vez de recriar tudo: opção que
+ * continua na lista mantém o mesmo id, e com ele o histórico dos dias em que
+ * foi a escolhida (RotinaCheckDia.opcaoId). Recriar do zero a cada edição
+ * transformaria "corri terça e quinta" em dois dias sem rótulo nenhum.
+ */
+async function sincronizarOpcoes(userId: string, rotinaId: string, nomes: string[]) {
+  const atuais = await db.rotinaTemplateOpcao.findMany({
+    where: { rotinaId, userId },
+    select: { id: true, nome: true },
+  });
+  const porNome = new Map(atuais.map((o) => [o.nome, o.id]));
+  const manter = nomes.map((n) => porNome.get(n)).filter((v): v is string => Boolean(v));
+
+  await db.$transaction([
+    db.rotinaTemplateOpcao.deleteMany({
+      where: { rotinaId, userId, id: { notIn: manter.length > 0 ? manter : ["-"] } },
+    }),
+    ...nomes.map((nome, ordem) => {
+      const existenteId = porNome.get(nome);
+      return existenteId
+        ? db.rotinaTemplateOpcao.update({ where: { id: existenteId }, data: { ordem } })
+        : db.rotinaTemplateOpcao.create({ data: { rotinaId, userId, nome, ordem } });
+    }),
+  ]);
 }
 
 export async function excluirRotinaTemplate(id: string) {
@@ -330,8 +397,19 @@ export async function reordenarRotinaTemplates(orderedIds: string[]) {
   revalidar(userId);
 }
 
-/** Marca/desmarca a ocorrência do dia (upsert/delete de RotinaCheckDia). */
-export async function toggleRotinaCheckDia(templateId: string, dia: string) {
+/**
+ * Marca/desmarca a ocorrência do dia (upsert/delete de RotinaCheckDia).
+ *
+ * `opcaoId` registra QUAL alternativa foi feita num item com opções ("hoje foi
+ * corrida, não musculação"). Passá-lo num item já marcado apenas TROCA a
+ * escolha — sem isso, tocar em outra opção desmarcaria o item, que é o oposto
+ * do esperado. O item continua contando uma vez só para metas e desafios.
+ */
+export async function toggleRotinaCheckDia(
+  templateId: string,
+  dia: string,
+  opcaoId?: string | null
+) {
   const { id: userId } = await requireUser();
   const rotina = await db.rotinaTemplate.findFirst({
     where: { id: templateId, userId },
@@ -339,17 +417,32 @@ export async function toggleRotinaCheckDia(templateId: string, dia: string) {
   });
   if (!rotina) throw new Error("Item não encontrado — recarregue a página.");
 
+  // Opção de outro item (ou já excluída) não vira escolha: grava sem rótulo.
+  const opcaoValida = opcaoId
+    ? await db.rotinaTemplateOpcao.findFirst({
+        where: { id: opcaoId, rotinaId: templateId, userId },
+        select: { id: true },
+      })
+    : null;
+
   const data = dataDoDia(dia);
   const existente = await db.rotinaCheckDia.findFirst({
     where: { userId, rotinaId: templateId, data },
   });
   if (existente) {
-    await db.rotinaCheckDia.delete({ where: { id: existente.id } });
-    // NÃO desfaz o StreakDia: a ofensiva do dia é permanente (só desmarcou).
+    if (opcaoValida && existente.opcaoId !== opcaoValida.id) {
+      await db.rotinaCheckDia.update({
+        where: { id: existente.id },
+        data: { opcaoId: opcaoValida.id },
+      });
+    } else {
+      await db.rotinaCheckDia.delete({ where: { id: existente.id } });
+      // NÃO desfaz o StreakDia: a ofensiva do dia é permanente (só desmarcou).
+    }
   } else {
     // toggle manual: nunca marca feitoAuto (esse flag é só da execução real)
     await db.rotinaCheckDia.create({
-      data: { userId, rotinaId: templateId, data, feitoAuto: false },
+      data: { userId, rotinaId: templateId, data, feitoAuto: false, opcaoId: opcaoValida?.id ?? null },
     });
     await marcarDiaAtivo(userId, dia); // conquista o dia (permanente)
   }

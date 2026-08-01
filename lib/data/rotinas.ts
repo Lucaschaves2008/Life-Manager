@@ -2,12 +2,12 @@ import {
   cacheLife,
   cacheTag,
 } from "next/cache";
-import { eachDayOfInterval, subDays } from "date-fns";
+import { addDays, eachDayOfInterval, subDays } from "date-fns";
 import { db } from "@/lib/db";
 import { tagUsuario } from "@/lib/cache-tags";
-import { dayKeySP, refDoDiaSP, shortDate, spEndOfDay, spStartOfDay } from "@/lib/dates";
+import { dayKeySP, fmtSP, refDoDiaSP, shortDate, spEndOfDay, spStartOfDay } from "@/lib/dates";
 import { expandEvent } from "@/lib/recurrence";
-import { templateParaEventLike, type RotinaEventLike, type RotinaTemplateRow } from "@/lib/rotina-helpers";
+import { templateParaEventLike, type RotinaTemplateRow } from "@/lib/rotina-helpers";
 
 // Padrão de cache deste arquivo (ver estudos.ts): wrapper mantém a assinatura
 // com Date de request e delega para uma interna "use cache" com chave estável
@@ -19,12 +19,18 @@ import { templateParaEventLike, type RotinaEventLike, type RotinaTemplateRow } f
 // motor da Agenda: cada RotinaTemplate vira um EventLike sintético, e
 // expandEvent devolve 0 ou 1 ocorrência para a janela de um dia.
 
-export const TIPOS_ROTINA = ["livre", "estudo", "treino", "corrida"] as const;
+export const TIPOS_ROTINA = ["livre", "estudo", "treino", "corrida", "refeicao"] as const;
 export type TipoRotina = (typeof TIPOS_ROTINA)[number];
+
+export type RotinaOpcaoView = { id: string; nome: string };
+
+export type LocalItem = "checklist" | "habitos";
 
 export type RotinaOcorrenciaView = {
   templateId: string;
   nome: string;
+  nota: string | null;
+  local: LocalItem;
   horaInicio: string | null;
   horaFim: string | null;
   ordem: number;
@@ -32,22 +38,31 @@ export type RotinaOcorrenciaView = {
   studyCategoryId: string | null;
   routineId: string | null;
   runSessionId: string | null;
+  mealId: string | null;
   metaMinutos: number | null;
   planoId: string | null;
   feito: boolean;
   feitoAuto: boolean;
+  /** Alternativas do item ("corrida OU treino") — vazio quando é toggle simples. */
+  opcoes: RotinaOpcaoView[];
+  /** Qual alternativa foi marcada hoje (null = nenhuma / item sem opções). */
+  opcaoEscolhidaId: string | null;
   /** Segundos líquidos executados hoje na categoria vinculada (só tipo estudo). */
   executadoSec: number;
 };
 
 type RotinaTemplateDb = RotinaTemplateRow & {
+  nota: string | null;
+  local: string;
   ordem: number;
   tipo: string;
   studyCategoryId: string | null;
   routineId: string | null;
   runSessionId: string | null;
+  mealId: string | null;
   metaMinutos: number | null;
   planoId: string | null;
+  opcoes: { id: string; nome: string; ordem: number }[];
 };
 
 /**
@@ -69,26 +84,39 @@ export async function rotinasDoDia(userId: string, dia: Date): Promise<RotinaOco
   const from = spStartOfDay(ref);
   const to = spEndOfDay(ref);
 
+  // Os campos vêm do TEMPLATE, não de `oc.event`: templateParaEventLike só
+  // copia o que o motor de recorrência precisa (id/título/datas/rrule), então
+  // ler tipo/ordem/vínculos de lá devolvia undefined em silêncio — item de
+  // estudo sem barra de progresso, emoji genérico, ordenação por NaN.
+  // expandEvent devolve 0 ou 1 ocorrência para a janela de um dia.
   const ocorrencias = templates
-    .flatMap((t) => expandEvent(templateParaEventLike(t), from, to))
-    .map((oc) => {
-      const ev = oc.event as RotinaEventLike & RotinaTemplateDb;
-      return {
-        templateId: ev.id,
-        nome: ev.titulo,
-        horaInicio: ev.horaInicio,
-        horaFim: ev.horaFim,
-        ordem: ev.ordem,
-        tipo: ev.tipo as TipoRotina,
-        studyCategoryId: ev.studyCategoryId,
-        routineId: ev.routineId,
-        runSessionId: ev.runSessionId,
-        metaMinutos: ev.metaMinutos,
-        planoId: ev.planoId,
-        feito: checks.has(ev.id),
-        feitoAuto: checks.get(ev.id) ?? false,
-        executadoSec: 0,
-      };
+    .flatMap((t) => {
+      const ocorre = expandEvent(templateParaEventLike(t), from, to).length > 0;
+      if (!ocorre) return [];
+      const check = checks.get(t.id);
+      return [
+        {
+          templateId: t.id,
+          nome: t.nome,
+          nota: t.nota,
+          local: (t.local === "habitos" ? "habitos" : "checklist") as LocalItem,
+          horaInicio: t.horaInicio,
+          horaFim: t.horaFim,
+          ordem: t.ordem,
+          tipo: t.tipo as TipoRotina,
+          studyCategoryId: t.studyCategoryId,
+          routineId: t.routineId,
+          runSessionId: t.runSessionId,
+          mealId: t.mealId,
+          metaMinutos: t.metaMinutos,
+          planoId: t.planoId,
+          feito: check !== undefined,
+          feitoAuto: check?.feitoAuto ?? false,
+          opcoes: t.opcoes.map((o) => ({ id: o.id, nome: o.nome })),
+          opcaoEscolhidaId: check?.opcaoId ?? null,
+          executadoSec: 0,
+        },
+      ];
     })
     .sort((a, b) => {
       if (a.horaInicio && b.horaInicio) return a.horaInicio.localeCompare(b.horaInicio) || a.ordem - b.ordem;
@@ -138,13 +166,17 @@ async function resumoSemanalRotinaDoDia(
   const de = spStartOfDay(subDays(ref, dias - 1));
   const ate = spEndOfDay(ref);
 
-  const [templates, checks] = await Promise.all([
+  const [todosTemplates, checks] = await Promise.all([
     templatesAtivos(userId),
     db.rotinaCheckDia.findMany({
       where: { userId, data: { gte: de, lte: ate } },
       select: { rotinaId: true, data: true },
     }),
   ]);
+  // Item de refeição não tem RotinaCheckDia — o "feito" mora no DietDayLog (ver
+  // rotinasDoDia). Contá-lo aqui deixaria o % da semana permanentemente abaixo
+  // do real, porque ele nunca apareceria como concluído.
+  const templates = todosTemplates.filter((t) => t.tipo !== "refeicao");
 
   const checksPorDia = new Map<string, Set<string>>();
   for (const c of checks) {
@@ -185,6 +217,12 @@ async function templatesAtivos(userId: string): Promise<RotinaTemplateDb[]> {
   const templates = await db.rotinaTemplate.findMany({
     where: { userId, ativo: true },
     orderBy: { ordem: "asc" },
+    include: {
+      opcoes: {
+        orderBy: { ordem: "asc" },
+        select: { id: true, nome: true, ordem: true },
+      },
+    },
   });
   return templates as RotinaTemplateDb[];
 }
@@ -208,17 +246,20 @@ async function planoAtivoNoDia(userId: string, dayKey: string): Promise<string |
   return escolha?.planoId ?? padrao?.id ?? null;
 }
 
-/** Map templateId → feitoAuto, para as ocorrências marcadas no dia. */
-async function checksDoDia(userId: string, dayKey: string): Promise<Map<string, boolean>> {
+/** Map templateId → dados do check, para as ocorrências marcadas no dia. */
+async function checksDoDia(
+  userId: string,
+  dayKey: string
+): Promise<Map<string, { feitoAuto: boolean; opcaoId: string | null }>> {
   "use cache";
   cacheTag(tagUsuario(userId, "checklist"));
   cacheLife("usuario");
   const ref = refDoDiaSP(dayKey);
   const checks = await db.rotinaCheckDia.findMany({
     where: { userId, data: { gte: spStartOfDay(ref), lte: spEndOfDay(ref) } },
-    select: { rotinaId: true, feitoAuto: true },
+    select: { rotinaId: true, feitoAuto: true, opcaoId: true },
   });
-  return new Map(checks.map((c) => [c.rotinaId, c.feitoAuto]));
+  return new Map(checks.map((c) => [c.rotinaId, { feitoAuto: c.feitoAuto, opcaoId: c.opcaoId }]));
 }
 
 /**
@@ -296,6 +337,8 @@ export async function rotinasParaPlano(userId: string): Promise<RotinaOpcao[]> {
 export type RotinaTemplateView = {
   id: string;
   nome: string;
+  nota: string | null;
+  local: LocalItem;
   horaInicio: string | null;
   horaFim: string | null;
   rrule: string | null;
@@ -305,22 +348,20 @@ export type RotinaTemplateView = {
   studyCategoryId: string | null;
   routineId: string | null;
   runSessionId: string | null;
+  mealId: string | null;
   metaMinutos: number | null;
   planoId: string | null;
+  opcoes: RotinaOpcaoView[];
 };
 
 /** Todos os templates ativos do usuário, para a lista de gerenciamento. */
 export async function rotinaTemplates(userId: string): Promise<RotinaTemplateView[]> {
-  "use cache";
-  cacheTag(tagUsuario(userId, "checklist"));
-  cacheLife("usuario");
-  const templates = await db.rotinaTemplate.findMany({
-    where: { userId, ativo: true },
-    orderBy: { ordem: "asc" },
-  });
+  const templates = await templatesAtivos(userId);
   return templates.map((t) => ({
     id: t.id,
     nome: t.nome,
+    nota: t.nota,
+    local: (t.local === "habitos" ? "habitos" : "checklist") as LocalItem,
     horaInicio: t.horaInicio,
     horaFim: t.horaFim,
     rrule: t.rrule,
@@ -330,9 +371,25 @@ export async function rotinaTemplates(userId: string): Promise<RotinaTemplateVie
     studyCategoryId: t.studyCategoryId,
     routineId: t.routineId,
     runSessionId: t.runSessionId,
+    mealId: t.mealId,
     metaMinutos: t.metaMinutos,
     planoId: t.planoId,
+    opcoes: t.opcoes.map((o) => ({ id: o.id, nome: o.nome })),
   }));
+}
+
+/** Refeições da dieta ativa, para vincular a um item tipo "refeicao". */
+export async function refeicoesParaPlano(userId: string): Promise<RotinaOpcao[]> {
+  "use cache";
+  cacheTag(tagUsuario(userId, "dieta"));
+  cacheLife("usuario");
+  const dieta = await db.diet.findFirst({
+    where: { userId, ativa: true },
+    select: {
+      meals: { orderBy: { ordem: "asc" }, select: { id: true, nome: true, horario: true } },
+    },
+  });
+  return (dieta?.meals ?? []).map((m) => ({ id: m.id, nome: m.nome, foco: m.horario }));
 }
 
 // ---------- Planos alternativos (Plano A / Plano B / ...) ----------
@@ -355,6 +412,131 @@ export async function rotinaPlanos(userId: string): Promise<RotinaPlanoView[]> {
 /** Id do plano vigente no dia (escolha explícita ou padrão), para a UI destacar o ativo. */
 export async function rotinaPlanoDoDia(userId: string, dia: Date): Promise<string | null> {
   return planoAtivoNoDia(userId, dayKeySP(dia));
+}
+
+// ---------- Semana montada (ver o checklist inteiro de uma vez) ----------
+
+export type ItemSemana = {
+  /** Estável dentro do dia — templateId, ou "meal:<id>" p/ refeição da dieta. */
+  id: string;
+  nome: string;
+  horaInicio: string | null;
+  horaFim: string | null;
+  tipo: TipoRotina;
+  /** null = item comum (aparece em qualquer plano). */
+  planoId: string | null;
+  /** Nomes das alternativas ("corrida OU treino"), vazio quando não há. */
+  opcoes: string[];
+};
+
+export type DiaSemanaMontado = {
+  dayKey: string;
+  /** "Segunda", "Terça"… */
+  diaSemana: string;
+  /** "04/08" */
+  dataLabel: string;
+  hoje: boolean;
+  fimDeSemana: boolean;
+  itens: ItemSemana[];
+};
+
+/**
+ * A semana inteira já montada, dia a dia — o que o checklist VAI pedir em cada
+ * um dos 7 dias, ordenado por horário. Devolve os itens de TODOS os planos com
+ * o `planoId` de cada um: quem chama filtra (a tela deixa alternar entre Plano
+ * A/B sem ida ao servidor). Semana começa na segunda, e as refeições da dieta
+ * ativa que não têm item próprio entram em todos os dias, no horário delas.
+ */
+export async function semanaMontada(userId: string, ref: Date): Promise<DiaSemanaMontado[]> {
+  return semanaMontadaDoDia(userId, dayKeySP(ref));
+}
+
+async function semanaMontadaDoDia(userId: string, hojeKey: string): Promise<DiaSemanaMontado[]> {
+  "use cache";
+  cacheTag(tagUsuario(userId, "checklist"));
+  cacheTag(tagUsuario(userId, "dieta"));
+  cacheLife("usuario");
+
+  const hoje = refDoDiaSP(hojeKey);
+  // Semana de segunda a domingo (getDay: 0=dom). No domingo, volta 6 dias.
+  const diaDaSemana = Number(fmtSP(hoje, "i")); // 1=segunda … 7=domingo
+  const segunda = spStartOfDay(subDays(hoje, diaDaSemana - 1));
+  const dias = Array.from({ length: 7 }, (_, i) => addDays(segunda, i));
+
+  const [templates, dieta] = await Promise.all([
+    templatesAtivos(userId),
+    db.diet.findFirst({
+      where: { userId, ativa: true },
+      select: {
+        meals: { orderBy: { ordem: "asc" }, select: { id: true, nome: true, horario: true } },
+      },
+    }),
+  ]);
+
+  // Só o que mora na lista do dia: itens de Hábitos são "todo dia, sempre
+  // igual" e têm bloco próprio — repeti-los nas 7 colunas só faria ruído.
+  const doChecklist = templates.filter((t) => t.local !== "habitos");
+  const mealsComItem = new Set(
+    doChecklist.filter((t) => t.tipo === "refeicao" && t.mealId).map((t) => t.mealId as string)
+  );
+  const refeicoesSoltas = (dieta?.meals ?? []).filter((m) => !mealsComItem.has(m.id));
+
+  // Uma expansão por template cobrindo a semana toda, e não 7 expansões por dia.
+  const porDia = new Map<string, ItemSemana[]>();
+  for (const t of doChecklist) {
+    const ocorrencias = expandEvent(
+      templateParaEventLike(t),
+      segunda,
+      spEndOfDay(dias[6])
+    );
+    for (const oc of ocorrencias) {
+      const lista = porDia.get(oc.dayKey) ?? [];
+      lista.push({
+        id: t.id,
+        nome: t.nome,
+        horaInicio: t.horaInicio,
+        horaFim: t.horaFim,
+        tipo: t.tipo as TipoRotina,
+        planoId: t.planoId,
+        opcoes: t.opcoes.map((o) => o.nome),
+      });
+      porDia.set(oc.dayKey, lista);
+    }
+  }
+
+  return dias.map((d) => {
+    const dayKey = dayKeySP(d);
+    const itens = [
+      ...(porDia.get(dayKey) ?? []),
+      ...refeicoesSoltas.map((m) => ({
+        id: `meal:${m.id}`,
+        nome: m.nome,
+        horaInicio: m.horario,
+        horaFim: null,
+        tipo: "refeicao" as TipoRotina,
+        planoId: null,
+        opcoes: [],
+      })),
+    ].sort(ordenarPorHorario);
+
+    const nomeDia = fmtSP(d, "EEEE").replace(/-feira$/, "");
+    return {
+      dayKey,
+      diaSemana: nomeDia.charAt(0).toUpperCase() + nomeDia.slice(1),
+      dataLabel: fmtSP(d, "dd/MM"),
+      hoje: dayKey === hojeKey,
+      fimDeSemana: [0, 6].includes(Number(fmtSP(d, "i")) % 7),
+      itens,
+    };
+  });
+}
+
+/** Itens com hora primeiro (crescente); os sem hora vão para o fim. */
+function ordenarPorHorario(a: { horaInicio: string | null }, b: { horaInicio: string | null }): number {
+  if (a.horaInicio && b.horaInicio) return a.horaInicio.localeCompare(b.horaInicio);
+  if (a.horaInicio) return -1;
+  if (b.horaInicio) return 1;
+  return 0;
 }
 
 function safeArray(raw: string): string[] {

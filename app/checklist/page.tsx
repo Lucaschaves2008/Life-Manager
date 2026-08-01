@@ -8,15 +8,18 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { habitosAtivos, itensFeitosNoDia, percentualMensalHabitos } from "@/lib/data/checklist";
 import { aguaDoDiaChecklist, refeicoesDoDiaChecklist } from "@/lib/data/dieta";
 import { categoriasEstudo, formatHoras, sessoesDoDia } from "@/lib/data/estudos";
+import { SemanaMontada } from "@/components/checklist/semana-client";
 import {
   diaRegistroDoDia,
   historicoDiaRegistros,
+  refeicoesParaPlano,
   resumoSemanalRotina,
   rotinaPlanoDoDia,
   rotinaPlanos,
   rotinaTemplates,
   rotinasDoDia,
   rotinasParaPlano,
+  semanaMontada,
 } from "@/lib/data/rotinas";
 import { sessoesCorridaParaPlano } from "@/lib/data/treinos";
 import { variaveisDoDia } from "@/lib/data/variaveis";
@@ -45,10 +48,12 @@ export default async function ChecklistPage() {
     planos,
     planoAtivoId,
     variaveis,
-    refeicoes,
+    todasRefeicoes,
+    refeicoesCadastradas,
     agua,
     registroHoje,
     historico,
+    semanaItens,
   ] = await Promise.all([
     habitosAtivos(user.id),
     itensFeitosNoDia(user.id, hoje),
@@ -64,14 +69,42 @@ export default async function ChecklistPage() {
     rotinaPlanoDoDia(user.id, hoje),
     variaveisDoDia(user.id, hoje),
     refeicoesDoDiaChecklist(user.id, hoje),
+    refeicoesParaPlano(user.id),
     aguaDoDiaChecklist(user.id, hoje),
     diaRegistroDoDia(user.id, hoje),
     historicoDiaRegistros(user.id),
+    semanaMontada(user.id, hoje),
   ]);
 
-  const totalItens = rotinaOcorrencias.length + variaveis.length + refeicoes.length + 1;
+  // Um item pode morar na lista do dia ou no bloco de Hábitos — a diferença é
+  // só de vitrine (ver RotinaTemplate.local / Variavel.local). Itens de
+  // refeição saem dos dois: eles decidem QUAIS refeições da dieta aparecem, e
+  // são renderizados na lista de refeições logo abaixo.
+  const ocorrenciasRefeicao = rotinaOcorrencias.filter((oc) => oc.tipo === "refeicao" && oc.mealId);
+  const semRefeicao = rotinaOcorrencias.filter((oc) => oc.tipo !== "refeicao");
+  const ocorrenciasChecklist = semRefeicao.filter((oc) => oc.local === "checklist");
+  const ocorrenciasHabitos = semRefeicao.filter((oc) => oc.local === "habitos");
+  const variaveisChecklist = variaveis.filter((v) => v.local === "checklist");
+  const variaveisHabitos = variaveis.filter((v) => v.local === "habitos");
+
+  // Refeição com item próprio só entra quando o item cai hoje (respeitando
+  // plano e recorrência); as demais continuam aparecendo todo dia, como antes.
+  const porMealId = new Map(todasRefeicoes.map((r) => [r.id, r]));
+  const comItemProprio = new Set(
+    todasRotinas.filter((t) => t.tipo === "refeicao" && t.mealId).map((t) => t.mealId as string)
+  );
+  const refeicoes = [
+    ...ocorrenciasRefeicao.flatMap((oc) => {
+      const meal = porMealId.get(oc.mealId as string);
+      return meal ? [{ ...meal, horario: oc.horaInicio ?? meal.horario }] : [];
+    }),
+    ...todasRefeicoes.filter((r) => !comItemProprio.has(r.id)),
+  ];
+
+  const itensDoDia = [...ocorrenciasChecklist, ...ocorrenciasHabitos];
+  const totalItens = itensDoDia.length + variaveis.length + refeicoes.length + 1;
   const totalFeitos =
-    rotinaOcorrencias.filter((oc) => oc.feito).length +
+    itensDoDia.filter((oc) => oc.feito).length +
     variaveis.filter((v) => v.feito).length +
     refeicoes.filter((r) => r.feito).length +
     (agua.feito ? 1 : 0);
@@ -94,6 +127,7 @@ export default async function ChecklistPage() {
       <Tabs defaultValue="hoje">
         <TabsList>
           <TabsTrigger value="hoje">Hoje</TabsTrigger>
+          <TabsTrigger value="semana">Semana</TabsTrigger>
           <TabsTrigger value="historico">Histórico</TabsTrigger>
         </TabsList>
 
@@ -154,16 +188,16 @@ export default async function ChecklistPage() {
 
             <Card className="col-span-12">
               <MinhaRotina
-                ocorrencias={rotinaOcorrencias}
+                ocorrencias={ocorrenciasChecklist}
                 templates={todasRotinas}
                 categorias={categorias}
                 rotinasTreino={rotinasTreino}
                 sessoesCorrida={sessoesCorrida}
+                refeicoesCadastradas={refeicoesCadastradas}
                 planos={planos}
                 planoAtivoId={planoAtivoId}
-                variaveis={variaveis}
+                variaveis={variaveisChecklist}
                 refeicoes={refeicoes}
-                agua={agua}
                 dia={hojeKey}
               />
             </Card>
@@ -173,6 +207,15 @@ export default async function ChecklistPage() {
                 habitos={habitos}
                 feitos={feitos}
                 pctMensal={pctMensalHabitos}
+                ocorrencias={ocorrenciasHabitos}
+                variaveis={variaveisHabitos}
+                templates={todasRotinas}
+                categorias={categorias}
+                rotinasTreino={rotinasTreino}
+                sessoesCorrida={sessoesCorrida}
+                refeicoesCadastradas={refeicoesCadastradas}
+                planos={planos}
+                agua={agua}
                 hoje={hojeKey}
               />
             </Card>
@@ -184,6 +227,10 @@ export default async function ChecklistPage() {
               registroExistente={registroHoje?.descricao ?? null}
             />
           </div>
+        </TabsContent>
+
+        <TabsContent value="semana">
+          <SemanaMontada dias={semanaItens} planos={planos} planoAtivoId={planoAtivoId} />
         </TabsContent>
 
         <TabsContent value="historico">

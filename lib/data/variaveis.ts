@@ -23,6 +23,9 @@ const STREAK_LIMITE_DIAS = 730;
 export type VariavelView = {
   id: string;
   nome: string;
+  nota: string | null;
+  /** Vitrine: "checklist" (lista do dia) ou "habitos" (bloco de Hábitos). */
+  local: "checklist" | "habitos";
   emoji: string;
   cor: string;
   medeStreak: boolean;
@@ -43,6 +46,8 @@ export async function variaveisAtivas(userId: string): Promise<VariavelView[]> {
   return variaveis.map((v) => ({
     id: v.id,
     nome: v.nome,
+    nota: v.nota,
+    local: (v.local === "habitos" ? "habitos" : "checklist") as "checklist" | "habitos",
     emoji: v.emoji,
     cor: v.cor,
     medeStreak: v.medeStreak,
