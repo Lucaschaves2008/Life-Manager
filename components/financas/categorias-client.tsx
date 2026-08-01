@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useAcao } from "@/lib/acao-cliente";
 import { Pencil, Plus, Tag, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -43,7 +44,7 @@ const vazia: CategoriaInput = {
 };
 
 export function CategoriasClient({ itens }: { itens: CategoriaItem[] }) {
-  const [, startTransition] = useTransition();
+  const [, executar] = useAcao();
   const [pending, startSalvar] = useTransition();
   const [aberto, setAberto] = useState(false);
   const [editando, setEditando] = useState<CategoriaItem | null>(null);
@@ -121,7 +122,7 @@ export function CategoriasClient({ itens }: { itens: CategoriaItem[] }) {
                         icon: Trash2,
                         destructive: true,
                         onSelect: () =>
-                          startTransition(async () => {
+                          executar(async () => {
                             await deleteCategoria(item.id);
                             toast.success("Categoria excluída");
                           }),

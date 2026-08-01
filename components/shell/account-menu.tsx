@@ -1,7 +1,8 @@
 "use client";
 
+import { useTransition } from "react";
 import Link from "next/link";
-import { LogOut, User } from "lucide-react";
+import { Loader2, LogOut, User } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,6 +23,19 @@ export function AccountMenu({
   avatarUrl: string | null;
   collapsed: boolean;
 }) {
+  const [saindo, startSaindo] = useTransition();
+
+  // Não usar <form action={signOut}> aqui: o item vive dentro do Portal do
+  // dropdown, que o Radix desmonta no onSelect — o form saía do DOM antes de
+  // o browser processar o submit ("form is not connected") e o logout nunca
+  // acontecia. O preventDefault mantém o menu montado durante a transição.
+  const sair = (event: Event) => {
+    event.preventDefault();
+    startSaindo(async () => {
+      await signOut();
+    });
+  };
+
   const avatar = (
     <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-mint-soft text-[12px] font-medium text-mint">
       {avatarUrl ? (
@@ -60,13 +74,18 @@ export function AccountMenu({
             Perfil
           </Link>
         </DropdownMenuItem>
-        <DropdownMenuItem destructive asChild>
-          <form action={signOut} className="contents">
-            <button type="submit" className="flex w-full items-center gap-2.5">
-              <LogOut className="h-4 w-4" strokeWidth={1.5} />
-              Sair
-            </button>
-          </form>
+        <DropdownMenuItem
+          destructive
+          disabled={saindo}
+          onSelect={sair}
+          className={cn(saindo && "opacity-60")}
+        >
+          {saindo ? (
+            <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.5} />
+          ) : (
+            <LogOut className="h-4 w-4" strokeWidth={1.5} />
+          )}
+          {saindo ? "Saindo…" : "Sair"}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

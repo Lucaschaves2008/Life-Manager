@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useAcao } from "@/lib/acao-cliente";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
@@ -23,7 +24,7 @@ export function SettingsForm({
   values: Record<string, string>;
 }) {
   const [form, setForm] = useState(values);
-  const [pending, startTransition] = useTransition();
+  const [pending, executar] = useAcao();
 
   const sujo = fields.some((f) => (form[f.key] ?? "") !== (values[f.key] ?? ""));
 
@@ -32,7 +33,7 @@ export function SettingsForm({
       className="flex flex-col gap-5"
       onSubmit={(e) => {
         e.preventDefault();
-        startTransition(async () => {
+        executar(async () => {
           await saveSettings(form);
           toast.success("Configurações salvas");
         });

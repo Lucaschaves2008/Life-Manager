@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import { useAcao } from "@/lib/acao-cliente";
 import { Briefcase, Check, ChevronDown, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -38,7 +39,7 @@ export function ContaFinanceiraSelector({
   ativaId: string;
 }) {
   const router = useRouter();
-  const [, startTransition] = useTransition();
+  const [, executar] = useAcao();
   const [pending, startSalvar] = useTransition();
   const [aberto, setAberto] = useState(false);
   const [editando, setEditando] = useState<ContaFinanceiraView | null>(null);
@@ -51,7 +52,7 @@ export function ContaFinanceiraSelector({
 
   function trocar(id: string) {
     if (id === ativaId) return;
-    startTransition(async () => {
+    executar(async () => {
       await setContaAtiva(id);
       router.refresh();
     });
@@ -97,7 +98,7 @@ export function ContaFinanceiraSelector({
       )
     )
       return;
-    startTransition(async () => {
+    executar(async () => {
       try {
         await excluirContaFinanceira(conta.id);
         toast.success("Conta excluída");

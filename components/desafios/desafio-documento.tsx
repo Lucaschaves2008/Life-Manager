@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useRef, useState } from "react";
+import { useAcao } from "@/lib/acao-cliente";
 import { FileText, Pin, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardLabel } from "@/components/caverna/card";
@@ -27,7 +28,7 @@ export function DesafioDocumento({
   const [abrirPreview, setAbrirPreview] = useState(false);
   const [nome, setNome] = useState("");
   const [file, setFile] = useState<File | null>(null);
-  const [pending, startTransition] = useTransition();
+  const [pending, executar] = useAcao();
   const inputRef = useRef<HTMLInputElement>(null);
 
   const podeExcluir = documento && (documento.enviadoPorId === viewerUserId || isCriador);
@@ -43,7 +44,7 @@ export function DesafioDocumento({
     const formData = new FormData();
     formData.set("nome", nome.trim());
     formData.set("file", file);
-    startTransition(async () => {
+    executar(async () => {
       try {
         await enviarDocumento(desafioId, formData);
         setDocumento({
@@ -66,7 +67,7 @@ export function DesafioDocumento({
   }
 
   function remover() {
-    startTransition(async () => {
+    executar(async () => {
       try {
         await excluirDocumento(desafioId);
         setDocumento(null);

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import { useAcao } from "@/lib/acao-cliente";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ChevronDown,
@@ -94,7 +95,7 @@ export function MusculacaoClient({
 }) {
   const router = useRouter();
   const params = useSearchParams();
-  const [, startTransition] = useTransition();
+  const [, executar] = useAcao();
   const [pending, startSalvar] = useTransition();
 
   const [treinando, setTreinando] = useState<FichaView | null>(null);
@@ -227,7 +228,7 @@ export function MusculacaoClient({
   function mudarSemana(delta: number) {
     const alvo = Math.max(1, semana + delta);
     if (alvo === semana) return;
-    startTransition(() => void setSemanaAtual(alvo));
+    executar(() => setSemanaAtual(alvo));
   }
 
   if (fichas.length === 0) {
@@ -308,7 +309,7 @@ export function MusculacaoClient({
                       label: "Duplicar",
                       icon: Copy,
                       onSelect: () =>
-                        startTransition(async () => {
+                        executar(async () => {
                           await duplicateRoutine(ficha.id);
                           toast.success("Ficha duplicada");
                         }),
@@ -318,7 +319,7 @@ export function MusculacaoClient({
                       icon: Trash2,
                       destructive: true,
                       onSelect: () =>
-                        startTransition(async () => {
+                        executar(async () => {
                           await deleteRoutine(ficha.id);
                           toast.success("Ficha excluída");
                         }),
@@ -359,7 +360,7 @@ export function MusculacaoClient({
                         aria-label="Subir exercício"
                         disabled={i === 0}
                         onClick={() =>
-                          startTransition(() => void moveExercise(ex.id, -1))
+                          executar(() => moveExercise(ex.id, -1))
                         }
                         className="rounded-md p-1 text-steel hover:text-ice disabled:opacity-30"
                       >
@@ -369,7 +370,7 @@ export function MusculacaoClient({
                         aria-label="Descer exercício"
                         disabled={i === ficha.exercicios.length - 1}
                         onClick={() =>
-                          startTransition(() => void moveExercise(ex.id, 1))
+                          executar(() => moveExercise(ex.id, 1))
                         }
                         className="rounded-md p-1 text-steel hover:text-ice disabled:opacity-30"
                       >
@@ -385,7 +386,7 @@ export function MusculacaoClient({
                       <button
                         aria-label="Excluir exercício"
                         onClick={() =>
-                          startTransition(async () => {
+                          executar(async () => {
                             await deleteExercise(ex.id);
                             toast.success("Exercício excluído");
                           })

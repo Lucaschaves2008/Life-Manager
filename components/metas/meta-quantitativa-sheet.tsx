@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useAcao } from "@/lib/acao-cliente";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
@@ -56,7 +57,7 @@ export function MetaQuantitativaSheet({
   editando?: MetaQuantitativaEditavel | null;
   variaveis: VariavelView[];
 }) {
-  const [pending, startTransition] = useTransition();
+  const [pending, executar] = useAcao();
   const [titulo, setTitulo] = useState(editando?.titulo ?? "");
   const [origem, setOrigem] = useState<MetaOrigem>(editando?.origem ?? "metrica");
   const [metrica, setMetrica] = useState<MetaMetrica>(editando?.metrica ?? "treinos");
@@ -82,7 +83,7 @@ export function MetaQuantitativaSheet({
       chave: editando?.chave ?? chaveAtual(periodo),
     };
 
-    startTransition(async () => {
+    executar(async () => {
       if (editando) {
         await editarMetaQuantitativa(editando.id, payload);
         toast.success("Meta atualizada");

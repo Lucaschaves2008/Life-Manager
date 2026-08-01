@@ -1,6 +1,7 @@
 "use client";
 
-import { useTransition } from "react";
+
+import { useAcao } from "@/lib/acao-cliente";
 import { Link2, RefreshCw, Unlink } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -17,7 +18,7 @@ export function StravaWidget({
   conectado: boolean;
   authorizeUrl: string | null;
 }) {
-  const [pending, startTransition] = useTransition();
+  const [pending, executar] = useAcao();
 
   if (!configurado) {
     return (
@@ -45,7 +46,7 @@ export function StravaWidget({
         size="sm"
         disabled={pending}
         onClick={() =>
-          startTransition(async () => {
+          executar(async () => {
             const n = await sincronizarStrava();
             toast.success(n > 0 ? `${n} corrida(s) importada(s) do Strava` : "Tudo sincronizado");
           })
@@ -61,7 +62,7 @@ export function StravaWidget({
             icon: Unlink,
             destructive: true,
             onSelect: () =>
-              startTransition(async () => {
+              executar(async () => {
                 await desconectarStrava();
                 toast.success("Strava desconectado");
               }),

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useAcao } from "@/lib/acao-cliente";
 import { Send } from "lucide-react";
 import { Card, CardLabel } from "@/components/caverna/card";
 import { Flame } from "@/components/caverna/flame";
@@ -28,7 +29,7 @@ export function DesafioChat({
 }) {
   const [mensagens, setMensagens] = useState(mensagensIniciais);
   const [texto, setTexto] = useState("");
-  const [pending, startTransition] = useTransition();
+  const [pending, executar] = useAcao();
   const listaRef = useRef<HTMLDivElement>(null);
   const ultimoIdRef = useRef<string | null>(mensagensIniciais.at(-1)?.id ?? null);
 
@@ -56,7 +57,7 @@ export function DesafioChat({
     const limpo = texto.trim();
     if (!limpo || pending) return;
     setTexto("");
-    startTransition(async () => {
+    executar(async () => {
       await enviarMensagem(desafioId, limpo);
       const atualizadas = await buscarMensagens(desafioId);
       setMensagens(atualizadas);

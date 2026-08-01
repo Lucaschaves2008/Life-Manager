@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useState } from "react";
+import { useAcao } from "@/lib/acao-cliente";
 import { Bell, Copy, MapPin, Pencil, Repeat, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -39,7 +40,7 @@ export function EventoPopover({
   formatarPeriodo: (oc: OcorrenciaView) => string;
   children: React.ReactNode;
 }) {
-  const [, startTransition] = useTransition();
+  const [, executar] = useAcao();
   const [confirmando, setConfirmando] = useState(false);
   const aberto = !!ocorrencia;
   const readonly = ocorrencia?.readonly ?? false;
@@ -51,7 +52,7 @@ export function EventoPopover({
 
   function excluir(modo: "todos" | "unica" | "seguintes") {
     const oc = ocorrencia!;
-    startTransition(async () => {
+    executar(async () => {
       const removido = await deleteEvent(oc.eventId, modo, oc.dayKey);
       toast("Evento excluído", {
         action: removido
@@ -155,7 +156,7 @@ export function EventoPopover({
                 <button
                   aria-label="Duplicar evento"
                   onClick={() =>
-                    startTransition(async () => {
+                    executar(async () => {
                       await duplicateEvent(ocorrencia.eventId);
                       toast.success("Evento duplicado");
                       onOpenChange(false);

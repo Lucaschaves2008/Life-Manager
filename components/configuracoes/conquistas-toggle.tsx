@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useAcao } from "@/lib/acao-cliente";
 import { toast } from "sonner";
 import { Checkbox } from "@/components/ui/checkbox";
 import { saveSettings } from "@/app/actions/settings";
@@ -12,12 +13,12 @@ import { PREF_CONQUISTAS } from "@/lib/conquistas";
  */
 export function ConquistasToggle({ ativo }: { ativo: boolean }) {
   const [checked, setChecked] = useState(ativo);
-  const [pending, startTransition] = useTransition();
+  const [pending, executar] = useAcao();
 
   function alternar(valor: boolean) {
     const anterior = checked;
     setChecked(valor); // otimista
-    startTransition(async () => {
+    executar(async () => {
       try {
         await saveSettings({ [PREF_CONQUISTAS]: valor ? "on" : "off" });
       } catch {

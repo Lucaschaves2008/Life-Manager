@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import { useAcao } from "@/lib/acao-cliente";
 import { Apple, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -34,7 +35,7 @@ function num(v: number | null): string {
 }
 
 export function AlimentosClient({ alimentos }: { alimentos: AlimentoView[] }) {
-  const [, startTransition] = useTransition();
+  const [, executar] = useAcao();
   const [pending, startSalvar] = useTransition();
   const [busca, setBusca] = useState("");
   const [aberto, setAberto] = useState(false);
@@ -145,7 +146,7 @@ export function AlimentosClient({ alimentos }: { alimentos: AlimentoView[] }) {
                           icon: Trash2,
                           destructive: true,
                           onSelect: () =>
-                            startTransition(async () => {
+                            executar(async () => {
                               const removido = await deleteAlimento(a.id);
                               if (!removido) return;
                               toast(

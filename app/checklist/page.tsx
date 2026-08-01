@@ -6,7 +6,7 @@ import { HistoricoChecklist } from "@/components/checklist/historico-checklist";
 import { MinhaRotina } from "@/components/checklist/rotina-client";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { habitosAtivos, itensFeitosNoDia, percentualMensalHabitos } from "@/lib/data/checklist";
-import { refeicoesDoDiaChecklist } from "@/lib/data/dieta";
+import { aguaDoDiaChecklist, refeicoesDoDiaChecklist } from "@/lib/data/dieta";
 import { categoriasEstudo, formatHoras, sessoesDoDia } from "@/lib/data/estudos";
 import {
   diaRegistroDoDia,
@@ -46,6 +46,7 @@ export default async function ChecklistPage() {
     planoAtivoId,
     variaveis,
     refeicoes,
+    agua,
     registroHoje,
     historico,
   ] = await Promise.all([
@@ -63,15 +64,17 @@ export default async function ChecklistPage() {
     rotinaPlanoDoDia(user.id, hoje),
     variaveisDoDia(user.id, hoje),
     refeicoesDoDiaChecklist(user.id, hoje),
+    aguaDoDiaChecklist(user.id, hoje),
     diaRegistroDoDia(user.id, hoje),
     historicoDiaRegistros(user.id),
   ]);
 
-  const totalItens = rotinaOcorrencias.length + variaveis.length + refeicoes.length;
+  const totalItens = rotinaOcorrencias.length + variaveis.length + refeicoes.length + 1;
   const totalFeitos =
     rotinaOcorrencias.filter((oc) => oc.feito).length +
     variaveis.filter((v) => v.feito).length +
-    refeicoes.filter((r) => r.feito).length;
+    refeicoes.filter((r) => r.feito).length +
+    (agua.feito ? 1 : 0);
   const pctHoje = totalItens > 0 ? (totalFeitos / totalItens) * 100 : 0;
   const segundosEstudoHoje = sessoesHoje.reduce((s, sessao) => s + sessao.liquidoSec, 0);
 
@@ -160,6 +163,7 @@ export default async function ChecklistPage() {
                 planoAtivoId={planoAtivoId}
                 variaveis={variaveis}
                 refeicoes={refeicoes}
+                agua={agua}
                 dia={hojeKey}
               />
             </Card>

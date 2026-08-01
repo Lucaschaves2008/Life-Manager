@@ -1,6 +1,7 @@
 "use client";
 
-import { useTransition } from "react";
+
+import { useAcao } from "@/lib/acao-cliente";
 import { toast } from "sonner";
 import {
   Select,
@@ -23,10 +24,10 @@ export function VincularChecklistSelect({
   rotinaTemplateIdAtual: string | null;
   templatesChecklist: { id: string; nome: string }[];
 }) {
-  const [pending, startTransition] = useTransition();
+  const [pending, executar] = useAcao();
 
   function vincular(templateId: string) {
-    startTransition(async () => {
+    executar(async () => {
       try {
         await editarMeta(metaId, { ...metaAtual, rotinaTemplateId: templateId });
         toast.success("Checklist vinculado");

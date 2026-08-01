@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useAcao } from "@/lib/acao-cliente";
 import { CreditCard, Pause, Pencil, Play, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -32,7 +33,7 @@ const vazia: AssinaturaInput = {
 };
 
 export function AssinaturasClient({ itens }: { itens: AssinaturaItem[] }) {
-  const [, startTransition] = useTransition();
+  const [, executar] = useAcao();
   const [editando, setEditando] = useState<AssinaturaItem | null>(null);
   const [aberto, setAberto] = useState(false);
   const [form, setForm] = useState<AssinaturaInput>(vazia);
@@ -97,7 +98,7 @@ export function AssinaturasClient({ itens }: { itens: AssinaturaItem[] }) {
                           label: item.status === "ativa" ? "Pausar" : "Retomar",
                           icon: item.status === "ativa" ? Pause : Play,
                           onSelect: () =>
-                            startTransition(async () => {
+                            executar(async () => {
                               await updateAssinatura(item.id, {
                                 ...item,
                                 status: item.status === "ativa" ? "pausada" : "ativa",
@@ -114,7 +115,7 @@ export function AssinaturasClient({ itens }: { itens: AssinaturaItem[] }) {
                           icon: Trash2,
                           destructive: true,
                           onSelect: () =>
-                            startTransition(async () => {
+                            executar(async () => {
                               const removida = await deleteAssinatura(item.id);
                               if (!removida) return;
                               toast("Assinatura excluída", {

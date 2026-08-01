@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useAcao } from "@/lib/acao-cliente";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +15,7 @@ import { lancarDinheiro } from "@/app/actions/dinheiro-lancamentos";
 export function LancarDinheiro({ hoje, className }: { hoje: string; className?: string }) {
   const [aberto, setAberto] = useState(false);
   const [valor, setValor] = useState("");
-  const [pending, startTransition] = useTransition();
+  const [pending, executar] = useAcao();
 
   if (!aberto) {
     return (
@@ -43,7 +44,7 @@ export function LancarDinheiro({ hoje, className }: { hoje: string; className?: 
         variant="primary"
         disabled={!Number(valor.replace(",", ".")) || pending}
         onClick={() =>
-          startTransition(async () => {
+          executar(async () => {
             await lancarDinheiro({ valor: Number(valor.replace(",", ".")), data: hoje });
             toast.success("Dinheiro lançado");
             setValor("");

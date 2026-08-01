@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useAcao } from "@/lib/acao-cliente";
 import { Ban, CheckCircle2, Plus, ShieldCheck, ShieldOff, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -29,7 +30,7 @@ export type UsuarioView = {
 };
 
 export function UsuariosClient({ usuarios }: { usuarios: UsuarioView[] }) {
-  const [pending, startTransition] = useTransition();
+  const [pending, executar] = useAcao();
   const [sheetAberto, setSheetAberto] = useState(false);
   const [email, setEmail] = useState("");
   const [nome, setNome] = useState("");
@@ -41,7 +42,7 @@ export function UsuariosClient({ usuarios }: { usuarios: UsuarioView[] }) {
   const usuarioAtual = usuarios.find((u) => u.id === selecionado?.id) ?? null;
 
   function run(action: () => Promise<void>, mensagemOk: string) {
-    startTransition(async () => {
+    executar(async () => {
       try {
         await action();
         toast.success(mensagemOk);
@@ -53,7 +54,7 @@ export function UsuariosClient({ usuarios }: { usuarios: UsuarioView[] }) {
 
   function criar() {
     if (!email.trim()) return;
-    startTransition(async () => {
+    executar(async () => {
       try {
         const senha = await criarUsuario(
           email.trim(),

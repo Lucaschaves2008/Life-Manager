@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useAcao } from "@/lib/acao-cliente";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -36,13 +37,13 @@ export function CategoriasSheet({
   onOpenChange: (v: boolean) => void;
   categorias: CategoriaView[];
 }) {
-  const [pending, startTransition] = useTransition();
+  const [pending, executar] = useAcao();
   const [form, setForm] = useState<Edit>(VAZIO);
 
   function salvar() {
     const nome = form.nome.trim();
     if (!nome) return;
-    startTransition(async () => {
+    executar(async () => {
       if (form.id) {
         await atualizarCategoria(form.id, { nome, emoji: form.emoji, cor: form.cor });
         toast.success("Categoria atualizada");
@@ -55,7 +56,7 @@ export function CategoriasSheet({
   }
 
   function excluir(id: string) {
-    startTransition(async () => {
+    executar(async () => {
       await excluirCategoria(id);
       toast.success("Categoria removida");
     });

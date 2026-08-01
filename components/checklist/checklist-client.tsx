@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useState } from "react";
 import { ArrowDown, ArrowUp, Heart, Pencil, Plus, Trash2 } from "lucide-react";
-import { toast } from "sonner";
+import { useAcao } from "@/lib/acao-cliente";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
@@ -29,7 +29,7 @@ export function ChecklistHoje({
   pctMensal: PctMensalHabito[];
   hoje: string;
 }) {
-  const [pending, startTransition] = useTransition();
+  const [pending, executar] = useAcao();
   const [gerenciar, setGerenciar] = useState(false);
   const [novoNome, setNovoNome] = useState("");
   const [novaNota, setNovaNota] = useState("");
@@ -46,33 +46,43 @@ export function ChecklistHoje({
   const pctPorId = new Map(pctMensal.map((p) => [p.habitId, p]));
 
   function toggle(habitId: string) {
+    // Guarda o estado anterior para reverter se a gravação falhar — sem isso o
+    // hábito ficava marcado na tela mesmo quando o banco não recebeu nada, e
+    // só "desmarcava sozinho" no próximo reload.
+    const anterior = feitosOtimista;
     setFeitosOtimista((atuais) =>
       atuais.includes(habitId)
         ? atuais.filter((id) => id !== habitId)
         : [...atuais, habitId]
     );
-    startTransition(async () => {
-      await toggleHabitDia(habitId, hoje);
+    executar(() => toggleHabitDia(habitId, hoje), {
+      aoFalhar: () => setFeitosOtimista(anterior),
     });
   }
 
   function criar() {
     if (!novoNome.trim()) return;
-    startTransition(async () => {
-      await createHabit(novoNome, novaNota);
-      setNovoNome("");
-      setNovaNota("");
-      toast.success("Hábito adicionado");
-    });
+    const nome = novoNome;
+    const nota = novaNota;
+    executar(
+      async () => {
+        await createHabit(nome, nota);
+        setNovoNome("");
+        setNovaNota("");
+      },
+      { sucesso: "Hábito adicionado" }
+    );
   }
 
   function salvarEdicao(id: string) {
     if (!editandoNome.trim()) return;
-    startTransition(async () => {
-      await updateHabit(id, editandoNome, editandoNota);
-      setEditandoId(null);
-      toast.success("Hábito atualizado");
-    });
+    executar(
+      async () => {
+        await updateHabit(id, editandoNome, editandoNota);
+        setEditandoId(null);
+      },
+      { sucesso: "Hábito atualizado" }
+    );
   }
 
   return (
@@ -211,7 +221,7 @@ export function ChecklistHoje({
                         type="button"
                         aria-label="Subir"
                         disabled={i === 0}
-                        onClick={() => startTransition(() => moveHabit(h.id, -1))}
+                        onClick={() => executar(() => moveHabit(h.id, -1))}
                         className="rounded-full p-1.5 text-steel transition-colors hover:bg-surface hover:text-ice disabled:opacity-30"
                       >
                         <ArrowUp className="h-3.5 w-3.5" strokeWidth={1.5} />
@@ -220,7 +230,7 @@ export function ChecklistHoje({
                         type="button"
                         aria-label="Descer"
                         disabled={i === habitos.length - 1}
-                        onClick={() => startTransition(() => moveHabit(h.id, 1))}
+                        onClick={() => executar(() => moveHabit(h.id, 1))}
                         className="rounded-full p-1.5 text-steel transition-colors hover:bg-surface hover:text-ice disabled:opacity-30"
                       >
                         <ArrowDown className="h-3.5 w-3.5" strokeWidth={1.5} />
@@ -241,9 +251,8 @@ export function ChecklistHoje({
                             icon: Trash2,
                             destructive: true,
                             onSelect: () =>
-                              startTransition(async () => {
-                                await deleteHabit(h.id);
-                                toast.success("Hábito removido");
+                              executar(() => deleteHabit(h.id), {
+                                sucesso: "Hábito removido",
                               }),
                           },
                         ]}

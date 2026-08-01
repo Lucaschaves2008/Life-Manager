@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useAcao } from "@/lib/acao-cliente";
 import { Layers, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -46,7 +47,7 @@ export function ParcelamentosClient({
   cartoes: OpcaoSimples[];
   hoje: string;
 }) {
-  const [, startTransition] = useTransition();
+  const [, executar] = useAcao();
   const [sheet, setSheet] = useState<{
     aberto: boolean;
     item: ParcelamentoEditavel | null;
@@ -126,7 +127,7 @@ export function ParcelamentosClient({
                           icon: Trash2,
                           destructive: true,
                           onSelect: () =>
-                            startTransition(async () => {
+                            executar(async () => {
                               await deleteParcelamento(p.grupo);
                               toast.success("Parcelamento excluído");
                             }),

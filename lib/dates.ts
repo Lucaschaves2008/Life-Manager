@@ -99,12 +99,31 @@ export function dayKeySP(date: Date): string {
 }
 
 /**
+ * Meia-noite em SP a partir dos componentes da data.
+ *
+ * NÃO usar `new TZDate("yyyy-MM-ddT00:00:00", TIMEZONE)`: com string sem
+ * offset, o TZDate faz o parse no fuso DO SISTEMA e só depois representa em
+ * SP. Na Vercel (TZ=UTC) isso devolvia meia-noite UTC — 21h do dia anterior
+ * em SP — e todo WHERE por dia caía um dia atrás. Sintoma: itens salvos não
+ * apareciam no checklist, e só em produção (na máquina do dev, com
+ * TZ=America/Sao_Paulo, os dois caminhos coincidiam e tudo parecia certo).
+ *
+ * O construtor por componentes monta o instante JÁ no fuso informado, e por
+ * usar a zona IANA (não um offset fixo "-03:00") continua correto se o
+ * Brasil voltar a ter horário de verão.
+ */
+function meiaNoiteSP(ano: number, mes1a12: number, dia: number): Date {
+  return new Date(TZDate.tz(TIMEZONE, ano, mes1a12 - 1, dia).getTime());
+}
+
+/**
  * Inverso de dayKeySP: converte a chave "yyyy-MM-dd" de volta para o início
  * do dia em SP. Usado pelas funções cacheadas ("use cache"), cujos argumentos
  * precisam ser chaves estáveis por dia — nunca um instante por request.
  */
 export function refDoDiaSP(dayKey: string): Date {
-  return new Date(new TZDate(`${dayKey}T00:00:00`, TIMEZONE).getTime());
+  const [ano, mes, dia] = dayKey.split("-").map(Number);
+  return meiaNoiteSP(ano, mes, dia);
 }
 
 /** Chave "yyyy-MM" no fuso de SP. */
@@ -112,9 +131,10 @@ export function monthKeySP(date: Date): string {
   return fmtSP(date, "yyyy-MM");
 }
 
-/** Inverso de monthKeySP: chave "yyyy-MM" -> início do mês em SP. */
+/** Inverso de monthKeySP: chave "yyyy-MM" -> um dia dentro do mês em SP. */
 export function refDoMesSP(monthKey: string): Date {
-  return new Date(new TZDate(`${monthKey}-15T00:00:00`, TIMEZONE).getTime());
+  const [ano, mes] = monthKey.split("-").map(Number);
+  return meiaNoiteSP(ano, mes, 15);
 }
 
 export function spStartOfQuarter(date: Date): Date {
@@ -143,8 +163,7 @@ export function quarterKeySP(date: Date): string {
 export function refDoTrimestreSP(quarterKey: string): Date {
   const [anoStr, qStr] = quarterKey.split("-Q");
   const mesInicial = (Number(qStr) - 1) * 3; // 0, 3, 6, 9
-  const mes = String(mesInicial + 1).padStart(2, "0");
-  return new Date(new TZDate(`${anoStr}-${mes}-15T00:00:00`, TIMEZONE).getTime());
+  return meiaNoiteSP(Number(anoStr), mesInicial + 1, 15);
 }
 
 /** Chave "yyyy" no fuso de SP. */
@@ -154,7 +173,7 @@ export function yearKeySP(date: Date): string {
 
 /** Inverso de yearKeySP: chave "yyyy" -> um dia dentro do ano em SP. */
 export function refDoAnoSP(yearKey: string): Date {
-  return new Date(new TZDate(`${yearKey}-06-15T00:00:00`, TIMEZONE).getTime());
+  return meiaNoiteSP(Number(yearKey), 6, 15);
 }
 
 /** Chave "yyyy-Www" (semana ISO) no fuso de SP — ex.: "2026-W29". */
@@ -166,7 +185,10 @@ export function weekKeySP(date: Date): string {
 export function refDaSemanaSP(weekKey: string): Date {
   const [anoStr, wStr] = weekKey.split("-W");
   // 4 de janeiro sempre cai na semana ISO 1; a partir dali soma (semana-1) semanas.
-  const base = new TZDate(`${anoStr}-01-04T00:00:00`, TIMEZONE);
+  // Aqui o deslocamento de fuso custava uma SEMANA inteira, não um dia: quando
+  // 4/jan cai num domingo, voltar 3h joga para o sábado anterior e o
+  // spStartOfWeek devolve a semana errada.
+  const base = meiaNoiteSP(Number(anoStr), 1, 4);
   const dias = (Number(wStr) - 1) * 7;
   const alvo = new Date(base.getTime() + dias * 86_400_000);
   return spStartOfWeek(alvo);
@@ -181,8 +203,7 @@ export function semesterKeySP(date: Date): string {
 /** Inverso de semesterKeySP: chave "yyyy-Sn" -> um dia dentro do semestre em SP. */
 export function refDoSemestreSP(semesterKey: string): Date {
   const [anoStr, sStr] = semesterKey.split("-S");
-  const mes = Number(sStr) === 1 ? "02" : "08";
-  return new Date(new TZDate(`${anoStr}-${mes}-15T00:00:00`, TIMEZONE).getTime());
+  return meiaNoiteSP(Number(anoStr), Number(sStr) === 1 ? 2 : 8, 15);
 }
 
 export function spStartOfSemester(date: Date): Date {

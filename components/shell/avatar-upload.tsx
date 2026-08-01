@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useRef, useState } from "react";
+import { useAcao } from "@/lib/acao-cliente";
 import { Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -19,7 +20,7 @@ export function AvatarUpload({
   const inputRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(avatarUrl);
   const [file, setFile] = useState<File | null>(null);
-  const [pending, startTransition] = useTransition();
+  const [pending, executar] = useAcao();
 
   function onSelect(f: File | null) {
     setFile(f);
@@ -30,7 +31,7 @@ export function AvatarUpload({
     if (!file) return;
     const formData = new FormData();
     formData.set("file", file);
-    startTransition(async () => {
+    executar(async () => {
       try {
         await updateAvatar(formData);
         toast.success("Foto atualizada.");
@@ -42,7 +43,7 @@ export function AvatarUpload({
   }
 
   function remover() {
-    startTransition(async () => {
+    executar(async () => {
       try {
         await clearAvatar();
         setPreview(null);

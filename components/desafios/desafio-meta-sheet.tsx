@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useAcao } from "@/lib/acao-cliente";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
@@ -38,7 +39,7 @@ export function DesafioMetaSheet({
   templatesChecklist: { id: string; nome: string }[];
   variaveis: VariavelView[];
 }) {
-  const [pending, startTransition] = useTransition();
+  const [pending, executar] = useAcao();
   const [titulo, setTitulo] = useState("");
   const [origem, setOrigem] = useState<DesafioOrigem>("metrica");
   const [metrica, setMetrica] = useState<MetaMetrica>("treinos");
@@ -73,7 +74,7 @@ export function DesafioMetaSheet({
       periodo,
     };
 
-    startTransition(async () => {
+    executar(async () => {
       try {
         if (tipo === "grande") {
           await criarMetaGrande(desafioId, payload);

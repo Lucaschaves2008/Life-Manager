@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useAcao } from "@/lib/acao-cliente";
 import { useRouter } from "next/navigation";
 import { ChevronDown, Coffee, Pencil, Trash2 } from "lucide-react";
 import {
@@ -22,14 +23,14 @@ function hhmm(iso: string): string {
 
 function PausaLinha({ pausa }: { pausa: PausaView }) {
   const router = useRouter();
-  const [, startTransition] = useTransition();
+  const [, executar] = useAcao();
   const [valor, setValor] = useState(pausa.label ?? "");
   const [editando, setEditando] = useState(false);
 
   const salvar = () => {
     setEditando(false);
     if ((pausa.label ?? "") === valor.trim()) return;
-    startTransition(async () => {
+    executar(async () => {
       await renomearPausa(pausa.id, valor);
       router.refresh();
     });
@@ -81,21 +82,21 @@ function PausaLinha({ pausa }: { pausa: PausaView }) {
 function SessaoCard({ sessao }: { sessao: SessaoView }) {
   const router = useRouter();
   const [aberto, setAberto] = useState(false);
-  const [, startTransition] = useTransition();
+  const [, executar] = useAcao();
   const [editandoTitulo, setEditandoTitulo] = useState(false);
   const [titulo, setTitulo] = useState(sessao.subject);
 
   const salvarTitulo = () => {
     setEditandoTitulo(false);
     if (titulo.trim() === sessao.subject) return;
-    startTransition(async () => {
+    executar(async () => {
       await renomearSessao(sessao.id, titulo);
       router.refresh();
     });
   };
 
   const excluir = () => {
-    startTransition(async () => {
+    executar(async () => {
       await excluirSessao(sessao.id);
       router.refresh();
     });

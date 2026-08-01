@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useAcao } from "@/lib/acao-cliente";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -12,7 +13,7 @@ export function ChangePasswordDialog() {
   const [atual, setAtual] = useState("");
   const [nova, setNova] = useState("");
   const [confirmar, setConfirmar] = useState("");
-  const [pending, startTransition] = useTransition();
+  const [pending, executar] = useAcao();
 
   function reset() {
     setAtual("");
@@ -25,7 +26,7 @@ export function ChangePasswordDialog() {
       toast.error("As senhas não coincidem.");
       return;
     }
-    startTransition(async () => {
+    executar(async () => {
       try {
         await changePassword(atual, nova);
         toast.success("Senha alterada.");

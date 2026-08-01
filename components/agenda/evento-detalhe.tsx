@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useState } from "react";
+import { useAcao } from "@/lib/acao-cliente";
 import { Bell, Copy, MapPin, Pencil, Repeat, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -42,7 +43,7 @@ export function EventoDetalhe({
   formatarPeriodo: (oc: OcorrenciaView) => string;
   formatarNota: (iso: string) => string;
 }) {
-  const [, startTransition] = useTransition();
+  const [, executar] = useAcao();
   const [notas, setNotas] = useState<Nota[]>([]);
   const [rascunho, setRascunho] = useState("");
   const [confirmando, setConfirmando] = useState(false);
@@ -68,7 +69,7 @@ export function EventoDetalhe({
 
   function excluir(modo: "todos" | "unica" | "seguintes") {
     const oc = ocorrencia!;
-    startTransition(async () => {
+    executar(async () => {
       const removido = await deleteEvent(oc.eventId, modo, oc.dayKey);
       toast("Evento excluído", {
         action: removido
@@ -128,7 +129,7 @@ export function EventoDetalhe({
               <button
                 aria-label="Duplicar evento"
                 onClick={() =>
-                  startTransition(async () => {
+                  executar(async () => {
                     await duplicateEvent(ocorrencia.eventId);
                     toast.success("Evento duplicado");
                     onOpenChange(false);
@@ -240,7 +241,7 @@ export function EventoDetalhe({
                   <button
                     aria-label="Excluir nota"
                     onClick={() =>
-                      startTransition(async () => {
+                      executar(async () => {
                         await deleteEventNote(nota.id);
                         setNotas((atual) => atual.filter((n) => n.id !== nota.id));
                       })
@@ -260,7 +261,7 @@ export function EventoDetalhe({
                 const texto = rascunho.trim();
                 if (!texto || !eventId) return;
                 setRascunho("");
-                startTransition(async () => {
+                executar(async () => {
                   await addEventNote(eventId, texto);
                   setNotas(await getEventNotes(eventId));
                 });

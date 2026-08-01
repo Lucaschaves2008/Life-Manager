@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useAcao } from "@/lib/acao-cliente";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
@@ -17,11 +18,11 @@ export function ProfileInfoForm({
   email: string;
 }) {
   const [form, setForm] = useState({ nome: nome ?? "", telefone: telefone ?? "" });
-  const [pending, startTransition] = useTransition();
+  const [pending, executar] = useAcao();
   const sujo = form.nome !== (nome ?? "") || form.telefone !== (telefone ?? "");
 
   function salvar() {
-    startTransition(async () => {
+    executar(async () => {
       try {
         await updateProfile(form);
         toast.success("Perfil atualizado.");

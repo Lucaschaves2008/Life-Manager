@@ -61,7 +61,7 @@ export async function atualizarVariavel(id: string, input: VariavelInput) {
   if (!validado) throw new Error("Nome obrigatório e ao menos um tipo de progresso deve ficar ligado.");
 
   const existente = await db.variavel.findFirst({ where: { id, userId }, select: { id: true } });
-  if (!existente) return;
+  if (!existente) throw new Error("Variável não encontrada — recarregue a página.");
 
   await db.variavel.update({
     where: { id, userId },
@@ -107,7 +107,7 @@ export async function toggleVariavelCheckDia(variavelId: string, dia: string) {
     where: { id: variavelId, userId },
     select: { id: true },
   });
-  if (!variavel) return;
+  if (!variavel) throw new Error("Variável não encontrada — recarregue a página.");
 
   const data = dataDoDia(dia);
   const existente = await db.variavelCheckDia.findFirst({

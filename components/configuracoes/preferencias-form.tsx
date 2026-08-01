@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useAcao } from "@/lib/acao-cliente";
 import { toast } from "sonner";
 import {
   Select,
@@ -35,12 +36,12 @@ type Valores = {
  */
 export function PreferenciasForm({ iniciais }: { iniciais: Valores }) {
   const [valores, setValores] = useState(iniciais);
-  const [pending, startTransition] = useTransition();
+  const [pending, executar] = useAcao();
 
   function salvar(chave: string, valor: string, campo: keyof Valores) {
     const anterior = valores[campo];
     setValores((v) => ({ ...v, [campo]: valor }));
-    startTransition(async () => {
+    executar(async () => {
       try {
         await saveSettings({ [chave]: valor });
       } catch {

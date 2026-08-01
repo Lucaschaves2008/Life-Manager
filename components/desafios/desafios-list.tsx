@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useAcao } from "@/lib/acao-cliente";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { LogIn, Plus, Swords, Users } from "lucide-react";
@@ -13,14 +14,14 @@ import type { DesafioResumo } from "@/lib/data/desafios";
 
 function CriarDesafioDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const [pending, executar] = useAcao();
   const [nome, setNome] = useState("");
   const [descricao, setDescricao] = useState("");
   const [metasGrandesLimite, setMetasGrandesLimite] = useState(4);
 
   function salvar() {
     if (!nome.trim()) return;
-    startTransition(async () => {
+    executar(async () => {
       try {
         const desafio = await criarDesafio({ nome, descricao, metasGrandesLimite });
         toast.success("Desafio criado");
@@ -84,12 +85,12 @@ function CriarDesafioDialog({ open, onOpenChange }: { open: boolean; onOpenChang
 
 function EntrarDesafioDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const [pending, executar] = useAcao();
   const [codigo, setCodigo] = useState("");
 
   function entrar() {
     if (!codigo.trim()) return;
-    startTransition(async () => {
+    executar(async () => {
       try {
         const desafioId = await entrarNoDesafio(codigo);
         toast.success("Você entrou no desafio");

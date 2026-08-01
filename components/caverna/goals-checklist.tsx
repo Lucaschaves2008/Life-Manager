@@ -1,6 +1,7 @@
 "use client";
 
-import { useOptimistic, useState, useTransition } from "react";
+import { useOptimistic, useState } from "react";
+import { useAcao } from "@/lib/acao-cliente";
 import { Plus, Target, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -29,7 +30,7 @@ export function GoalsChecklist({
   goals: GoalItem[];
   mes?: string;
 }) {
-  const [, startTransition] = useTransition();
+  const [, executar] = useAcao();
   const [optimistic, apply] = useOptimistic(
     goals,
     (
@@ -70,9 +71,9 @@ export function GoalsChecklist({
           <Checkbox
             checked={goal.feito}
             onCheckedChange={(v) => {
-              startTransition(() => {
+              executar(async () => {
                 apply({ tipo: "toggle", id: goal.id, feito: v === true });
-                toggleGoal(goal.id, v === true);
+                await toggleGoal(goal.id, v === true);
               });
             }}
             aria-label={goal.titulo}
@@ -88,9 +89,9 @@ export function GoalsChecklist({
           <button
             aria-label="Excluir meta"
             onClick={() => {
-              startTransition(() => {
+              executar(async () => {
                 apply({ tipo: "remove", id: goal.id });
-                deleteGoal(goal.id);
+                await deleteGoal(goal.id);
               });
               toast("Meta excluída", {
                 action: {
@@ -113,7 +114,7 @@ export function GoalsChecklist({
             e.preventDefault();
             const value = titulo.trim();
             if (!value) return setAdding(false);
-            startTransition(() => createGoal(value, mes));
+            executar(() => createGoal(value, mes));
             setTitulo("");
             setAdding(false);
           }}

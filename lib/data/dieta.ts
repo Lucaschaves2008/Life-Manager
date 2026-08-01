@@ -246,6 +246,33 @@ export async function refeicoesDoDiaChecklist(
   }));
 }
 
+/**
+ * Água do dia como pseudo-item do checklist.
+ *
+ * Deriva do MESMO DietDayLog.aguaMl que os copos em /dieta escrevem — marcar
+ * os copos lá até bater a meta (Setting "meta_agua_ml") marca este item aqui
+ * automaticamente, sem ação própria: não há toggle, só leitura.
+ */
+export type AguaChecklistItem = {
+  aguaMl: number;
+  metaAguaMl: number;
+  copoMl: number;
+  feito: boolean;
+};
+
+export async function aguaDoDiaChecklist(
+  userId: string,
+  ref: Date = new Date()
+): Promise<AguaChecklistItem> {
+  const dia = await diaDaDieta(userId, ref);
+  return {
+    aguaMl: dia.aguaMl,
+    metaAguaMl: dia.metaAguaMl,
+    copoMl: dia.copoMl,
+    feito: dia.aguaMl >= dia.metaAguaMl,
+  };
+}
+
 /** % de refeições cumpridas nos últimos 7 dias. */
 export async function aderencia7d(
   userId: string,

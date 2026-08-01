@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useAcao } from "@/lib/acao-cliente";
 import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { TZDate } from "@date-fns/tz";
@@ -121,7 +122,7 @@ export function AgendaClient({
 }) {
   const router = useRouter();
   const params = useSearchParams();
-  const [, startTransition] = useTransition();
+  const [, executar] = useAcao();
 
   const [busca, setBusca] = useState("");
   const [criando, setCriando] = useState<{
@@ -315,8 +316,7 @@ export function AgendaClient({
                     checked={cal.visivel}
                     aria-label={cal.nome}
                     onCheckedChange={(v) =>
-                      startTransition(
-                        () => void toggleCalendarVisivel(cal.id, v === true)
+                      executar(() => toggleCalendarVisivel(cal.id, v === true)
                       )
                     }
                     style={
@@ -342,7 +342,7 @@ export function AgendaClient({
                             onSelect: () => {
                               const nome = window.prompt("Nome da agenda", cal.nome);
                               if (!nome?.trim()) return;
-                              startTransition(async () => {
+                              executar(async () => {
                                 await updateCalendar(cal.id, nome.trim(), cal.cor);
                                 toast.success("Agenda atualizada");
                               });
@@ -353,7 +353,7 @@ export function AgendaClient({
                             icon: Trash2,
                             destructive: true,
                             onSelect: () =>
-                              startTransition(async () => {
+                              executar(async () => {
                                 await deleteCalendar(cal.id);
                                 toast.success("Agenda excluída");
                               }),
@@ -406,7 +406,7 @@ export function AgendaClient({
                   className="mt-3 w-full"
                   disabled={!novaAgenda.nome.trim()}
                   onClick={() =>
-                    startTransition(async () => {
+                    executar(async () => {
                       await createCalendar(novaAgenda.nome.trim(), novaAgenda.cor);
                       setNovaAgenda({ nome: "", cor: paleta[0] });
                       toast.success("Agenda criada");

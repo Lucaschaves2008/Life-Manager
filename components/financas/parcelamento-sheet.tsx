@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useAcao } from "@/lib/acao-cliente";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
@@ -54,7 +55,7 @@ export function ParcelamentoSheet({
   hoje: string;
   editando?: ParcelamentoEditavel | null;
 }) {
-  const [pending, startTransition] = useTransition();
+  const [pending, executar] = useAcao();
   const [descricao, setDescricao] = useState(editando?.descricao ?? "");
   const [valorParcela, setValorParcela] = useState(editando?.valorParcela ?? 0);
   const [data, setData] = useState(editando?.primeiraData ?? hoje);
@@ -82,7 +83,7 @@ export function ParcelamentoSheet({
       natureza: compromisso ? "compromisso" : "despesa",
     };
 
-    startTransition(async () => {
+    executar(async () => {
       if (editando) {
         await updateParcelamento(editando.grupo, payload);
         toast.success("Parcelamento atualizado");

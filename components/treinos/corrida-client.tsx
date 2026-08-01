@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import { useAcao } from "@/lib/acao-cliente";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Download, ExternalLink, Footprints, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -51,7 +52,7 @@ export function CorridaClient({
 }) {
   const router = useRouter();
   const params = useSearchParams();
-  const [, startTransition] = useTransition();
+  const [, executar] = useAcao();
   const [pending, startSalvar] = useTransition();
   const [buscando, startBuscar] = useTransition();
   const [aberto, setAberto] = useState(false);
@@ -238,7 +239,7 @@ export function CorridaClient({
                           icon: Trash2,
                           destructive: true,
                           onSelect: () =>
-                            startTransition(async () => {
+                            executar(async () => {
                               const removida = await deleteRun(c.id);
                               if (!removida) return;
                               toast("Corrida excluída", {

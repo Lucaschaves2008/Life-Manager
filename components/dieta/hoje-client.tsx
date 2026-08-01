@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import { useAcao } from "@/lib/acao-cliente";
 import { useRouter, useSearchParams } from "next/navigation";
 import { GlassWater, Plus, Trash2, UtensilsCrossed } from "lucide-react";
 import { toast } from "sonner";
@@ -21,7 +22,7 @@ import type { DiaDaDieta, ExtraLog } from "@/lib/data/dieta";
 import { cn } from "@/lib/utils";
 
 export function RefeicoesClient({ dia }: { dia: DiaDaDieta }) {
-  const [, startTransition] = useTransition();
+  const [, executar] = useAcao();
   // escolha otimista por refeição: mealId → optionId (ou null = não comida)
   const [escolhas, setEscolhas] = useState<Record<string, string | null>>(() =>
     Object.fromEntries(dia.refeicoes.map((r) => [r.id, r.escolhaId]))
@@ -32,11 +33,17 @@ export function RefeicoesClient({ dia }: { dia: DiaDaDieta }) {
   }, [dia.refeicoes]);
 
   function escolher(mealId: string, optionId: string | null) {
+    // Guarda a escolha anterior para reverter se a gravação falhar — senão a
+    // refeição fica marcada na tela sem nada ter sido salvo no banco.
+    const anterior = escolhas;
     setEscolhas((atual) => ({ ...atual, [mealId]: optionId }));
-    startTransition(() => {
-      if (optionId === null) void toggleRefeicaoCumprida(dia.data, mealId);
-      else void escolherOpcao(dia.data, mealId, optionId);
-    });
+    executar(
+      async () => {
+        if (optionId === null) await toggleRefeicaoCumprida(dia.data, mealId);
+        else await escolherOpcao(dia.data, mealId, optionId);
+      },
+      { aoFalhar: () => setEscolhas(anterior) }
+    );
   }
 
   if (dia.refeicoes.length === 0) {
@@ -171,7 +178,7 @@ export function RefeicoesClient({ dia }: { dia: DiaDaDieta }) {
 export function ExtrasClient({ dia }: { dia: DiaDaDieta }) {
   const router = useRouter();
   const params = useSearchParams();
-  const [, startTransition] = useTransition();
+  const [, executar] = useAcao();
   const [pending, startSalvar] = useTransition();
   const [aberto, setAberto] = useState(false);
   const [form, setForm] = useState<ExtraLog>({
@@ -226,7 +233,7 @@ export function ExtrasClient({ dia }: { dia: DiaDaDieta }) {
               <button
                 aria-label="Remover extra"
                 onClick={() =>
-                  startTransition(async () => {
+                  executar(async () => {
                     await removeExtra(dia.data, i);
                     toast.success("Extra removido");
                   })
@@ -309,7 +316,7 @@ export function ExtrasClient({ dia }: { dia: DiaDaDieta }) {
 }
 
 export function AguaClient({ dia }: { dia: DiaDaDieta }) {
-  const [, startTransition] = useTransition();
+  const [, executar] = useAcao();
   const [ml, setMl] = useState(dia.aguaMl);
   const copoMl = Math.max(1, dia.copoMl);
   const copos = Math.max(1, Math.ceil(dia.metaAguaMl / copoMl));
@@ -331,7 +338,7 @@ export function AguaClient({ dia }: { dia: DiaDaDieta }) {
             onClick={() => {
               const novo = n <= cheios ? (n - 1) * copoMl : n * copoMl;
               setMl(novo);
-              startTransition(() => void setAgua(dia.data, novo));
+              executar(() => setAgua(dia.data, novo));
             }}
             className={cn(
               "flex h-9 w-9 items-center justify-center rounded-[10px] border transition-colors",

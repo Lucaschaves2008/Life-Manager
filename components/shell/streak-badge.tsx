@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useTransition } from "react";
+
+import { useAcao } from "@/lib/acao-cliente";
 import { Flame as FlameIcon, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { Flame } from "@/components/caverna/flame";
@@ -83,10 +84,10 @@ function AdminBadge({
   inner: React.ReactNode;
 }) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const [pending, executar] = useAcao();
 
   const zerar = () => {
-    startTransition(async () => {
+    executar(async () => {
       try {
         const res = await zerarMeuStreakHoje();
         const n =

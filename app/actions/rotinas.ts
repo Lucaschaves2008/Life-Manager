@@ -5,8 +5,9 @@ import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { tagUsuario } from "@/lib/cache-tags";
 import { marcarDiaAtivo } from "@/lib/streak";
-import { spStartOfDay } from "@/lib/dates";
+import { fmtSP, refDoDiaSP, spStartOfDay } from "@/lib/dates";
 import type { Rrule } from "@/lib/recurrence";
+import { diagnosticarTemplate, type ItemDiagnostico } from "@/lib/rotina-helpers";
 import { TIPOS_ROTINA, type TipoRotina } from "@/lib/data/rotinas";
 
 function revalidar(userId: string) {
@@ -122,7 +123,60 @@ async function resolverPlano(userId: string, planoId?: string | null): Promise<s
   return plano?.id ?? null;
 }
 
-export async function criarRotinaTemplate(input: RotinaTemplateInput) {
+/** Diagnóstico + a próxima data já formatada em pt-BR para a mensagem da tela. */
+export type ItemDiagnosticoUI = ItemDiagnostico & { proximaLabel: string | null };
+
+/**
+ * Diagnóstico do item recém-salvo, para a tela poder dizer a verdade sobre a
+ * lista de hoje. A regra pura mora em lib/rotina-helpers (e é testada lá);
+ * aqui só buscamos o que ela precisa do banco.
+ */
+async function diagnosticarItem(
+  userId: string,
+  templateId: string,
+  dia: string
+): Promise<ItemDiagnosticoUI> {
+  const vazio = {
+    apareceHoje: false,
+    motivo: null,
+    planoNome: null,
+    planoDoDiaNome: null,
+    proximaOcorrencia: null,
+    proximaLabel: null,
+  } as const;
+
+  const template = await db.rotinaTemplate.findFirst({ where: { id: templateId, userId } });
+  if (!template) return vazio;
+
+  const ref = refDoDiaSP(dia);
+  const [planos, escolha] = await Promise.all([
+    db.rotinaPlano.findMany({
+      where: { userId, ativo: true },
+      select: { id: true, nome: true, padrao: true },
+    }),
+    db.rotinaDiaPlano.findFirst({
+      where: { userId, data: spStartOfDay(ref) },
+      select: { planoId: true },
+    }),
+  ]);
+
+  const diagnostico = diagnosticarTemplate({
+    template,
+    planoId: template.planoId,
+    planoDoDiaId: escolha?.planoId ?? planos.find((p) => p.padrao)?.id ?? null,
+    planos,
+    dia: ref,
+  });
+
+  return {
+    ...diagnostico,
+    proximaLabel: diagnostico.proximaOcorrencia
+      ? fmtSP(diagnostico.proximaOcorrencia, "EEEE, d 'de' MMMM")
+      : null,
+  };
+}
+
+export async function criarRotinaTemplate(input: RotinaTemplateInput): Promise<ItemDiagnosticoUI> {
   const { id: userId } = await requireUser();
   const validado = validarHorarios(input);
   if (!validado) throw new Error("Horário inválido: o fim deve ser depois do início.");
@@ -131,7 +185,7 @@ export async function criarRotinaTemplate(input: RotinaTemplateInput) {
   const planoId = await resolverPlano(userId, input.planoId);
   const total = await db.rotinaTemplate.count({ where: { userId, ativo: true } });
 
-  await db.rotinaTemplate.create({
+  const criado = await db.rotinaTemplate.create({
     data: {
       nome: validado.nome,
       horaInicio: validado.horaInicio,
@@ -149,15 +203,21 @@ export async function criarRotinaTemplate(input: RotinaTemplateInput) {
     },
   });
   revalidar(userId);
+  return diagnosticarItem(userId, criado.id, input.dataInicio);
 }
 
-export async function atualizarRotinaTemplate(id: string, input: RotinaTemplateInput) {
+export async function atualizarRotinaTemplate(
+  id: string,
+  input: RotinaTemplateInput
+): Promise<ItemDiagnosticoUI> {
   const { id: userId } = await requireUser();
   const validado = validarHorarios(input);
   if (!validado) throw new Error("Horário inválido: o fim deve ser depois do início.");
 
   const existente = await db.rotinaTemplate.findFirst({ where: { id, userId }, select: { id: true } });
-  if (!existente) return;
+  // Antes isto era um `return` mudo: a tela dizia "Item atualizado" sem nada
+  // ter sido gravado. Falhar em voz alta é o único jeito de o usuário saber.
+  if (!existente) throw new Error("Item não encontrado — recarregue a página.");
 
   const { tipo, studyCategoryId, routineId, runSessionId } = await resolverVinculos(userId, input);
   const planoId = await resolverPlano(userId, input.planoId);
@@ -179,6 +239,7 @@ export async function atualizarRotinaTemplate(id: string, input: RotinaTemplateI
     },
   });
   revalidar(userId);
+  return diagnosticarItem(userId, id, input.dataInicio);
 }
 
 export async function excluirRotinaTemplate(id: string) {
@@ -276,7 +337,7 @@ export async function toggleRotinaCheckDia(templateId: string, dia: string) {
     where: { id: templateId, userId },
     select: { id: true },
   });
-  if (!rotina) return;
+  if (!rotina) throw new Error("Item não encontrado — recarregue a página.");
 
   const data = dataDoDia(dia);
   const existente = await db.rotinaCheckDia.findFirst({
@@ -302,7 +363,7 @@ export async function pularRotinaHoje(templateId: string, dia: string) {
     where: { id: templateId, userId },
     select: { exdates: true },
   });
-  if (!rotina) return;
+  if (!rotina) throw new Error("Item não encontrado — recarregue a página.");
 
   let atuais: string[] = [];
   try {
@@ -363,7 +424,7 @@ export async function renomearRotinaPlano(id: string, nome: string) {
 export async function definirRotinaPlanoPadrao(id: string) {
   const { id: userId } = await requireUser();
   const plano = await db.rotinaPlano.findFirst({ where: { id, userId, ativo: true }, select: { id: true } });
-  if (!plano) return;
+  if (!plano) throw new Error("Plano não encontrado — recarregue a página.");
 
   await db.$transaction([
     db.rotinaPlano.updateMany({ where: { userId }, data: { padrao: false } }),
@@ -380,7 +441,7 @@ export async function definirRotinaPlanoPadrao(id: string) {
 export async function excluirRotinaPlano(id: string) {
   const { id: userId } = await requireUser();
   const plano = await db.rotinaPlano.findFirst({ where: { id, userId, ativo: true } });
-  if (!plano) return;
+  if (!plano) throw new Error("Plano não encontrado — recarregue a página.");
 
   await db.$transaction([
     db.rotinaTemplate.updateMany({ where: { userId, planoId: id }, data: { planoId: null } }),
@@ -407,7 +468,7 @@ export async function excluirRotinaPlano(id: string) {
 export async function escolherRotinaPlanoDoDia(dia: string, planoId: string) {
   const { id: userId } = await requireUser();
   const plano = await db.rotinaPlano.findFirst({ where: { id: planoId, userId, ativo: true } });
-  if (!plano) return;
+  if (!plano) throw new Error("Plano não encontrado — recarregue a página.");
 
   const data = dataDoDia(dia);
   if (plano.padrao) {

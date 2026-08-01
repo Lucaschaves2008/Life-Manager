@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import { useAcao } from "@/lib/acao-cliente";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowDownRight,
@@ -145,7 +146,7 @@ export function AtivosClient({
 }) {
   const router = useRouter();
   const params = useSearchParams();
-  const [, startTransition] = useTransition();
+  const [, executar] = useAcao();
   const [pending, startSalvar] = useTransition();
 
   const [sheetAtivo, setSheetAtivo] = useState(false);
@@ -306,7 +307,7 @@ export function AtivosClient({
                 icon: Trash2,
                 destructive: true,
                 onSelect: () =>
-                  startTransition(async () => {
+                  executar(async () => {
                     const removido = await deleteAsset(ativo.id);
                     if (!removido) return;
                     toast("Ativo excluído", {
@@ -716,7 +717,7 @@ export function AtivosClient({
                         <button
                           aria-label="Excluir movimento"
                           onClick={() =>
-                            startTransition(async () => {
+                            executar(async () => {
                               const removido = await deleteMovement(m.id);
                               if (!removido) return;
                               setDetalhe(null);

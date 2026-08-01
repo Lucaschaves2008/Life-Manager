@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useState } from "react";
+import { useAcao } from "@/lib/acao-cliente";
 import { toast } from "sonner";
 import { Ban, CheckCircle2, KeyRound, ShieldCheck, ShieldOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -27,7 +28,7 @@ export function UsuarioDrawer({
   usuario: UsuarioView | null;
   onClose: () => void;
 }) {
-  const [pending, startTransition] = useTransition();
+  const [pending, executar] = useAcao();
   const [form, setForm] = useState({ nome: "", telefone: "" });
   const [novaSenha, setNovaSenha] = useState<string | null>(null);
 
@@ -39,7 +40,7 @@ export function UsuarioDrawer({
   }, [usuario]);
 
   function run(action: () => Promise<void>, mensagemOk: string) {
-    startTransition(async () => {
+    executar(async () => {
       try {
         await action();
         toast.success(mensagemOk);
@@ -59,7 +60,7 @@ export function UsuarioDrawer({
 
   function gerarSenha() {
     if (!usuario) return;
-    startTransition(async () => {
+    executar(async () => {
       try {
         const senha = await resetarSenhaUsuario(usuario.id);
         setNovaSenha(senha);

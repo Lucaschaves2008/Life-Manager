@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, CalendarDays, Check, Clock, Flame, GripVertical, Pencil, Plus, SkipForward, Star, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import Link from "next/link";
+import { ArrowDown, ArrowUp, CalendarDays, Check, Clock, Flame, GlassWater, GripVertical, Pencil, Plus, SkipForward, Star, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { useAcao } from "@/lib/acao-cliente";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
@@ -28,6 +30,7 @@ import {
   renomearRotinaPlano,
   reordenarRotinaTemplates,
   toggleRotinaCheckDia,
+  type ItemDiagnosticoUI,
   type RotinaTemplateInput,
 } from "@/app/actions/rotinas";
 import {
@@ -46,13 +49,50 @@ import type {
   TipoRotina,
 } from "@/lib/data/rotinas";
 import type { VariavelChecklistItem } from "@/lib/data/variaveis";
-import type { RefeicaoChecklistItem } from "@/lib/data/dieta";
+import type { AguaChecklistItem, RefeicaoChecklistItem } from "@/lib/data/dieta";
 import type { CategoriaView } from "@/lib/data/estudos";
 import type { SessaoCorridaOpcao } from "@/lib/data/treinos-format";
 import { formatHoras } from "@/lib/data/estudos-format";
 import { cn } from "@/lib/utils";
 
 const DIAS_SEMANA = ["D", "S", "T", "Q", "Q", "S", "S"];
+
+/**
+ * Confirma o salvamento dizendo a VERDADE sobre a lista de hoje.
+ *
+ * O item pode ser gravado com sucesso e mesmo assim não entrar no checklist —
+ * por estar em outro plano, ou por ter recorrência que não cai neste dia. Um
+ * "Item adicionado ao checklist" nesses casos é indistinguível de um bug: o
+ * usuário salva, a lista não muda, e a conclusão natural é que não funcionou.
+ */
+function avisarDoItem(diag: ItemDiagnosticoUI, editando: boolean) {
+  if (diag.apareceHoje) {
+    toast.success(editando ? "Item atualizado" : "Item adicionado ao checklist");
+    return;
+  }
+
+  if (diag.motivo === "plano") {
+    toast.warning(editando ? "Item atualizado — não aparece hoje" : "Item criado — não aparece hoje", {
+      description: `Ele é do ${diag.planoNome ?? "outro plano"}, e hoje o checklist está no ${
+        diag.planoDoDiaNome ?? "plano padrão"
+      }. Troque o plano do dia para vê-lo, ou marque o item como "Comum".`,
+      duration: 8000,
+    });
+    return;
+  }
+
+  if (diag.motivo === "recorrencia") {
+    toast.warning(editando ? "Item atualizado — não cai hoje" : "Item criado — não cai hoje", {
+      description: diag.proximaLabel
+        ? `A repetição escolhida não inclui hoje. Próxima vez: ${diag.proximaLabel}.`
+        : "A repetição escolhida não inclui hoje nem os próximos 12 meses.",
+      duration: 8000,
+    });
+    return;
+  }
+
+  toast.success(editando ? "Item atualizado" : "Item adicionado ao checklist");
+}
 
 const TIPO_META: Record<TipoRotina, { label: string; emoji: string }> = {
   livre: { label: "Livre", emoji: "•" },
@@ -68,6 +108,8 @@ const REFEICAO_EMOJI = "🍽️";
 /**
  * Tipo de item exibido na lista — "rotina" (RotinaTemplate), "variavel"
  * (Variavel) ou "refeicao" (Meal da dieta ativa, espelhada do DietDayLog).
+ * A água do dia (também espelhada do DietDayLog) não entra nessa união: é
+ * renderizada à parte, sempre visível, fora da lista arrastável/vazia.
  */
 type ItemChecklist =
   | (RotinaOcorrenciaView & { origem: "rotina"; itemId: string })
@@ -150,6 +192,7 @@ export function MinhaRotina({
   planoAtivoId,
   variaveis,
   refeicoes,
+  agua,
   dia,
 }: {
   ocorrencias: RotinaOcorrenciaView[];
@@ -161,10 +204,11 @@ export function MinhaRotina({
   planoAtivoId: string | null;
   variaveis: VariavelChecklistItem[];
   refeicoes: RefeicaoChecklistItem[];
+  agua: AguaChecklistItem;
   /** yyyy-MM-dd */
   dia: string;
 }) {
-  const [pending, startTransition] = useTransition();
+  const [pending, executar] = useAcao();
   const [gerenciar, setGerenciar] = useState(false);
   const [gerenciarPlanos, setGerenciarPlanos] = useState(false);
   const [novoPlanoNome, setNovoPlanoNome] = useState("");
@@ -204,21 +248,25 @@ export function MinhaRotina({
   );
 
   function toggle(templateId: string) {
-    setOrdemOtimista((atuais) =>
-      atuais.map((oc) =>
-        oc.templateId === templateId
-          ? { ...oc, feito: !oc.feito, feitoAuto: false }
-          : oc
-      )
-    );
-    startTransition(() => toggleRotinaCheckDia(templateId, dia));
+    const virar = () =>
+      setOrdemOtimista((atuais) =>
+        atuais.map((oc) =>
+          oc.templateId === templateId
+            ? { ...oc, feito: !oc.feito, feitoAuto: false }
+            : oc
+        )
+      );
+    virar();
+    executar(() => toggleRotinaCheckDia(templateId, dia), { aoFalhar: virar });
   }
 
   function toggleVariavel(variavelId: string) {
-    setVariaveisOtimista((atuais) =>
-      atuais.map((v) => (v.id === variavelId ? { ...v, feito: !v.feito } : v))
-    );
-    startTransition(() => toggleVariavelCheckDia(variavelId, dia));
+    const virar = () =>
+      setVariaveisOtimista((atuais) =>
+        atuais.map((v) => (v.id === variavelId ? { ...v, feito: !v.feito } : v))
+      );
+    virar();
+    executar(() => toggleVariavelCheckDia(variavelId, dia), { aoFalhar: virar });
   }
 
   /**
@@ -227,20 +275,26 @@ export function MinhaRotina({
    * não fecham) — quem chama abre o seletor; aqui só desmarcamos.
    */
   function toggleRefeicao(mealId: string) {
+    const anterior = refeicoesOtimista;
     setRefeicoesOtimista((atuais) =>
       atuais.map((r) =>
         r.id === mealId ? { ...r, feito: !r.feito, escolhaId: r.feito ? null : r.escolhaId } : r
       )
     );
-    startTransition(() => toggleRefeicaoCumprida(dia, mealId));
+    executar(() => toggleRefeicaoCumprida(dia, mealId), {
+      aoFalhar: () => setRefeicoesOtimista(anterior),
+    });
   }
 
   /** Registra a opção comida — marca a refeição como cumprida junto (ver escolherOpcao). */
   function escolherOpcaoRefeicao(mealId: string, optionId: string) {
+    const anterior = refeicoesOtimista;
     setRefeicoesOtimista((atuais) =>
       atuais.map((r) => (r.id === mealId ? { ...r, feito: true, escolhaId: optionId } : r))
     );
-    startTransition(() => escolherOpcao(dia, mealId, optionId));
+    executar(() => escolherOpcao(dia, mealId, optionId), {
+      aoFalhar: () => setRefeicoesOtimista(anterior),
+    });
   }
 
   function reordenar(deIndex: number, paraIndex: number) {
@@ -256,31 +310,32 @@ export function MinhaRotina({
       paraIndex < limiteVariaveis;
 
     if (dentroDeRotinas) {
+      const anterior = ordemOtimista;
       const proxima = ordemOtimista.slice();
       const [item] = proxima.splice(deIndex, 1);
       proxima.splice(paraIndex, 0, item);
       setOrdemOtimista(proxima);
-      startTransition(async () => {
-        await reordenarRotinaTemplates(proxima.map((o) => o.templateId));
+      executar(() => reordenarRotinaTemplates(proxima.map((o) => o.templateId)), {
+        aoFalhar: () => setOrdemOtimista(anterior),
       });
       return;
     }
     if (dentroDeVariaveis) {
+      const anterior = variaveisOtimista;
       const offset = ordemOtimista.length;
       const proxima = variaveisOtimista.slice();
       const [item] = proxima.splice(deIndex - offset, 1);
       proxima.splice(paraIndex - offset, 0, item);
       setVariaveisOtimista(proxima);
       const direcao = paraIndex > deIndex ? 1 : -1;
-      startTransition(() => moverVariavel(item.id, direcao));
+      executar(() => moverVariavel(item.id, direcao), {
+        aoFalhar: () => setVariaveisOtimista(anterior),
+      });
     }
   }
 
   function pular(templateId: string) {
-    startTransition(async () => {
-      await pularRotinaHoje(templateId, dia);
-      toast.success("Item pulado hoje");
-    });
+    executar(() => pularRotinaHoje(templateId, dia), { sucesso: "Item pulado hoje" });
   }
 
   function abrirNovo() {
@@ -325,17 +380,16 @@ export function MinhaRotina({
     if (!nome) return;
 
     if (form.tipo === "variavel") {
-      startTransition(async () => {
-        try {
-          const payload = { nome, medeStreak: form.medeStreak, medeContagem: form.medeContagem };
-          if (form.id) await atualizarVariavel(form.id, payload);
+      const { id, medeStreak, medeContagem } = form;
+      executar(
+        async () => {
+          const payload = { nome, medeStreak, medeContagem };
+          if (id) await atualizarVariavel(id, payload);
           else await criarVariavel(payload);
           setForm(null);
-          toast.success(form.id ? "Variável atualizada" : "Variável criada");
-        } catch (e) {
-          toast.error(e instanceof Error ? e.message : "Não foi possível salvar");
-        }
-      });
+        },
+        { sucesso: id ? "Variável atualizada" : "Variável criada" }
+      );
       return;
     }
 
@@ -354,66 +408,93 @@ export function MinhaRotina({
       metaMinutos: form.tipo === "estudo" || form.tipo === "corrida" ? form.metaMinutos : null,
       planoId: form.planoId || null,
     };
-    startTransition(async () => {
-      try {
-        if (form.id) await atualizarRotinaTemplate(form.id, payload);
-        else await criarRotinaTemplate(payload);
-        setForm(null);
-        toast.success(form.id ? "Item atualizado" : "Item adicionado ao checklist");
-      } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Não foi possível salvar");
-      }
+    const id = form.id;
+    // O toast de sucesso sai de avisarDoItem, que depende do diagnóstico
+    // devolvido pela action — por isso não usa a opção `sucesso` do useAcao.
+    executar(async () => {
+      const diag = id
+        ? await atualizarRotinaTemplate(id, payload)
+        : await criarRotinaTemplate(payload);
+      setForm(null);
+      avisarDoItem(diag, Boolean(id));
     });
   }
 
   function excluirVariavelItem(id: string) {
-    startTransition(async () => {
-      await excluirVariavel(id);
-      toast.success("Variável removida");
-    });
+    executar(() => excluirVariavel(id), { sucesso: "Variável removida" });
   }
 
   function excluir(id: string) {
-    startTransition(async () => {
-      await excluirRotinaTemplate(id);
-      toast.success("Item removido");
-    });
+    executar(() => excluirRotinaTemplate(id), { sucesso: "Item removido" });
   }
 
   function escolherPlano(planoId: string) {
-    startTransition(async () => {
-      await escolherRotinaPlanoDoDia(dia, planoId);
+    const alvo = planos.find((p) => p.id === planoId);
+    executar(() => escolherRotinaPlanoDoDia(dia, planoId), {
+      sucesso: alvo ? `Hoje está no ${alvo.nome}` : "Plano do dia atualizado",
     });
   }
 
   function criarPlano() {
     const nome = novoPlanoNome.trim();
     if (!nome) return;
-    startTransition(async () => {
+    // Só o PRIMEIRO plano adota os itens soltos (ver criarRotinaPlano). Do
+    // segundo em diante o plano nasce vazio — e escolhê-lo para hoje esvazia
+    // o checklist, o que sem aviso parece que os itens sumiram.
+    const nasceVazio = planos.length > 0;
+    executar(async () => {
       await criarRotinaPlano(nome);
       setNovoPlanoNome("");
-      toast.success("Plano criado");
+      if (nasceVazio) {
+        toast.success(`${nome} criado — está vazio`, {
+          description:
+            'Planos não compartilham itens. Adicione itens a ele, ou marque um item como "Comum" para que apareça em todos os planos.',
+          duration: 8000,
+        });
+      } else {
+        toast.success("Plano criado");
+      }
     });
   }
 
   function renomearPlano(id: string, nomeAtual: string) {
     const nome = window.prompt("Novo nome do plano", nomeAtual);
     if (!nome || !nome.trim() || nome === nomeAtual) return;
-    startTransition(() => renomearRotinaPlano(id, nome));
+    executar(() => renomearRotinaPlano(id, nome), { sucesso: "Plano renomeado" });
   }
 
   function tornarPadrao(id: string) {
-    startTransition(() => definirRotinaPlanoPadrao(id));
-  }
-
-  function excluirPlano(id: string) {
-    startTransition(async () => {
-      await excluirRotinaPlano(id);
-      toast.success("Plano removido");
+    const alvo = planos.find((p) => p.id === id);
+    executar(() => definirRotinaPlanoPadrao(id), {
+      sucesso: alvo ? `${alvo.nome} agora é o plano padrão` : "Plano padrão atualizado",
     });
   }
 
+  function excluirPlano(id: string) {
+    executar(() => excluirRotinaPlano(id), { sucesso: "Plano removido" });
+  }
+
   const planoAtivo = planos.find((p) => p.id === planoAtivoId);
+
+  // Diagnóstico do vazio: um checklist sem itens hoje quase nunca significa
+  // "você não cadastrou nada". Quase sempre é plano do dia diferente ou
+  // recorrência que não bate — e o empty state genérico escondia os dois.
+  const ocultosPorPlano = useMemo(
+    () => templates.filter((t) => t.planoId && t.planoId !== planoAtivoId),
+    [templates, planoAtivoId]
+  );
+  const planoComMaisItens = useMemo(() => {
+    const contagem = new Map<string, number>();
+    for (const t of ocultosPorPlano) {
+      contagem.set(t.planoId!, (contagem.get(t.planoId!) ?? 0) + 1);
+    }
+    const [melhorId] = [...contagem.entries()].sort((a, b) => b[1] - a[1])[0] ?? [];
+    return planos.find((p) => p.id === melhorId) ?? null;
+  }, [ocultosPorPlano, planos]);
+  const ocultosPorRecorrencia = Math.max(
+    0,
+    templates.length - ocultosPorPlano.length - ordemOtimista.length
+  );
 
   return (
     <>
@@ -451,12 +532,52 @@ export function MinhaRotina({
         </div>
       </div>
 
-      <div className="mt-4">
+      <div className="mt-4 flex flex-col gap-2">
         {itens.length === 0 ? (
           <EmptyState
             icon={CalendarDays}
-            title="Nenhum item planejado para hoje"
-            description="Adicione um treino, estudo, tarefa ou variável e organize seu dia."
+            title={
+              templates.length === 0
+                ? "Nenhum item planejado para hoje"
+                : ocultosPorPlano.length > 0
+                  ? `Nenhum item do ${planoAtivo?.nome ?? "plano de hoje"} cai hoje`
+                  : "Seus itens não se repetem hoje"
+            }
+            description={
+              templates.length === 0
+                ? "Adicione um treino, estudo, tarefa ou variável e organize seu dia."
+                : [
+                    ocultosPorPlano.length > 0 &&
+                      `${ocultosPorPlano.length} ${
+                        ocultosPorPlano.length === 1 ? "item está" : "itens estão"
+                      } em outro plano${planoComMaisItens ? ` (${planoComMaisItens.nome})` : ""}.`,
+                    ocultosPorRecorrencia > 0 &&
+                      `${ocultosPorRecorrencia} ${
+                        ocultosPorRecorrencia === 1 ? "item não cai" : "itens não caem"
+                      } neste dia da semana.`,
+                  ]
+                    .filter(Boolean)
+                    .join(" ")
+            }
+            action={
+              templates.length === 0 ? undefined : (
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  {planoComMaisItens && (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      disabled={pending}
+                      onClick={() => escolherPlano(planoComMaisItens.id)}
+                    >
+                      Usar {planoComMaisItens.nome} hoje
+                    </Button>
+                  )}
+                  <Button variant="outline" size="sm" onClick={() => setGerenciar(true)}>
+                    Ver todos os {templates.length} itens
+                  </Button>
+                </div>
+              )
+            }
             className="py-12"
           />
         ) : (
@@ -496,6 +617,7 @@ export function MinhaRotina({
             }}
           </ListaArrastavel>
         )}
+        <ItemLinhaAgua item={agua} />
       </div>
 
       {/* Sheet: gerenciar templates */}
@@ -527,7 +649,7 @@ export function MinhaRotina({
                       type="button"
                       aria-label="Subir"
                       disabled={i === 0}
-                      onClick={() => startTransition(() => moverRotinaTemplate(t.id, -1))}
+                      onClick={() => executar(() => moverRotinaTemplate(t.id, -1))}
                       className="rounded-full p-1.5 text-steel transition-colors hover:bg-surface hover:text-ice disabled:opacity-30"
                     >
                       <ArrowUp className="h-3.5 w-3.5" strokeWidth={1.5} />
@@ -536,7 +658,7 @@ export function MinhaRotina({
                       type="button"
                       aria-label="Descer"
                       disabled={i === templates.length - 1}
-                      onClick={() => startTransition(() => moverRotinaTemplate(t.id, 1))}
+                      onClick={() => executar(() => moverRotinaTemplate(t.id, 1))}
                       className="rounded-full p-1.5 text-steel transition-colors hover:bg-surface hover:text-ice disabled:opacity-30"
                     >
                       <ArrowDown className="h-3.5 w-3.5" strokeWidth={1.5} />
@@ -1260,6 +1382,67 @@ function ItemLinhaRefeicao({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Água do dia como linha do checklist — sem toggle próprio: o check some
+ * quando `aguaMl >= metaAguaMl`, o mesmo cálculo de AguaClient em /dieta,
+ * onde os copos ficam. Clicar na linha leva pra lá em vez de marcar aqui,
+ * já que marcar precisa saber QUANTOS copos foram bebidos, não só sim/não.
+ */
+function ItemLinhaAgua({ item }: { item: AguaChecklistItem }) {
+  const pct = item.metaAguaMl > 0 ? Math.min(100, (item.aguaMl / item.metaAguaMl) * 100) : 0;
+
+  return (
+    <Link
+      href="/dieta"
+      className={cn(
+        "flex items-center gap-3 rounded-[14px] border px-4 py-3 transition-colors",
+        item.feito
+          ? "border-mint/30 bg-mint-soft"
+          : "border-stroke bg-surface-2 hover:border-[rgba(143,169,205,.25)]"
+      )}
+    >
+      <span className="-ml-1 h-8 w-5 shrink-0" aria-hidden="true"></span>
+
+      <span
+        aria-hidden="true"
+        className={cn(
+          "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-colors",
+          item.feito ? "border-mint bg-mint" : "border-stroke"
+        )}
+      >
+        {item.feito && (
+          <svg viewBox="0 0 12 12" className="h-3 w-3 fill-none stroke-[var(--color-bg)]">
+            <path d="M2 6l2.5 2.5L10 3" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
+      </span>
+
+      <span className="w-11 shrink-0 text-center text-[12px] text-steel/60">–</span>
+
+      <GlassWater className="h-[15px] w-[15px] shrink-0 text-mist" strokeWidth={1.5} />
+
+      <div className="min-w-0 flex-1">
+        <p className={cn("truncate text-[13.5px]", item.feito ? "text-ice" : "text-mist")}>
+          Beber água
+          {item.feito && <span className="ml-2 text-[11px] text-mint">auto</span>}
+        </p>
+        <div className="mt-1.5 flex items-center gap-2">
+          <div className="h-1 w-24 overflow-hidden rounded-full bg-surface">
+            <div
+              className="h-full rounded-full bg-mint transition-all duration-500"
+              style={{ width: `${Math.max(2, pct)}%` }}
+            />
+          </div>
+          <span className="tabular text-[11px] text-steel">
+            {(item.aguaMl / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 2 })} de{" "}
+            {(item.metaAguaMl / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} L
+          </span>
+        </div>
+      </div>
+    </Link>
   );
 }
 

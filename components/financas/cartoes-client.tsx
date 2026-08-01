@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useAcao } from "@/lib/acao-cliente";
 import { CreditCard, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -47,7 +48,7 @@ const vazio: CartaoInput = {
 };
 
 export function CartoesClient({ faturas }: { faturas: FaturaCartao[] }) {
-  const [, startTransition] = useTransition();
+  const [, executar] = useAcao();
   const [pending, startSalvar] = useTransition();
   const [aberto, setAberto] = useState(false);
   const [editandoId, setEditandoId] = useState<string | null>(null);
@@ -136,7 +137,7 @@ export function CartoesClient({ faturas }: { faturas: FaturaCartao[] }) {
                       icon: Trash2,
                       destructive: true,
                       onSelect: () =>
-                        startTransition(async () => {
+                        executar(async () => {
                           await deleteCartao(fatura.id);
                           toast.success("Cartão excluído");
                         }),

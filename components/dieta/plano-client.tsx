@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useAcao } from "@/lib/acao-cliente";
 import { Copy, Pencil, Plus, Power, Salad, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -76,7 +77,7 @@ export function PlanoClient({
   dietas: DietaView[];
   alimentos: { id: string; nome: string; porcaoNome: string | null }[];
 }) {
-  const [, startTransition] = useTransition();
+  const [, executar] = useAcao();
   const [pending, startSalvar] = useTransition();
 
   const [sheetDieta, setSheetDieta] = useState(false);
@@ -177,7 +178,7 @@ export function PlanoClient({
                             label: "Ativar",
                             icon: Power,
                             onSelect: () =>
-                              startTransition(async () => {
+                              executar(async () => {
                                 await ativarDieta(dieta.id);
                                 toast.success(`${dieta.nome} agora é a dieta ativa`);
                               }),
@@ -192,7 +193,7 @@ export function PlanoClient({
                       label: "Duplicar",
                       icon: Copy,
                       onSelect: () =>
-                        startTransition(async () => {
+                        executar(async () => {
                           await duplicarDieta(dieta.id);
                           toast.success("Dieta duplicada");
                         }),
@@ -202,7 +203,7 @@ export function PlanoClient({
                       icon: Trash2,
                       destructive: true,
                       onSelect: () =>
-                        startTransition(async () => {
+                        executar(async () => {
                           await deleteDieta(dieta.id);
                           toast.success("Dieta excluída");
                         }),
@@ -321,7 +322,7 @@ export function PlanoClient({
                         <button
                           aria-label="Excluir refeição"
                           onClick={() =>
-                            startTransition(async () => {
+                            executar(async () => {
                               await deleteRefeicao(r.id);
                               setDetalhe(null);
                               toast.success("Refeição excluída");
@@ -355,7 +356,7 @@ export function PlanoClient({
                                   setEditandoOpcao({ id: o.id, nome: e.target.value })
                                 }
                                 onBlur={() =>
-                                  startTransition(async () => {
+                                  executar(async () => {
                                     await updateOption(o.id, editandoOpcao.nome);
                                     setEditandoOpcao(null);
                                   })
@@ -384,7 +385,7 @@ export function PlanoClient({
                                     label: "Duplicar opção",
                                     icon: Copy,
                                     onSelect: () =>
-                                      startTransition(async () => {
+                                      executar(async () => {
                                         if (r.opcoes.length >= MAX_OPCOES) {
                                           toast.error(
                                             `Máximo de ${MAX_OPCOES} opções por refeição`
@@ -403,7 +404,7 @@ export function PlanoClient({
                                           icon: Trash2,
                                           destructive: true,
                                           onSelect: () =>
-                                            startTransition(async () => {
+                                            executar(async () => {
                                               await deleteOption(o.id);
                                               setDetalhe(null);
                                               toast.success("Opção excluída");
@@ -436,7 +437,7 @@ export function PlanoClient({
                                 <button
                                   aria-label="Remover alimento"
                                   onClick={() =>
-                                    startTransition(async () => {
+                                    executar(async () => {
                                       await deleteItem(i.id);
                                       setDetalhe(null);
                                     })
@@ -558,7 +559,7 @@ export function PlanoClient({
                           size="sm"
                           className="w-full"
                           onClick={() =>
-                            startTransition(async () => {
+                            executar(async () => {
                               await createOption(r.id, `Opção ${r.opcoes.length + 1}`);
                               setDetalhe(null);
                               toast.success("Opção adicionada");

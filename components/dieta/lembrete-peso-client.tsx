@@ -1,6 +1,7 @@
 "use client";
 
-import { useTransition } from "react";
+
+import { useAcao } from "@/lib/acao-cliente";
 import { Bell } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -29,7 +30,7 @@ export function LembretePesoCard({
   proximaRevisao: string | null;
   vencido: boolean;
 }) {
-  const [pending, startTransition] = useTransition();
+  const [pending, executar] = useAcao();
 
   return (
     <Card className="col-span-12 lg:col-span-4">
@@ -42,7 +43,7 @@ export function LembretePesoCard({
         <Select
           value={String(revisarACada ?? 0)}
           onValueChange={(v) =>
-            startTransition(async () => {
+            executar(async () => {
               await configurarLembretePeso(Number(v) || null);
               toast.success(Number(v) ? "Lembrete configurado" : "Lembrete desligado");
             })

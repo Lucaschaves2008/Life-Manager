@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import { useAcao } from "@/lib/acao-cliente";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   CartesianGrid,
@@ -138,7 +139,7 @@ export function PesoClient({
 }) {
   const router = useRouter();
   const params = useSearchParams();
-  const [, startTransition] = useTransition();
+  const [, executar] = useAcao();
   const [pending, startSalvar] = useTransition();
   const [aberto, setAberto] = useState(false);
   const [data, setData] = useState(hoje);
@@ -221,7 +222,7 @@ export function PesoClient({
                     <button
                       aria-label="Excluir registro"
                       onClick={() =>
-                        startTransition(async () => {
+                        executar(async () => {
                           const removido = await deletePeso(r.id);
                           if (!removido) return;
                           toast("Registro excluído", {

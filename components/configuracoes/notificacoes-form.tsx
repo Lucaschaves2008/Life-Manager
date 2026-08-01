@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useAcao } from "@/lib/acao-cliente";
 import { toast } from "sonner";
 import { Checkbox } from "@/components/ui/checkbox";
 import { saveSettings } from "@/app/actions/settings";
@@ -23,12 +24,12 @@ export function NotificacoesForm({
   valores: Record<string, boolean>;
 }) {
   const [estado, setEstado] = useState(valores);
-  const [pending, startTransition] = useTransition();
+  const [pending, executar] = useAcao();
 
   function alternar(chave: string, valor: boolean) {
     const anterior = estado[chave] ?? false;
     setEstado((e) => ({ ...e, [chave]: valor }));
-    startTransition(async () => {
+    executar(async () => {
       try {
         await saveSettings({ [chave]: valor ? "on" : "off" });
       } catch {

@@ -13,6 +13,7 @@ import { PreferenciasForm } from "@/components/configuracoes/preferencias-form";
 import { NotificacoesForm } from "@/components/configuracoes/notificacoes-form";
 import { ExportarDados } from "@/components/configuracoes/exportar-dados";
 import { ExcluirConta } from "@/components/configuracoes/excluir-conta";
+import { VersaoCard } from "@/components/configuracoes/versao-card";
 import { Button } from "@/components/ui/button";
 import { PREF_CONQUISTAS, feedbackHabilitado } from "@/lib/conquistas";
 import {
@@ -258,6 +259,8 @@ export default async function Page() {
             <ExportarDados />
           </div>
         </Card>
+
+        <VersaoCard />
 
         <Card className="col-span-12">
           <CardLabel>Zona de perigo</CardLabel>

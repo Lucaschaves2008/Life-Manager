@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useAcao } from "@/lib/acao-cliente";
 import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardLabel } from "@/components/caverna/card";
@@ -20,7 +21,7 @@ function formatNumero(v: number): string {
 }
 
 function MetaPequenaRow({ meta, souDono }: { meta: DesafioMetaView; souDono: boolean }) {
-  const [, startTransition] = useTransition();
+  const [, executar] = useAcao();
   const [removendo, setRemovendo] = useState(false);
 
   return (
@@ -42,7 +43,7 @@ function MetaPequenaRow({ meta, souDono }: { meta: DesafioMetaView; souDono: boo
             aria-label="Excluir meta"
             onClick={() => {
               setRemovendo(true);
-              startTransition(async () => {
+              executar(async () => {
                 await excluirMeta(meta.id);
                 toast.success("Meta excluída");
               });
@@ -81,7 +82,7 @@ function MetaGrandeBlock({
   variaveis: VariavelView[];
   hoje: string;
 }) {
-  const [, startTransition] = useTransition();
+  const [, executar] = useAcao();
   const [removendo, setRemovendo] = useState(false);
   const [sheetAberto, setSheetAberto] = useState(false);
   const cor = meta.pct >= 100 ? "var(--color-mint)" : "var(--color-ice)";
@@ -109,7 +110,7 @@ function MetaGrandeBlock({
               aria-label="Excluir meta"
               onClick={() => {
                 setRemovendo(true);
-                startTransition(async () => {
+                executar(async () => {
                   await excluirMeta(meta.id);
                   toast.success("Meta excluída");
                 });

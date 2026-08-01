@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useAcao } from "@/lib/acao-cliente";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
@@ -159,7 +160,7 @@ export function TransacaoSheet({
   hoje: string;
   editando?: TransacaoEditavel | null;
 }) {
-  const [pending, startTransition] = useTransition();
+  const [pending, executar] = useAcao();
   const [tipo, setTipo] = useState<TransacaoInput["tipo"]>(
     (editando?.tipo as TransacaoInput["tipo"]) ?? "despesa"
   );
@@ -216,7 +217,7 @@ export function TransacaoSheet({
       natureza: tipo === "despesa" && compromisso ? "compromisso" : "despesa",
     };
 
-    startTransition(async () => {
+    executar(async () => {
       if (editando) {
         await updateTransacao(editando.id, payload);
         toast.success("Transação atualizada");

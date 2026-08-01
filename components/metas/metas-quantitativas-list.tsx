@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useAcao } from "@/lib/acao-cliente";
 import { Plus, Target, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -17,7 +18,7 @@ function formatNumero(v: number): string {
 }
 
 function LinhaMeta({ meta, hoje }: { meta: MetaQuantitativaView; hoje: string }) {
-  const [, startTransition] = useTransition();
+  const [, executar] = useAcao();
   const [removendo, setRemovendo] = useState(false);
   const pctBarra = Math.max(0, Math.min(100, meta.pct));
   const excedeu = meta.pct > 100;
@@ -52,7 +53,7 @@ function LinhaMeta({ meta, hoje }: { meta: MetaQuantitativaView; hoje: string })
             aria-label="Excluir meta"
             onClick={() => {
               setRemovendo(true);
-              startTransition(async () => {
+              executar(async () => {
                 await excluirMetaQuantitativa(meta.id);
                 toast.success("Meta excluída");
               });

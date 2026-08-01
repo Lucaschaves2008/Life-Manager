@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useAcao } from "@/lib/acao-cliente";
 import {
   Check,
   ChevronDown,
@@ -59,7 +60,7 @@ export function PlanoCorridaClient({
   planos: PlanoCorridaView[];
   semana: number;
 }) {
-  const [, startTransition] = useTransition();
+  const [, executar] = useAcao();
   const [pending, startSalvar] = useTransition();
 
   const [sheetPlano, setSheetPlano] = useState(false);
@@ -150,7 +151,7 @@ export function PlanoCorridaClient({
   function mudarSemana(delta: number) {
     const alvo = Math.max(1, semana + delta);
     if (alvo === semana) return;
-    startTransition(() => void setSemanaAtual(alvo));
+    executar(() => setSemanaAtual(alvo));
   }
 
   if (planos.length === 0) {
@@ -203,7 +204,7 @@ export function PlanoCorridaClient({
                     label: "Duplicar",
                     icon: Copy,
                     onSelect: () =>
-                      startTransition(async () => {
+                      executar(async () => {
                         await duplicateRunRoutine(plano.id);
                         toast.success("Plano duplicado");
                       }),
@@ -213,7 +214,7 @@ export function PlanoCorridaClient({
                     icon: Trash2,
                     destructive: true,
                     onSelect: () =>
-                      startTransition(async () => {
+                      executar(async () => {
                         await deleteRunRoutine(plano.id);
                         toast.success("Plano excluído");
                       }),
@@ -259,7 +260,7 @@ export function PlanoCorridaClient({
                       <button
                         aria-label="Subir sessão"
                         disabled={i === 0}
-                        onClick={() => startTransition(() => void moveRunSession(s.id, -1))}
+                        onClick={() => executar(() => moveRunSession(s.id, -1))}
                         className="rounded-md p-1 text-steel hover:text-ice disabled:opacity-30"
                       >
                         <ChevronUp className="h-3.5 w-3.5" strokeWidth={1.5} />
@@ -267,7 +268,7 @@ export function PlanoCorridaClient({
                       <button
                         aria-label="Descer sessão"
                         disabled={i === plano.sessoes.length - 1}
-                        onClick={() => startTransition(() => void moveRunSession(s.id, 1))}
+                        onClick={() => executar(() => moveRunSession(s.id, 1))}
                         className="rounded-md p-1 text-steel hover:text-ice disabled:opacity-30"
                       >
                         <ChevronDown className="h-3.5 w-3.5" strokeWidth={1.5} />
@@ -282,7 +283,7 @@ export function PlanoCorridaClient({
                       <button
                         aria-label="Excluir sessão"
                         onClick={() =>
-                          startTransition(async () => {
+                          executar(async () => {
                             await deleteRunSession(s.id);
                             toast.success("Sessão excluída");
                           })

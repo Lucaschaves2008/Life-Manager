@@ -1,7 +1,8 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useState } from "react";
+import { useAcao } from "@/lib/acao-cliente";
 import {
   ArrowRight,
   Copy,
@@ -86,7 +87,7 @@ export function TransacoesClient({
 }) {
   const router = useRouter();
   const params = useSearchParams();
-  const [, startTransition] = useTransition();
+  const [, executar] = useAcao();
   const [sheet, setSheet] = useState<{
     aberto: boolean;
     item: TransacaoEditavel | null;
@@ -301,7 +302,7 @@ export function TransacoesClient({
                         label: "Duplicar",
                         icon: Copy,
                         onSelect: () =>
-                          startTransition(async () => {
+                          executar(async () => {
                             await duplicateTransacao(linha.id);
                             toast.success("Transação duplicada");
                           }),
@@ -311,7 +312,7 @@ export function TransacoesClient({
                         icon: Trash2,
                         destructive: true,
                         onSelect: () =>
-                          startTransition(async () => {
+                          executar(async () => {
                             const removida = await deleteTransacao(linha.id);
                             if (!removida) return;
                             toast("Transação excluída", {
