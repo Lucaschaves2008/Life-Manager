@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { db } from "@/lib/db";
 
 export async function signUp(formData: FormData) {
@@ -20,19 +21,32 @@ export async function signUp(formData: FormData) {
     redirect(`/cadastro?erro=${encodeURIComponent("As senhas não coincidem.")}`);
   }
 
-  const supabase = await createClient();
-  const { data, error } = await supabase.auth.signUp({
-    email,
+  const emailNormalizado = email.toLowerCase();
+
+  // Cadastro pelo admin client (service_role) em vez de supabase.auth.signUp:
+  // é o que permite `email_confirm: true`, ou seja, a conta já nasce
+  // confirmada e a pessoa entra na hora, sem email de verificação.
+  //
+  // Com o signUp comum isso dependia do toggle "Confirm email" do projeto no
+  // Supabase: com ele ligado, a conta nascia com confirmed=false, o
+  // signInWithPassword recusava o login e a pessoa ficava presa numa conta que
+  // já aparecia no /admin mas não conseguia acessar.
+  const supabaseAdmin = createAdminClient();
+  const { data, error } = await supabaseAdmin.auth.admin.createUser({
+    email: emailNormalizado,
     password,
-    options: { data: { nome } },
+    email_confirm: true,
+    user_metadata: { nome },
   });
 
   if (error) {
-    const msg = /already registered|already exists|user_already_exists/i.test(error.message)
-      ? "Este email já está cadastrado."
-      : /rate limit/i.test(error.message)
-      ? "Muitas tentativas de cadastro em pouco tempo. Aguarde alguns minutos e tente novamente."
-      : error.message;
+    const msg =
+      error.code === "email_exists" ||
+      /already registered|already exists|user_already_exists/i.test(error.message)
+        ? "Este email já está cadastrado."
+        : /rate limit/i.test(error.message)
+        ? "Muitas tentativas de cadastro em pouco tempo. Aguarde alguns minutos e tente novamente."
+        : error.message;
     redirect(`/cadastro?erro=${encodeURIComponent(msg)}`);
   }
 
@@ -40,25 +54,25 @@ export async function signUp(formData: FormData) {
     redirect(`/cadastro?erro=${encodeURIComponent("Não foi possível criar a conta.")}`);
   }
 
-  // Com confirmação de email ativa, o Supabase não retorna erro para um email
-  // já cadastrado mas ainda não confirmado — por proteção anti-enumeration,
-  // ele responde como um signUp normal só que com identities: [] (nenhuma
-  // identidade nova criada). É o único sinal disponível para detectar o caso.
-  if (data.user.identities?.length === 0) {
-    redirect(`/cadastro?erro=${encodeURIComponent("Este email já está cadastrado.")}`);
-  }
-
   // Não há trigger no banco para popular Profile a partir de auth.users —
-  // toda rotina de criação de usuário (aqui e em admin.ts) precisa fazer o upsert manual.
+  // toda rotina de criação de usuário (aqui e em admin.ts) precisa fazer o
+  // upsert manual. É o que faz a conta aparecer no /admin: aquela lista lê
+  // Profile, não auth.users. Sem isto a pessoa também não consegue entrar
+  // (resolveUser devolve null quando não acha o Profile).
   await db.profile.upsert({
     where: { id: data.user.id },
-    create: { id: data.user.id, email: data.user.email!, nome },
+    create: { id: data.user.id, email: data.user.email ?? emailNormalizado, nome },
     update: { nome },
   });
 
-  // Sem sessão de volta = confirmação de email está ativa no projeto Supabase.
-  if (!data.session) {
-    redirect(`/login?erro=${encodeURIComponent("Conta criada! Confira seu email para confirmar antes de entrar.")}`);
+  // Conta já confirmada: loga direto e cai no painel, sem passar pelo /login.
+  const supabase = await createClient();
+  const { error: erroLogin } = await supabase.auth.signInWithPassword({
+    email: emailNormalizado,
+    password,
+  });
+  if (erroLogin) {
+    redirect(`/login?erro=${encodeURIComponent("Conta criada! Entre com seu email e senha.")}`);
   }
 
   redirect("/");
