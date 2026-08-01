@@ -7,15 +7,25 @@ import { tagUsuario } from "@/lib/cache-tags";
 import { spEndOfDay, spStartOfDay } from "@/lib/dates";
 import { marcarDiaAtivo } from "@/lib/streak";
 import { parseJSON } from "@/lib/utils";
+import { erroCoerenciaMacros } from "@/lib/data/dieta-calc";
 import type { EscolhaLog, ExtraLog } from "@/lib/data/dieta";
 
 const MAX_OPCOES = 4;
 
 // Toda mutação deste módulo escreve só em tabelas de dieta → uma tag basta.
+// /checklist também entra porque as refeições do dia aparecem lá como itens
+// (ver refeicoesDoDiaChecklist), lendo o mesmo DietDayLog.
 function revalidar(userId: string) {
   revalidateTag(tagUsuario(userId, "dieta"));
   revalidatePath("/dieta");
+  revalidatePath("/checklist");
   revalidatePath("/");
+}
+
+function somarDias(base: Date, dias: number): Date {
+  const d = new Date(base);
+  d.setDate(d.getDate() + dias);
+  return d;
 }
 
 function dataSP(dia: string): Date {
@@ -125,6 +135,8 @@ export async function escolherOpcao(
 }
 
 export async function addExtra(dia: string, extra: ExtraLog) {
+  const erro = erroCoerenciaMacros(extra);
+  if (erro) throw new Error(erro);
   const { id: userId } = await requireUser();
   const log = await logDoDia(userId, dia);
   const extras = parseJSON<ExtraLog[]>(log.extras, []);
@@ -414,13 +426,22 @@ export type AlimentoInput = {
   porcaoG: number | null;
 };
 
+function validarAlimento(input: AlimentoInput) {
+  const { kcal100, prot100, carb100, gord100 } = input;
+  if (kcal100 == null || prot100 == null || carb100 == null || gord100 == null) return;
+  const erro = erroCoerenciaMacros({ kcal: kcal100, prot: prot100, carb: carb100, gord: gord100 });
+  if (erro) throw new Error(`${erro} (valores por 100 g)`);
+}
+
 export async function createAlimento(input: AlimentoInput) {
+  validarAlimento(input);
   const { id: userId } = await requireUser();
   await db.food.create({ data: { ...input, userId } });
   revalidar(userId);
 }
 
 export async function updateAlimento(id: string, input: AlimentoInput) {
+  validarAlimento(input);
   const { id: userId } = await requireUser();
   await db.food.update({ where: { id, userId }, data: input });
   revalidar(userId);
@@ -447,6 +468,12 @@ export type PesoInput = {
   pesoKg: number;
   cintura?: number | null;
   braco?: number | null;
+  percentualGordura?: number | null;
+  massaMuscular?: number | null;
+  aguaCorporal?: number | null;
+  massaOssea?: number | null;
+  gorduraVisceral?: number | null;
+  tmb?: number | null;
 };
 
 export async function createPeso(input: PesoInput) {
@@ -457,7 +484,38 @@ export async function createPeso(input: PesoInput) {
       pesoKg: input.pesoKg,
       cintura: input.cintura ?? null,
       braco: input.braco ?? null,
+      percentualGordura: input.percentualGordura ?? null,
+      massaMuscular: input.massaMuscular ?? null,
+      aguaCorporal: input.aguaCorporal ?? null,
+      massaOssea: input.massaOssea ?? null,
+      gorduraVisceral: input.gorduraVisceral ?? null,
+      tmb: input.tmb ?? null,
       userId,
+    },
+  });
+
+  const perfil = await db.profile.findUnique({
+    where: { id: userId },
+    select: { revisarPesoACada: true },
+  });
+  if (perfil?.revisarPesoACada) {
+    await db.profile.update({
+      where: { id: userId },
+      data: { proximaRevisaoPeso: somarDias(dataSP(input.data), perfil.revisarPesoACada) },
+    });
+  }
+
+  revalidar(userId);
+}
+
+/** Configura (ou desliga, com null) o lembrete pessoal de atualizar métricas de peso. */
+export async function configurarLembretePeso(revisarACada: number | null) {
+  const { id: userId } = await requireUser();
+  await db.profile.update({
+    where: { id: userId },
+    data: {
+      revisarPesoACada: revisarACada,
+      proximaRevisaoPeso: revisarACada ? somarDias(new Date(), revisarACada) : null,
     },
   });
   revalidar(userId);
@@ -476,6 +534,12 @@ export async function restorePeso(dados: {
   pesoKg: number;
   cintura: number | null;
   braco: number | null;
+  percentualGordura?: number | null;
+  massaMuscular?: number | null;
+  aguaCorporal?: number | null;
+  massaOssea?: number | null;
+  gorduraVisceral?: number | null;
+  tmb?: number | null;
 }) {
   const { id: userId } = await requireUser();
   await db.weightLog.create({ data: { ...dados, userId } });

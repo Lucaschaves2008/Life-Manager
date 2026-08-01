@@ -7,7 +7,7 @@ import { Topbar } from "@/components/shell/topbar";
 import { MobileTabBar } from "@/components/shell/mobile-tab-bar";
 import { cn } from "@/lib/utils";
 
-const SEM_SHELL = ["/login", "/bloqueado"];
+const SEM_SHELL = ["/login", "/cadastro", "/bloqueado"];
 
 type ShellUser = { nome: string | null; email: string; avatarUrl: string | null };
 
@@ -28,6 +28,21 @@ export function AppShell({
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
 
+  // Desktop/mobile é decidido só por CSS (hidden lg:block / lg:hidden), mas o
+  // devtools de alguns navegadores falha em repintar o par de irmãos "fixed"
+  // (aside + nav) depois de certas sequências de resize/zoom no modo
+  // responsivo, deixando os dois com o display da largura anterior. `layoutKey`
+  // muda só quando o breakpoint realmente vira, e o key força o React a
+  // remontar o shell do zero — descartando qualquer pintura presa.
+  const [layoutKey, setLayoutKey] = useState(0);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const onChange = () => setLayoutKey((k) => k + 1);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
   useEffect(() => {
     const saved = window.localStorage.getItem("life-manager-theme");
     const initial =
@@ -44,7 +59,7 @@ export function AppShell({
   }
 
   return (
-    <div className="flex min-h-dvh bg-bg">
+    <div key={layoutKey} className="flex min-h-dvh bg-bg">
       {/* Sidebar desktop */}
       <aside
         className={cn(

@@ -169,8 +169,13 @@ export function DesafiosList({ desafios }: { desafios: DesafioResumo[] }) {
           <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
           Novo desafio
         </Button>
-        <Button variant="outline" size="sm" onClick={() => setEntrarAberto(true)} className="flex-1">
-          <LogIn className="h-3.5 w-3.5" strokeWidth={1.5} />
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setEntrarAberto(true)}
+          className="flex-1 whitespace-nowrap text-[13px]"
+        >
+          <LogIn className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
           Entrar com código
         </Button>
       </div>

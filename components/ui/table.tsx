@@ -67,7 +67,7 @@ export function Td({
   return (
     <td
       className={cn(
-        "px-2 text-[13.5px] text-ice first:pl-0 last:pr-0",
+        "whitespace-nowrap px-2 text-[13.5px] text-ice first:pl-0 last:pr-0",
         right && "tabular text-right",
         className
       )}
@@ -95,7 +95,7 @@ export function StatusPill({
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full px-2.5 py-0.5 text-[11.5px] font-medium",
+        "inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-[11.5px] font-medium",
         tones[tone],
         className
       )}

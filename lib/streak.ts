@@ -1,5 +1,5 @@
 import "server-only";
-import { revalidateTag } from "next/cache";
+import { revalidateTag } from "@/lib/cache-revalidate";
 import { db } from "@/lib/db";
 import { tagUsuario } from "@/lib/cache-tags";
 import { dayKeySP, nowSP } from "@/lib/dates";

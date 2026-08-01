@@ -254,14 +254,18 @@ export function AlimentosClient({ alimentos }: { alimentos: AlimentoView[] }) {
                 disabled={!form.nome.trim() || pending}
                 onClick={() =>
                   startSalvar(async () => {
-                    if (editandoId) {
-                      await updateAlimento(editandoId, form);
-                      toast.success("Alimento atualizado");
-                    } else {
-                      await createAlimento(form);
-                      toast.success("Alimento criado");
+                    try {
+                      if (editandoId) {
+                        await updateAlimento(editandoId, form);
+                        toast.success("Alimento atualizado");
+                      } else {
+                        await createAlimento(form);
+                        toast.success("Alimento criado");
+                      }
+                      setAberto(false);
+                    } catch (e) {
+                      toast.error(e instanceof Error ? e.message : "Não foi possível salvar.");
                     }
-                    setAberto(false);
                   })
                 }
               >

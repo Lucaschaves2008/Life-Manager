@@ -1,3 +1,4 @@
+import { Slot } from "@radix-ui/react-slot";
 import { cn } from "@/lib/utils";
 import { forwardRef } from "react";
 
@@ -27,10 +28,16 @@ export const Button = forwardRef<
   React.ButtonHTMLAttributes<HTMLButtonElement> & {
     variant?: Variant;
     size?: Size;
+    /** Renderiza no filho (ex.: <Link>) em vez de <button>, herdando o estilo. */
+    asChild?: boolean;
   }
->(function Button({ className, variant = "outline", size = "md", ...props }, ref) {
+>(function Button(
+  { className, variant = "outline", size = "md", asChild = false, ...props },
+  ref
+) {
+  const Comp = asChild ? Slot : "button";
   return (
-    <button
+    <Comp
       ref={ref}
       className={cn(
         "inline-flex cursor-pointer items-center justify-center rounded-full transition-all duration-200 disabled:pointer-events-none disabled:opacity-40",

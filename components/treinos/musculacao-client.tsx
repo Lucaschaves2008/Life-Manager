@@ -236,7 +236,8 @@ export function MusculacaoClient({
         <Card>
           <EmptyState
             icon={Dumbbell}
-            title="Nenhuma ficha criada ainda."
+            title="Nenhuma ficha criada ainda"
+            description="Monte sua ficha com exercícios, séries e cargas para executar no dia do treino."
             className="py-16"
             action={
               <Button variant="dashed" size="sm" onClick={() => abrirFicha(null)}>

@@ -165,7 +165,8 @@ export function CorridaClient({
         {corridas.length === 0 ? (
           <EmptyState
             icon={Footprints}
-            title="Nenhuma corrida registrada ainda."
+            title="Nenhuma corrida registrada ainda"
+            description="Registre sua primeira corrida para acompanhar pace, volume e recordes."
             className="py-14"
           />
         ) : (

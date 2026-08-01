@@ -207,6 +207,45 @@ async function diaDaDietaDoDia(userId: string, dia: string): Promise<DiaDaDieta>
   };
 }
 
+// ---------- Checklist diário ----------
+
+/**
+ * Refeição da dieta ativa exibida como item do checklist do dia.
+ *
+ * Deriva do MESMO DietDayLog que a tela de Dieta usa — nunca é uma cópia. Os
+ * dois lugares leem e escrevem o mesmo registro, então marcar em um aparece no
+ * outro e a métrica "refeicoes_cumpridas" (metas e desafios) conta uma vez só.
+ */
+export type RefeicaoChecklistItem = {
+  id: string;
+  nome: string;
+  horario: string | null;
+  feito: boolean;
+  escolhaId: string | null;
+  opcoes: { id: string; nome: string }[];
+};
+
+/**
+ * Refeições do dia no formato do checklist. Reaproveita diaDaDieta (já
+ * cacheado por userId+dayKey) em vez de refazer as queries — a projeção aqui é
+ * só o recorte que a linha do checklist precisa.
+ */
+export async function refeicoesDoDiaChecklist(
+  userId: string,
+  ref: Date = new Date()
+): Promise<RefeicaoChecklistItem[]> {
+  const dia = await diaDaDieta(userId, ref);
+  const cumpridas = new Set(dia.cumpridas);
+  return dia.refeicoes.map((r) => ({
+    id: r.id,
+    nome: r.nome,
+    horario: r.horario,
+    feito: cumpridas.has(r.id),
+    escolhaId: r.escolhaId,
+    opcoes: r.opcoes.map((o) => ({ id: o.id, nome: o.nome })),
+  }));
+}
+
 /** % de refeições cumpridas nos últimos 7 dias. */
 export async function aderencia7d(
   userId: string,

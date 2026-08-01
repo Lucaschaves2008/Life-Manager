@@ -8,7 +8,28 @@ import { StravaWidget } from "@/components/treinos/strava-widget";
 import { StravaIcon } from "@/components/treinos/strava-icon";
 import { StravaCallbackToast } from "@/components/treinos/strava-callback-toast";
 import { GoogleCalendarWidget } from "@/components/configuracoes/google-calendar-widget";
+import { ConquistasToggle } from "@/components/configuracoes/conquistas-toggle";
+import { PreferenciasForm } from "@/components/configuracoes/preferencias-form";
+import { NotificacoesForm } from "@/components/configuracoes/notificacoes-form";
+import { ExportarDados } from "@/components/configuracoes/exportar-dados";
+import { ExcluirConta } from "@/components/configuracoes/excluir-conta";
 import { Button } from "@/components/ui/button";
+import { PREF_CONQUISTAS, feedbackHabilitado } from "@/lib/conquistas";
+import {
+  FUSOS,
+  MOEDAS,
+  PADRAO,
+  PREF_FUSO,
+  PREF_MOEDA,
+  PREF_UNIDADE_DISTANCIA,
+  PREF_UNIDADE_PESO,
+  TIPOS_NOTIFICACAO,
+  UNIDADES_DISTANCIA,
+  UNIDADES_PESO,
+  chaveNotificacao,
+  lerOpcao,
+  notificacaoAtiva,
+} from "@/lib/preferencias";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { signOut } from "@/app/actions/auth";
@@ -67,6 +88,16 @@ export default async function Page() {
     stravaConectado(user.id),
   ]);
   const values = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+
+  // Estado atual de cada par (tipo × canal) de notificação — desligado por padrão.
+  const notificacoes = Object.fromEntries(
+    TIPOS_NOTIFICACAO.flatMap((t) =>
+      (["email", "push"] as const).map((canal) => {
+        const chave = chaveNotificacao(t.value, canal);
+        return [chave, notificacaoAtiva(values[chave])];
+      })
+    )
+  );
   const configurado = stravaConfigurado();
   // A conexão passa pela rota /api/strava/connect, que gera o state CSRF
   // aleatório e grava o cookie antes de redirecionar para o Strava.
@@ -144,25 +175,27 @@ export default async function Page() {
             Conecte contas externas para importar dados automaticamente.
           </p>
           <div className="mt-5 flex flex-col gap-3">
-            <div className="flex items-center justify-between rounded-[14px] border border-stroke bg-surface-2 px-4 py-3.5">
-              <div className="flex items-center gap-3">
+            <div className="flex flex-col gap-3 rounded-[14px] border border-stroke bg-surface-2 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-w-0 items-center gap-3">
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#fc4c02]/12 text-[#fc4c02]">
                   <StravaIcon className="h-[18px] w-[18px]" />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <p className="text-[13.5px] text-ice">Strava</p>
-                  <p className="text-[12px] text-steel">
+                  <p className="text-[12px] leading-snug text-steel">
                     {conectado
                       ? "Conta conectada — importe corridas pelo link em Treinos."
                       : "Conecte para importar suas corridas automaticamente."}
                   </p>
                 </div>
               </div>
-              <StravaWidget
-                configurado={configurado}
-                conectado={conectado}
-                authorizeUrl={authorizeUrl}
-              />
+              <div className="shrink-0 sm:pl-3">
+                <StravaWidget
+                  configurado={configurado}
+                  conectado={conectado}
+                  authorizeUrl={authorizeUrl}
+                />
+              </div>
             </div>
             <GoogleCalendarWidget />
           </div>
@@ -175,6 +208,61 @@ export default async function Page() {
           </p>
           <div className="mt-5">
             <SettingsForm fields={metas} values={values} />
+          </div>
+        </Card>
+
+        <Card className="col-span-12">
+          <CardLabel>Feedback</CardLabel>
+          <div className="mt-5">
+            <ConquistasToggle ativo={feedbackHabilitado(values[PREF_CONQUISTAS])} />
+          </div>
+        </Card>
+
+        <Card className="col-span-12">
+          <CardLabel>Moeda, fuso e unidades</CardLabel>
+          <p className="mt-3 text-[13px] text-mist">
+            Como os valores devem ser exibidos e em que fuso o dia vira.
+          </p>
+          <div className="mt-5">
+            <PreferenciasForm
+              iniciais={{
+                moeda: lerOpcao(values[PREF_MOEDA], MOEDAS, PADRAO.moeda),
+                fuso: lerOpcao(values[PREF_FUSO], FUSOS, PADRAO.fuso),
+                peso: lerOpcao(values[PREF_UNIDADE_PESO], UNIDADES_PESO, PADRAO.peso),
+                distancia: lerOpcao(
+                  values[PREF_UNIDADE_DISTANCIA],
+                  UNIDADES_DISTANCIA,
+                  PADRAO.distancia
+                ),
+              }}
+            />
+          </div>
+        </Card>
+
+        <Card className="col-span-12">
+          <CardLabel>Notificações</CardLabel>
+          <p className="mt-3 text-[13px] text-mist">
+            Escolha o que você quer receber e por onde.
+          </p>
+          <div className="mt-5">
+            <NotificacoesForm valores={notificacoes} />
+          </div>
+        </Card>
+
+        <Card className="col-span-12">
+          <CardLabel>Seus dados</CardLabel>
+          <p className="mt-3 text-[13px] text-mist">
+            Baixe uma cópia de tudo que o MYLIFE guarda sobre você.
+          </p>
+          <div className="mt-5">
+            <ExportarDados />
+          </div>
+        </Card>
+
+        <Card className="col-span-12">
+          <CardLabel>Zona de perigo</CardLabel>
+          <div className="mt-5">
+            <ExcluirConta email={user.email} />
           </div>
         </Card>
       </div>

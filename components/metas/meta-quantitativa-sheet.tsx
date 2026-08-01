@@ -184,6 +184,7 @@ export function MetaQuantitativaSheet({
                 step="any"
                 value={alvo || ""}
                 onChange={(e) => setAlvo(Number(e.target.value) || 0)}
+                onFocus={(e) => e.target.select()}
                 placeholder={origem === "metrica" ? metricaInfo.placeholder : "Ex.: 10"}
                 className="tabular"
               />

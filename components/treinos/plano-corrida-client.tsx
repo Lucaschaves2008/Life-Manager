@@ -158,7 +158,8 @@ export function PlanoCorridaClient({
       <>
         <EmptyState
           icon={Footprints}
-          title="Nenhum plano de corrida ainda. Crie um plano com sessões e progressão de km por semana."
+          title="Nenhum plano de corrida ainda"
+          description="Crie um plano com sessões e progressão de km por semana."
           className="py-12"
           action={
             <Button variant="dashed" size="sm" onClick={() => abrirPlano(null)}>

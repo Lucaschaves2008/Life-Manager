@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -32,6 +33,7 @@ export type ParcelamentoEditavel = {
   categoryId: string | null;
   cardId: string | null;
   tags: string[];
+  natureza?: "despesa" | "compromisso";
 };
 
 export function ParcelamentoSheet({
@@ -61,6 +63,7 @@ export function ParcelamentoSheet({
   const [categoryId, setCategoryId] = useState(editando?.categoryId ?? "");
   const [cardId, setCardId] = useState(editando?.cardId ?? "");
   const [tags, setTags] = useState<string[]>(editando?.tags ?? []);
+  const [compromisso, setCompromisso] = useState(editando?.natureza === "compromisso");
 
   const categoriasDespesa = categorias.filter((c) => c.tipo === "despesa");
 
@@ -76,6 +79,7 @@ export function ParcelamentoSheet({
       categoryId: categoryId || null,
       cardId: cardId || null,
       tags,
+      natureza: compromisso ? "compromisso" : "despesa",
     };
 
     startTransition(async () => {
@@ -85,6 +89,7 @@ export function ParcelamentoSheet({
       } else {
         await createTransacao({
           tipo: "despesa",
+          natureza: payload.natureza,
           valor: payload.valorParcela,
           data: payload.data,
           descricao: payload.descricao,
@@ -132,6 +137,7 @@ export function ParcelamentoSheet({
                 onChange={(e) =>
                   setParcelas(Math.min(48, Math.max(2, Number(e.target.value) || 2)))
                 }
+                onFocus={(e) => e.target.select()}
                 className="tabular"
               />
             </div>
@@ -142,6 +148,20 @@ export function ParcelamentoSheet({
               Total de {formatBRL(valorParcela * parcelas)} em {parcelas}x.
             </p>
           )}
+
+          <label className="flex cursor-pointer items-start gap-2 text-[13px] text-mist">
+            <Checkbox
+              className="mt-0.5"
+              checked={compromisso}
+              onCheckedChange={(v) => setCompromisso(v === true)}
+            />
+            <span>
+              É um compromisso, não uma despesa
+              <span className="mt-0.5 block text-[11.5px] text-steel">
+                Ex.: aporte mensal fixo — aparece na lista, mas não entra nos totais de gasto.
+              </span>
+            </span>
+          </label>
 
           <div className="grid grid-cols-2 gap-4">
             <div>

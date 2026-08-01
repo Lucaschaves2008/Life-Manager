@@ -127,6 +127,25 @@ export function kmDaSemana(
   };
 }
 
+/**
+ * Km REALIZADOS numa janela (soma de Run.km com data dentro do intervalo).
+ *
+ * Fonte única para "quantos km eu corri nessa semana": tanto o card-resumo de
+ * /treinos (resumoTreinos.kmSemana) quanto a barra da semana atual do gráfico
+ * de volume (volumeSemanal) passam por aqui. Antes eram dois reduces
+ * independentes sobre a mesma tabela — davam o mesmo número por coincidência,
+ * e um filtro adicionado em um dos lados não chegaria no outro. Puro — sem I/O.
+ */
+export function somarKmNoPeriodo(
+  corridas: { data: Date; km: number }[],
+  inicio: Date,
+  fim: Date
+): number {
+  return corridas
+    .filter((c) => c.data >= inicio && c.data <= fim)
+    .reduce((soma, c) => soma + c.km, 0);
+}
+
 // ---------- Planos de corrida (tipos puros — client-safe) ----------
 // Movidos de treinos.ts (que tem "use cache"/server-only) para cá: client
 // components que só precisam do shape do dado importam daqui, sem puxar o

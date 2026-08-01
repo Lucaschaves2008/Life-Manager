@@ -30,6 +30,7 @@ export type ParcelamentoItem = {
   categoryId: string | null;
   cardId: string | null;
   tags: string[];
+  natureza: "despesa" | "compromisso";
 };
 
 export function ParcelamentosClient({
@@ -68,6 +69,7 @@ export function ParcelamentosClient({
         categoryId: item.categoryId,
         cardId: item.cardId,
         tags: item.tags,
+        natureza: item.natureza,
       },
     });
   }
@@ -78,7 +80,8 @@ export function ParcelamentosClient({
         {itens.length === 0 ? (
           <EmptyState
             icon={Layers}
-            title="Nenhuma compra parcelada em aberto."
+            title="Nenhuma compra parcelada em aberto"
+            description="Suas compras parceladas aparecem aqui com o que ainda falta pagar."
             className="py-14"
             action={
               <Button variant="dashed" size="sm" onClick={abrirNovo}>
@@ -105,12 +108,19 @@ export function ParcelamentosClient({
                     <span className="tabular text-[13.5px] text-ice">
                       {formatBRL(p.valorParcela)} × {p.parcelas}
                     </span>
+                    {p.natureza === "compromisso" && (
+                      <StatusPill tone="amber">Compromisso</StatusPill>
+                    )}
                     <StatusPill tone="steel">
                       {p.pagas}/{p.parcelas} pagas
                     </StatusPill>
                     <DotsMenu
                       items={[
-                        { label: "Editar", icon: Pencil, onSelect: () => abrirEditar(p) },
+                        {
+                          label: "Editar",
+                          icon: Pencil,
+                          onSelect: () => abrirEditar(p),
+                        },
                         {
                           label: "Excluir",
                           icon: Trash2,

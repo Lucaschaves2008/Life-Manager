@@ -15,6 +15,7 @@ import { contarOcorrenciasEmLote } from "@/lib/data/variaveis";
 import {
   METRICAS,
   PERIODOS,
+  calcularMetrica,
   type MetaMetrica,
   type MetaOrigem,
   type MetaPeriodo,
@@ -71,48 +72,74 @@ function periodoLabelDe(periodo: MetaPeriodo, chave: string): string {
   return chave;
 }
 
-/** Progresso atual de uma métrica automática no período — reusado por Desafios (lib/data/desafios.ts). */
+/**
+ * Progresso atual de uma métrica automática no período.
+ *
+ * Só busca o que a métrica pedida precisa (não carrega as 6 fontes à toa) e
+ * delega a fórmula para calcularMetrica() — a mesma usada por Desafios
+ * (lib/data/desafios.ts), para os dois caminhos nunca divergirem.
+ */
 export async function calcularAtual(
   userId: string,
   metrica: MetaMetrica,
   inicio: Date,
   fim: Date
 ): Promise<number> {
+  const vazio = {
+    treinos: 0,
+    corridas: 0,
+    km: 0,
+    refeicoesCumpridas: 0,
+    segundosEstudo: 0,
+    dinheiroCentavos: 0,
+  };
+
   switch (metrica) {
     case "treinos": {
-      const [sessoes, corridas] = await Promise.all([
+      const [treinos, corridas] = await Promise.all([
         db.workoutSession.count({ where: { userId, data: { gte: inicio, lte: fim } } }),
         db.run.count({ where: { userId, data: { gte: inicio, lte: fim } } }),
       ]);
-      return sessoes + corridas;
+      return calcularMetrica(metrica, { ...vazio, treinos, corridas });
     }
     case "corridas_completas": {
-      return db.run.count({ where: { userId, data: { gte: inicio, lte: fim } } });
+      const corridas = await db.run.count({
+        where: { userId, data: { gte: inicio, lte: fim } },
+      });
+      return calcularMetrica(metrica, { ...vazio, corridas });
     }
     case "km_corridos": {
       const agg = await db.run.aggregate({
         where: { userId, data: { gte: inicio, lte: fim } },
         _sum: { km: true },
       });
-      return agg._sum.km ?? 0;
+      return calcularMetrica(metrica, { ...vazio, km: agg._sum.km ?? 0 });
     }
     case "refeicoes_cumpridas": {
       const logs = await db.dietDayLog.findMany({
         where: { userId, data: { gte: inicio, lte: fim } },
         select: { refeicoesCumpridas: true },
       });
-      return logs.reduce(
+      const refeicoesCumpridas = logs.reduce(
         (s, log) => s + parseJSON<string[]>(log.refeicoesCumpridas, []).length,
         0
       );
+      return calcularMetrica(metrica, { ...vazio, refeicoesCumpridas });
     }
     case "horas_estudo": {
       const sessoes = await db.studySession.findMany({
         where: { userId, startedAt: { gte: inicio, lte: fim }, endedAt: { not: null } },
         select: { netSeconds: true },
       });
-      const segundos = sessoes.reduce((s, x) => s + x.netSeconds, 0);
-      return segundos / 3600;
+      const segundosEstudo = sessoes.reduce((s, x) => s + x.netSeconds, 0);
+      return calcularMetrica(metrica, { ...vazio, segundosEstudo });
+    }
+    case "dinheiro": {
+      const agg = await db.dinheiroLancamento.aggregate({
+        where: { userId, data: { gte: inicio, lte: fim } },
+        _sum: { valor: true },
+      });
+      return calcularMetrica(metrica, { ...vazio, dinheiroCentavos: agg._sum.valor ?? 0 });
     }
   }
 }
@@ -131,6 +158,15 @@ async function calcularAtualEmLote(
   const fimTotal = new Date(Math.max(...metas.map((m) => m.fim.getTime())));
   const dentro = (d: Date, inicio: Date, fim: Date) => d >= inicio && d <= fim;
 
+  const vazio = {
+    treinos: 0,
+    corridas: 0,
+    km: 0,
+    refeicoesCumpridas: 0,
+    segundosEstudo: 0,
+    dinheiroCentavos: 0,
+  };
+
   switch (metrica) {
     case "treinos": {
       const [sessoes, runs] = await Promise.all([
@@ -143,10 +179,12 @@ async function calcularAtualEmLote(
           select: { data: true },
         }),
       ]);
-      return metas.map(
-        ({ inicio, fim }) =>
-          sessoes.filter((s) => dentro(s.data, inicio, fim)).length +
-          runs.filter((r) => dentro(r.data, inicio, fim)).length
+      return metas.map(({ inicio, fim }) =>
+        calcularMetrica(metrica, {
+          ...vazio,
+          treinos: sessoes.filter((s) => dentro(s.data, inicio, fim)).length,
+          corridas: runs.filter((r) => dentro(r.data, inicio, fim)).length,
+        })
       );
     }
     case "corridas_completas": {
@@ -154,7 +192,12 @@ async function calcularAtualEmLote(
         where: { userId, data: { gte: inicioTotal, lte: fimTotal } },
         select: { data: true },
       });
-      return metas.map(({ inicio, fim }) => runs.filter((r) => dentro(r.data, inicio, fim)).length);
+      return metas.map(({ inicio, fim }) =>
+        calcularMetrica(metrica, {
+          ...vazio,
+          corridas: runs.filter((r) => dentro(r.data, inicio, fim)).length,
+        })
+      );
     }
     case "km_corridos": {
       const runs = await db.run.findMany({
@@ -162,7 +205,10 @@ async function calcularAtualEmLote(
         select: { data: true, km: true },
       });
       return metas.map(({ inicio, fim }) =>
-        runs.filter((r) => dentro(r.data, inicio, fim)).reduce((s, r) => s + r.km, 0)
+        calcularMetrica(metrica, {
+          ...vazio,
+          km: runs.filter((r) => dentro(r.data, inicio, fim)).reduce((s, r) => s + r.km, 0),
+        })
       );
     }
     case "refeicoes_cumpridas": {
@@ -171,9 +217,12 @@ async function calcularAtualEmLote(
         select: { data: true, refeicoesCumpridas: true },
       });
       return metas.map(({ inicio, fim }) =>
-        logs
-          .filter((l) => dentro(l.data, inicio, fim))
-          .reduce((s, l) => s + parseJSON<string[]>(l.refeicoesCumpridas, []).length, 0)
+        calcularMetrica(metrica, {
+          ...vazio,
+          refeicoesCumpridas: logs
+            .filter((l) => dentro(l.data, inicio, fim))
+            .reduce((s, l) => s + parseJSON<string[]>(l.refeicoesCumpridas, []).length, 0),
+        })
       );
     }
     case "horas_estudo": {
@@ -181,12 +230,28 @@ async function calcularAtualEmLote(
         where: { userId, startedAt: { gte: inicioTotal, lte: fimTotal }, endedAt: { not: null } },
         select: { startedAt: true, netSeconds: true },
       });
-      return metas.map(({ inicio, fim }) => {
-        const segundos = sessoes
-          .filter((s) => dentro(s.startedAt, inicio, fim))
-          .reduce((s, x) => s + x.netSeconds, 0);
-        return segundos / 3600;
+      return metas.map(({ inicio, fim }) =>
+        calcularMetrica(metrica, {
+          ...vazio,
+          segundosEstudo: sessoes
+            .filter((s) => dentro(s.startedAt, inicio, fim))
+            .reduce((s, x) => s + x.netSeconds, 0),
+        })
+      );
+    }
+    case "dinheiro": {
+      const lancamentos = await db.dinheiroLancamento.findMany({
+        where: { userId, data: { gte: inicioTotal, lte: fimTotal } },
+        select: { data: true, valor: true },
       });
+      return metas.map(({ inicio, fim }) =>
+        calcularMetrica(metrica, {
+          ...vazio,
+          dinheiroCentavos: lancamentos
+            .filter((l) => dentro(l.data, inicio, fim))
+            .reduce((s, l) => s + l.valor, 0),
+        })
+      );
     }
   }
 }

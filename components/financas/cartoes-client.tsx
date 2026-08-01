@@ -17,6 +17,7 @@ import { Card, CardLabel } from "@/components/caverna/card";
 import { DotsMenu } from "@/components/caverna/dots-menu";
 import { EmptyState } from "@/components/caverna/empty-state";
 import { MoneyInput } from "@/components/caverna/money-input";
+import { LogoInstituicao } from "@/components/financas/logo-instituicao";
 import {
   createCartao,
   deleteCartao,
@@ -25,6 +26,7 @@ import {
 } from "@/app/actions/financas";
 import type { FaturaCartao } from "@/lib/data/financas";
 import { formatBRL } from "@/lib/money";
+import { INSTITUICOES } from "@/lib/instituicoes-financeiras";
 
 const bandeiras = ["Visa", "Mastercard", "Elo", "Amex", "Hipercard"];
 
@@ -36,6 +38,7 @@ const tipos: { value: CartaoInput["tipo"]; label: string }[] = [
 const vazio: CartaoInput = {
   nome: "",
   bandeira: "Visa",
+  instituicao: null,
   tipo: "credito",
   limite: 0,
   fechamento: 1,
@@ -57,13 +60,14 @@ export function CartoesClient({ faturas }: { faturas: FaturaCartao[] }) {
         ? {
             nome: fatura.nome,
             bandeira: fatura.bandeira,
+            instituicao: fatura.instituicao,
             tipo: fatura.tipo,
             limite: fatura.limite,
             fechamento: fatura.fechamento,
             vencimento: fatura.vencimento,
             cor: fatura.cor,
           }
-        : vazio
+        : vazio,
     );
     setAberto(true);
   }
@@ -88,7 +92,8 @@ export function CartoesClient({ faturas }: { faturas: FaturaCartao[] }) {
           <CardLabel>Cartões</CardLabel>
           <EmptyState
             icon={CreditCard}
-            title="Nenhum cartão conectado."
+            title="Nenhum cartão cadastrado"
+            description="Cadastre um cartão para acompanhar fatura, limite e parcelas."
             className="py-14"
             action={
               <Button variant="dashed" size="sm" onClick={() => abrir(null)}>
@@ -103,15 +108,29 @@ export function CartoesClient({ faturas }: { faturas: FaturaCartao[] }) {
           {faturas.map((fatura) => (
             <Card key={fatura.id} className="col-span-12 md:col-span-6">
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <CardLabel>
-                    {fatura.bandeira} · {fatura.tipo === "credito" ? "Crédito" : "Débito"}
-                  </CardLabel>
-                  <p className="mt-1.5 text-[15px] text-paper">{fatura.nome}</p>
+                <div className="flex items-start gap-3">
+                  <LogoInstituicao
+                    instituicao={fatura.instituicao}
+                    nomeFallback={fatura.nome}
+                    size={32}
+                  />
+                  <div>
+                    <CardLabel>
+                      {fatura.bandeira} ·{" "}
+                      {fatura.tipo === "credito" ? "Crédito" : "Débito"}
+                    </CardLabel>
+                    <p className="mt-1.5 text-[15px] text-paper">
+                      {fatura.nome}
+                    </p>
+                  </div>
                 </div>
                 <DotsMenu
                   items={[
-                    { label: "Editar", icon: Pencil, onSelect: () => abrir(fatura) },
+                    {
+                      label: "Editar",
+                      icon: Pencil,
+                      onSelect: () => abrir(fatura),
+                    },
                     {
                       label: "Excluir",
                       icon: Trash2,
@@ -143,17 +162,19 @@ export function CartoesClient({ faturas }: { faturas: FaturaCartao[] }) {
                             fatura.pctLimite > 100
                               ? "var(--color-coral)"
                               : fatura.pctLimite >= 70
-                              ? "var(--color-amber)"
-                              : "var(--color-mint)",
+                                ? "var(--color-amber)"
+                                : "var(--color-mint)",
                         }}
                       />
                     </div>
                     <div className="mt-2 flex items-center justify-between text-[11.5px] text-steel">
                       <span className="tabular">
-                        {Math.round(fatura.pctLimite)}% de {formatBRL(fatura.limite)}
+                        {Math.round(fatura.pctLimite)}% de{" "}
+                        {formatBRL(fatura.limite)}
                       </span>
                       <span className="tabular">
-                        Fecha dia {fatura.fechamento} · vence dia {fatura.vencimento}
+                        Fecha dia {fatura.fechamento} · vence dia{" "}
+                        {fatura.vencimento}
                       </span>
                     </div>
                   </div>
@@ -177,7 +198,9 @@ export function CartoesClient({ faturas }: { faturas: FaturaCartao[] }) {
 
       <Sheet open={aberto} onOpenChange={setAberto}>
         <SheetContent aria-describedby={undefined}>
-          <SheetTitle>{editandoId ? "Editar cartão" : "Novo cartão"}</SheetTitle>
+          <SheetTitle>
+            {editandoId ? "Editar cartão" : "Novo cartão"}
+          </SheetTitle>
           <div className="mt-6 flex flex-col gap-5">
             <div>
               <Label htmlFor="cartao-nome">Nome</Label>
@@ -187,6 +210,31 @@ export function CartoesClient({ faturas }: { faturas: FaturaCartao[] }) {
                 onChange={(e) => setForm({ ...form, nome: e.target.value })}
                 placeholder="Nubank, Inter…"
               />
+            </div>
+
+            <div>
+              <Label>Instituição</Label>
+              <Select
+                value={form.instituicao ?? "nenhuma"}
+                onValueChange={(v) =>
+                  setForm({ ...form, instituicao: v === "nenhuma" ? null : v })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Nenhuma" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="nenhuma">Nenhuma</SelectItem>
+                  {INSTITUICOES.map((i) => (
+                    <SelectItem key={i.slug} value={i.slug}>
+                      <span className="flex items-center gap-2">
+                        <LogoInstituicao instituicao={i.slug} size={18} />
+                        {i.nome}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div>
@@ -248,8 +296,12 @@ export function CartoesClient({ faturas }: { faturas: FaturaCartao[] }) {
                       max={31}
                       value={form.fechamento ?? 1}
                       onChange={(e) =>
-                        setForm({ ...form, fechamento: Number(e.target.value) || 1 })
+                        setForm({
+                          ...form,
+                          fechamento: Number(e.target.value) || 1,
+                        })
                       }
+                      onFocus={(e) => e.target.select()}
                       className="tabular"
                     />
                   </div>
@@ -262,8 +314,12 @@ export function CartoesClient({ faturas }: { faturas: FaturaCartao[] }) {
                       max={31}
                       value={form.vencimento ?? 1}
                       onChange={(e) =>
-                        setForm({ ...form, vencimento: Number(e.target.value) || 1 })
+                        setForm({
+                          ...form,
+                          vencimento: Number(e.target.value) || 1,
+                        })
                       }
+                      onFocus={(e) => e.target.select()}
                       className="tabular"
                     />
                   </div>

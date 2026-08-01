@@ -168,7 +168,11 @@ async function VisaoGeral({ userId, hoje }: { userId: string; hoje: Date }) {
         <CardLabel>Sessões recentes</CardLabel>
         <div className="mt-4 flex flex-col">
           {sessoes.length === 0 ? (
-            <EmptyState icon={Dumbbell} title="Nenhum treino registrado ainda." />
+            <EmptyState
+              icon={Dumbbell}
+              title="Nenhum treino registrado ainda"
+              description="Execute uma ficha para ver aqui suas sessões, séries e tonelagem."
+            />
           ) : (
             sessoes.map((s) => {
               const tonelagem = s.setLogs.reduce(

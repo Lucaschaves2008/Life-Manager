@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -55,6 +56,7 @@ export type TransacaoEditavel = {
   destinoTipo: TipoPonta | null;
   destinoId: string | null;
   tags: string[];
+  natureza?: string;
 };
 
 const rotuloPonta: Record<TipoPonta, string> = {
@@ -181,6 +183,7 @@ export function TransacaoSheet({
   const [cardId, setCardId] = useState(editando?.cardId ?? "");
   const [tags, setTags] = useState<string[]>(editando?.tags ?? []);
   const [parcelas, setParcelas] = useState(1);
+  const [compromisso, setCompromisso] = useState(editando?.natureza === "compromisso");
 
   const categoriasDoTipo = categorias.filter((c) =>
     tipo === "receita" ? c.tipo === "receita" : c.tipo === "despesa"
@@ -210,6 +213,7 @@ export function TransacaoSheet({
       destinoId: destino?.id ?? null,
       tags,
       parcelas,
+      natureza: tipo === "despesa" && compromisso ? "compromisso" : "despesa",
     };
 
     startTransition(async () => {
@@ -389,6 +393,7 @@ export function TransacaoSheet({
                 max={48}
                 value={parcelas}
                 onChange={(e) => setParcelas(Number(e.target.value) || 1)}
+                onFocus={(e) => e.target.select()}
                 className="tabular"
               />
               {parcelas > 1 && (
@@ -397,6 +402,22 @@ export function TransacaoSheet({
                 </p>
               )}
             </div>
+          )}
+
+          {tipo === "despesa" && (
+            <label className="flex cursor-pointer items-start gap-2 text-[13px] text-mist">
+              <Checkbox
+                className="mt-0.5"
+                checked={compromisso}
+                onCheckedChange={(v) => setCompromisso(v === true)}
+              />
+              <span>
+                É um compromisso, não uma despesa
+                <span className="mt-0.5 block text-[11.5px] text-steel">
+                  Ex.: aporte mensal fixo — aparece na lista, mas não entra nos totais de gasto.
+                </span>
+              </span>
+            </label>
           )}
 
           <div className="mt-1 flex items-center gap-3">

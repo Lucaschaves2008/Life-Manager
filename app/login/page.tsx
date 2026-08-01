@@ -2,6 +2,7 @@ import { Input, Label } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { LcLogo } from "@/components/shell/lc-logo";
 import { signIn } from "@/app/actions/auth";
+import Link from "next/link";
 
 export default async function LoginPage({
   searchParams,
@@ -63,7 +64,10 @@ export default async function LoginPage({
           </form>
 
           <p className="mt-8 text-center text-[12px] text-steel">
-            Acesso restrito · uso pessoal
+            Não tem conta?{" "}
+            <Link href="/cadastro" className="text-mist underline underline-offset-2">
+              Criar conta
+            </Link>
           </p>
         </div>
       </div>

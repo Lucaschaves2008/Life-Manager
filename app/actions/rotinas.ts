@@ -421,3 +421,39 @@ export async function escolherRotinaPlanoDoDia(dia: string, planoId: string) {
   }
   revalidar(userId);
 }
+
+// ---------- Registro do dia (descrição + dashboard de histórico) ----------
+
+/** Salva/atualiza a descrição do dia (escrita ao concluir o checklist, ou depois). */
+export async function salvarDiaRegistro(dia: string, descricao: string, pct: number) {
+  const { id: userId } = await requireUser();
+  const data = dataDoDia(dia);
+  const texto = descricao.trim();
+  if (!texto) return;
+
+  await db.diaRegistro.upsert({
+    where: { userId_data: { userId, data } },
+    create: { userId, data, descricao: texto, pct: Math.round(pct) },
+    update: { descricao: texto, pct: Math.round(pct) },
+  });
+  revalidar(userId);
+}
+
+export async function excluirDiaRegistro(dia: string) {
+  const { id: userId } = await requireUser();
+  const data = dataDoDia(dia);
+  await db.diaRegistro.deleteMany({ where: { userId, data } });
+  revalidar(userId);
+}
+
+/** "Reiniciar dia" — desmarca tudo que foi feito naquele dia (rotinas + variáveis), sem tocar nos moldes. */
+export async function reiniciarDiaChecklist(dia: string) {
+  const { id: userId } = await requireUser();
+  const data = dataDoDia(dia);
+  await db.$transaction([
+    db.rotinaCheckDia.deleteMany({ where: { userId, data } }),
+    db.variavelCheckDia.deleteMany({ where: { userId, data } }),
+    db.diaRegistro.deleteMany({ where: { userId, data } }),
+  ]);
+  revalidar(userId);
+}

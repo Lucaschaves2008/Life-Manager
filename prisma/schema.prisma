@@ -70,6 +70,9 @@ model Card {
   contaFinanceiraId String
   nome              String
   bandeira          String
+  // slug da instituição emissora (ex.: "nubank", "inter") — usado para achar o
+  // logo em public/brand/bancos/; null cai no fallback de inicial colorida.
+  instituicao       String?
   tipo              String          @default("credito")
   limite            Int?
   fechamento        Int
@@ -87,6 +90,10 @@ model Transaction {
   userId            String
   contaFinanceiraId String
   tipo              String
+  // "despesa" | "compromisso" — compromisso é um lançamento tipo="despesa" que
+  // representa um comprometimento recorrente (ex.: aporte mensal fixo) e por
+  // isso fica de fora dos totais/gráficos de gasto, mas aparece na listagem.
+  natureza          String          @default("despesa")
   valor             Int
   data              DateTime
   descricao         String
@@ -314,12 +321,20 @@ model DietDayLog {
 }
 
 model WeightLog {
-  id      String   @id @default(cuid())
-  userId  String
-  data    DateTime
-  pesoKg  Float
-  cintura Float?
-  braco   Float?
+  id                 String   @id @default(cuid())
+  userId             String
+  data               DateTime
+  pesoKg             Float
+  cintura            Float?
+  braco              Float?
+  // Principais (bioimpedância básica)
+  percentualGordura  Float?
+  massaMuscular      Float?
+  // Opcionais (bioimpedância completa) — a maioria não faz exame com esses dados
+  aguaCorporal       Float?
+  massaOssea         Float?
+  gorduraVisceral    Float?
+  tmb                Int?
 
   @@index([userId, data])
 }
@@ -669,6 +684,22 @@ model MetaQuantitativa {
   @@index([userId, periodo, chave])
 }
 
+/// Lançamento manual de dinheiro ganho (ex.: "ganhei R$500"), em centavos.
+/// Fonte única e global do usuário para a métrica "dinheiro" — qualquer
+/// MetaQuantitativa ou DesafioMeta com metrica="dinheiro" soma estes
+/// lançamentos dentro do período da meta, então um único lançamento reflete
+/// automaticamente em todas as metas/desafios que usam essa métrica.
+model DinheiroLancamento {
+  id        String   @id @default(cuid())
+  userId    String
+  valor     Int
+  descricao String?
+  data      DateTime
+  criadoEm  DateTime @default(now())
+
+  @@index([userId, data])
+}
+
 // Variável pessoal contável, criada livremente pelo usuário (ex.: "Corrida",
 // "Sem pornografia"). Aparece no checklist diário ao lado de RotinaTemplate
 // (ver lib/data/rotinas.ts + lib/data/variaveis.ts: itensChecklistDoDia), mas
@@ -930,6 +961,21 @@ model RotinaCheckDia {
   @@index([userId, data])
 }
 
+/// Descrição/reflexão que o usuário escreve ao concluir 100% do checklist do
+/// dia — alimenta o dashboard de histórico (timeline). pct é o snapshot do
+/// % de conclusão no momento do registro (o checklist do dia pode mudar depois).
+model DiaRegistro {
+  id        String   @id @default(cuid())
+  userId    String
+  data      DateTime // início do dia em SP
+  descricao String
+  pct       Int
+  criadoEm  DateTime @default(now())
+
+  @@unique([userId, data])
+  @@index([userId, data])
+}
+
 /// Registro PERMANENTE de que o usuário esteve ativo num dia (qualquer ação:
 /// check-in, treino, dieta, estudo). Uma vez gravado NÃO é removido — desfazer
 /// a ação (ex.: desmarcar um check-in) não apaga o dia da ofensiva. É a fonte
@@ -954,4 +1000,11 @@ model Profile {
   role      String   @default("user")
   status    String   @default("ativo")
   criadoEm  DateTime @default(now())
+
+  // Lembrete pessoal "atualizar peso/métricas" — mesmo padrão de
+  // Asset.revisarACada/proximaRevisao (lib/data/investimentos.ts): intervalo em
+  // dias configurado pelo usuário + próxima data calculada e persistida,
+  // reagendada automaticamente a cada novo WeightLog.
+  revisarPesoACada    Int?
+  proximaRevisaoPeso  DateTime?
 }

@@ -10,6 +10,7 @@ import { documentoDoDesafio } from "@/lib/data/desafios-documento";
 import { variaveisAtivas } from "@/lib/data/variaveis";
 import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { dayKeySP, nowSP } from "@/lib/dates";
 import { initials } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -79,6 +80,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
         variaveis={variaveis}
         mensagensIniciais={mensagensIniciais}
         documentoInicial={documento}
+        hoje={dayKeySP(nowSP())}
       />
     </div>
   );

@@ -15,6 +15,12 @@ import {
   spStartOfMonth,
   toSP,
 } from "@/lib/dates";
+import { aportadoEm, dividendosEm, valorEm, type Movimento } from "@/lib/data/investimentos-calc";
+
+// Cálculos puros (valorEm/aportadoEm/dividendosEm) vivem em investimentos-calc.ts,
+// sem dependência de "server-only"/db — permite testá-los sem mockar o Prisma.
+export { aportadoEm, dividendosEm, valorEm };
+export type { Movimento };
 
 // Padrão de cache: a função exportada mantém a assinatura original (contaFinanceiraId,
 // ref?) e delega para uma interna "use cache" com chaves ESTÁVEIS (contaFinanceiraId +
@@ -34,53 +40,6 @@ async function carteiraCacheada(contaFinanceiraId: string) {
     include: { movements: { orderBy: { data: "asc" } } },
     orderBy: { criadoEm: "asc" },
   });
-}
-
-export type Movimento = {
-  id: string;
-  tipo: string;
-  valor: number;
-  data: Date;
-  nota: string | null;
-};
-
-/**
- * Valor de um ativo numa data: caminha os movimentos em ordem cronológica.
- * aporte e dividendo somam, resgate subtrai, atualizacao DEFINE o valor total.
- */
-export function valorEm(movs: Movimento[], ate: Date): number {
-  let valor = 0;
-  for (const m of movs) {
-    if (m.data > ate) break;
-    if (m.tipo === "aporte" || m.tipo === "dividendo") valor += m.valor;
-    else if (m.tipo === "resgate") valor -= m.valor;
-    else if (m.tipo === "atualizacao") valor = m.valor;
-  }
-  return Math.max(0, valor);
-}
-
-/**
- * Aportes − resgates até a data (dinheiro do próprio bolso).
- * Dividendos NÃO entram: são rendimento, não capital investido.
- */
-export function aportadoEm(movs: Movimento[], ate: Date): number {
-  let total = 0;
-  for (const m of movs) {
-    if (m.data > ate) break;
-    if (m.tipo === "aporte") total += m.valor;
-    else if (m.tipo === "resgate") total -= m.valor;
-  }
-  return total;
-}
-
-/** Soma dos dividendos recebidos até a data. */
-export function dividendosEm(movs: Movimento[], ate: Date): number {
-  let total = 0;
-  for (const m of movs) {
-    if (m.data > ate) break;
-    if (m.tipo === "dividendo") total += m.valor;
-  }
-  return total;
 }
 
 export type AtivoResumo = {
@@ -318,6 +277,52 @@ async function aportesDevidosDoDia(
       cor: a.cor,
       diaAporte: a.diaAporte!,
     }));
+}
+
+export type RevisaoDevida = {
+  id: string;
+  nome: string;
+  instituicao: string;
+  cor: string;
+  proximaRevisao: Date;
+  vencida: boolean;
+};
+
+/** Ativos com revisarACada configurado cuja proximaRevisao já chegou ou está próxima (lembrete). */
+export async function revisoesDevidas(
+  contaFinanceiraId: string,
+  dias = 7,
+  ref: Date = new Date()
+): Promise<RevisaoDevida[]> {
+  return revisoesDevidasDoDia(contaFinanceiraId, dias, dayKeySP(ref));
+}
+
+async function revisoesDevidasDoDia(
+  contaFinanceiraId: string,
+  dias: number,
+  dia: string
+): Promise<RevisaoDevida[]> {
+  "use cache";
+  cacheTag(tagUsuario(contaFinanceiraId, "investimentos"));
+  cacheLife("days");
+
+  const hoje = spEndOfDay(refDoDiaSP(dia));
+  const limite = new Date(hoje);
+  limite.setDate(limite.getDate() + dias);
+
+  const ativos = (await carregarCarteira(contaFinanceiraId))
+    .filter((a) => a.revisarACada !== null && a.proximaRevisao !== null)
+    .filter((a) => a.proximaRevisao! <= limite)
+    .sort((a, b) => a.proximaRevisao!.getTime() - b.proximaRevisao!.getTime());
+
+  return ativos.map((a) => ({
+    id: a.id,
+    nome: a.nome,
+    instituicao: a.instituicao,
+    cor: a.cor,
+    proximaRevisao: a.proximaRevisao!,
+    vencida: a.proximaRevisao! <= hoje,
+  }));
 }
 
 export type ResumoCarteira = {

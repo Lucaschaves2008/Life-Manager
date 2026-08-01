@@ -94,7 +94,7 @@ export function StatCardDetalhe({
                   />
                 </div>
               </div>
-              <div className="tabular text-[26px] font-semibold leading-none text-paper">
+              <div className="tabular text-[clamp(18px,5.5vw,26px)] font-semibold leading-tight text-paper">
                 {value}
               </div>
               <div className="mt-auto flex items-center gap-2 text-[12.5px] text-steel">
@@ -125,8 +125,8 @@ export function StatCardDetalhe({
             <DialogTitle asChild>
               <CardLabel>{label}</CardLabel>
             </DialogTitle>
-            <div className="tabular mt-3 flex items-end gap-2.5">
-              <span className="display text-[34px] leading-none text-paper">
+            <div className="tabular mt-3 flex flex-wrap items-end gap-2.5">
+              <span className="display text-[clamp(24px,8vw,34px)] leading-none text-paper">
                 {value}
               </span>
               {typeof pct === "number" && (

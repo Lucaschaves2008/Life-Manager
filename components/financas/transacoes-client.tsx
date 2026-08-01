@@ -87,9 +87,10 @@ export function TransacoesClient({
   const router = useRouter();
   const params = useSearchParams();
   const [, startTransition] = useTransition();
-  const [sheet, setSheet] = useState<{ aberto: boolean; item: TransacaoEditavel | null }>(
-    { aberto: false, item: null }
-  );
+  const [sheet, setSheet] = useState<{
+    aberto: boolean;
+    item: TransacaoEditavel | null;
+  }>({ aberto: false, item: null });
   const [busca, setBusca] = useState(params.get("q") ?? "");
 
   const abrirNovo = params.get("novo") === "1";
@@ -201,7 +202,8 @@ export function TransacoesClient({
       {linhas.length === 0 ? (
         <EmptyState
           icon={Search}
-          title="Nenhuma transação para esses filtros."
+          title="Nenhuma transação para esses filtros"
+          description="Ajuste o período ou limpe os filtros para ver seus lançamentos."
           className="py-16"
           action={
             <Button
@@ -238,6 +240,11 @@ export function TransacoesClient({
                         {linha.parcelaNum}/{linha.parcelaTotal}
                       </span>
                     )}
+                    {linha.natureza === "compromisso" && (
+                      <span className="rounded-full bg-amber-soft px-2 py-0.5 text-[11px] text-amber">
+                        Compromisso
+                      </span>
+                    )}
                     {linha.tags.map((tag) => (
                       <span
                         key={tag}
@@ -253,7 +260,10 @@ export function TransacoesClient({
                     <span className="flex items-center gap-1.5">
                       <IconePonta tipo={linha.origemTipo} />
                       {linha.origemNome ?? "—"}
-                      <ArrowRight className="h-3 w-3 shrink-0 text-steel" strokeWidth={1.5} />
+                      <ArrowRight
+                        className="h-3 w-3 shrink-0 text-steel"
+                        strokeWidth={1.5}
+                      />
                       <IconePonta tipo={linha.destinoTipo} />
                       {linha.destinoNome ?? "—"}
                     </span>
@@ -272,7 +282,7 @@ export function TransacoesClient({
                   <span
                     className={cn(
                       "tabular",
-                      linha.tipo === "receita" ? "text-mint" : "text-ice"
+                      linha.tipo === "receita" ? "text-mint" : "text-ice",
                     )}
                   >
                     {linha.tipo === "receita" ? "+" : ""}

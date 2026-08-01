@@ -202,19 +202,19 @@ export function CalculadoraClient() {
           <div className="mt-6 grid grid-cols-12 gap-4">
             <div className="col-span-12 rounded-[16px] border border-[rgba(13,110,253,.25)] bg-mint-soft p-5 lg:col-span-4">
               <p className="microlabel">Total acumulado</p>
-              <p className="tabular mt-2 text-[24px] font-semibold leading-none text-paper">
+              <p className="tabular mt-2 text-[clamp(17px,5.5vw,24px)] font-semibold leading-tight text-paper">
                 {formatBRL(resultado.total)}
               </p>
             </div>
             <div className="col-span-6 rounded-[16px] border border-stroke bg-surface-2 p-5 lg:col-span-4">
               <p className="microlabel">Total aportado</p>
-              <p className="tabular mt-2 text-[24px] font-semibold leading-none text-ice">
+              <p className="tabular mt-2 text-[clamp(14px,4.6vw,24px)] font-semibold leading-tight text-ice">
                 {formatBRL(resultado.aportado)}
               </p>
             </div>
             <div className="col-span-6 rounded-[16px] border border-stroke bg-surface-2 p-5 lg:col-span-4">
               <p className="microlabel">Rendimento total</p>
-              <p className="tabular mt-2 text-[24px] font-semibold leading-none text-mint">
+              <p className="tabular mt-2 text-[clamp(14px,4.6vw,24px)] font-semibold leading-tight text-mint">
                 {formatBRL(resultado.rendimento)}
               </p>
             </div>

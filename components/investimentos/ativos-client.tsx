@@ -105,7 +105,10 @@ const rotuloMovimento: Record<string, string> = {
   dividendo: "Dividendo",
 };
 
-const iconeMovimento: Record<string, { Icon: typeof ArrowUpRight; cor: string }> = {
+const iconeMovimento: Record<
+  string,
+  { Icon: typeof ArrowUpRight; cor: string }
+> = {
   aporte: { Icon: ArrowUpRight, cor: "text-mint" },
   resgate: { Icon: ArrowDownRight, cor: "text-coral" },
   atualizacao: { Icon: RotateCcw, cor: "text-steel" },
@@ -201,7 +204,7 @@ export function AtivosClient({
             diaAporte: ativo.diaAporte,
             revisarACada: ativo.revisarACada,
           }
-        : ativoVazio
+        : ativoVazio,
     );
     setSheetAtivo(true);
   }
@@ -227,10 +230,10 @@ export function AtivosClient({
         mov.tipo === "aporte"
           ? "Aporte registrado"
           : mov.tipo === "resgate"
-          ? "Resgate registrado"
-          : mov.tipo === "dividendo"
-          ? "Dividendo registrado"
-          : "Valor atualizado"
+            ? "Resgate registrado"
+            : mov.tipo === "dividendo"
+              ? "Dividendo registrado"
+              : "Valor atualizado",
       );
       setMov({ tipo: "aporte", valor: 0, data: hoje, nota: "" });
       setDetalhe(null);
@@ -281,9 +284,7 @@ export function AtivosClient({
           <Sparkline
             values={ativo.serie}
             cor={
-              ativo.rendimento >= 0
-                ? "var(--color-mint)"
-                : "var(--color-coral)"
+              ativo.rendimento >= 0 ? "var(--color-mint)" : "var(--color-coral)"
             }
           />
         </Td>
@@ -353,7 +354,8 @@ export function AtivosClient({
       {ativos.length === 0 ? (
         <EmptyState
           icon={TrendingUp}
-          title="Nenhum ativo na carteira ainda."
+          title="Nenhum ativo na carteira ainda"
+          description="Cadastre seu primeiro ativo para acompanhar aportes e rendimento."
           className="py-16"
           action={
             <Button variant="dashed" size="sm" onClick={() => abrirAtivo(null)}>
@@ -389,7 +391,9 @@ export function AtivosClient({
                   </div>
                   <Table>
                     {cabecalho}
-                    <tbody>{grupo.ativos.map((ativo) => renderLinha(ativo))}</tbody>
+                    <tbody>
+                      {grupo.ativos.map((ativo) => renderLinha(ativo))}
+                    </tbody>
                   </Table>
                 </div>
               ))}
@@ -450,7 +454,9 @@ export function AtivosClient({
               <Input
                 id="instituicao"
                 value={form.instituicao}
-                onChange={(e) => setForm({ ...form, instituicao: e.target.value })}
+                onChange={(e) =>
+                  setForm({ ...form, instituicao: e.target.value })
+                }
                 placeholder="Inter, NuInvest…"
               />
             </div>
@@ -476,7 +482,8 @@ export function AtivosClient({
                 className="tabular"
               />
               <p className="mt-1.5 text-[11.5px] text-steel">
-                Dia do mês em que você costuma aportar. Vira lembrete na carteira.
+                Dia do mês em que você costuma aportar. Vira lembrete na
+                carteira.
               </p>
             </div>
             <div>
@@ -484,7 +491,10 @@ export function AtivosClient({
               <Select
                 value={String(form.revisarACada ?? 0)}
                 onValueChange={(v) =>
-                  setForm({ ...form, revisarACada: v === "0" ? null : Number(v) })
+                  setForm({
+                    ...form,
+                    revisarACada: v === "0" ? null : Number(v),
+                  })
                 }
               >
                 <SelectTrigger>
@@ -499,7 +509,8 @@ export function AtivosClient({
                 </SelectContent>
               </Select>
               <p className="mt-1.5 text-[11.5px] text-steel">
-                Avisa no sino quando estiver perto de vencer, com atalho para atualizar.
+                Avisa no sino quando estiver perto de vencer, com atalho para
+                atualizar.
               </p>
             </div>
             <div>
@@ -515,7 +526,7 @@ export function AtivosClient({
                       "h-7 w-7 rounded-full border-2 transition-transform",
                       form.cor.toUpperCase() === cor
                         ? "scale-110 border-paper"
-                        : "border-transparent"
+                        : "border-transparent",
                     )}
                     style={{ background: cor }}
                   />
@@ -585,30 +596,32 @@ export function AtivosClient({
                   )}
 
                   <div className="grid grid-cols-2 gap-1.5 rounded-[14px] border border-stroke bg-surface p-1">
-                    {(["aporte", "resgate", "atualizacao", "dividendo"] as const).map(
-                      (t) => (
-                        <button
-                          key={t}
-                          type="button"
-                          onClick={() => setMov({ ...mov, tipo: t })}
-                          className={cn(
-                            "rounded-[10px] py-1.5 text-[12.5px] transition-colors",
-                            mov.tipo === t
-                              ? t === "dividendo"
-                                ? "bg-elevated text-amber"
-                                : "bg-elevated text-ice"
-                              : "text-steel hover:text-mist"
-                          )}
-                        >
-                          {rotuloMovimento[t]}
-                        </button>
-                      )
-                    )}
+                    {(
+                      ["aporte", "resgate", "atualizacao", "dividendo"] as const
+                    ).map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => setMov({ ...mov, tipo: t })}
+                        className={cn(
+                          "rounded-[10px] py-1.5 text-[12.5px] transition-colors",
+                          mov.tipo === t
+                            ? t === "dividendo"
+                              ? "bg-elevated text-amber"
+                              : "bg-elevated text-ice"
+                            : "text-steel hover:text-mist",
+                        )}
+                      >
+                        {rotuloMovimento[t]}
+                      </button>
+                    ))}
                   </div>
 
                   <div>
                     <Label>
-                      {mov.tipo === "atualizacao" ? "Novo valor total" : "Valor"}
+                      {mov.tipo === "atualizacao"
+                        ? "Novo valor total"
+                        : "Valor"}
                     </Label>
                     <MoneyInput
                       value={mov.valor}
@@ -661,22 +674,30 @@ export function AtivosClient({
                   </p>
                 ) : (
                   [...detalhe.movimentos].reverse().map((m) => {
-                    const { Icon, cor } = iconeMovimento[m.tipo] ?? iconeMovimento.atualizacao;
+                    const { Icon, cor } =
+                      iconeMovimento[m.tipo] ?? iconeMovimento.atualizacao;
                     return (
                       <div
                         key={m.id}
                         className="group flex items-center gap-3 border-b border-stroke py-2.5 last:border-0"
                       >
-                        <Icon className={cn("h-4 w-4", cor)} strokeWidth={1.5} />
+                        <Icon
+                          className={cn("h-4 w-4", cor)}
+                          strokeWidth={1.5}
+                        />
                         <div className="min-w-0 flex-1">
                           <p
                             className={cn(
                               "flex items-center gap-1.5 text-[13px]",
-                              m.tipo === "dividendo" ? "text-amber" : "text-ice"
+                              m.tipo === "dividendo"
+                                ? "text-amber"
+                                : "text-ice",
                             )}
                           >
                             {rotuloMovimento[m.tipo] ?? "Atualização"}
-                            {m.tipo === "dividendo" && <span aria-hidden>💰</span>}
+                            {m.tipo === "dividendo" && (
+                              <span aria-hidden>💰</span>
+                            )}
                           </p>
                           <p className="tabular text-[11.5px] text-steel">
                             {m.dataLabel}
@@ -686,7 +707,7 @@ export function AtivosClient({
                         <span
                           className={cn(
                             "tabular text-[13px]",
-                            m.tipo === "dividendo" ? "text-amber" : "text-mist"
+                            m.tipo === "dividendo" ? "text-amber" : "text-mist",
                           )}
                         >
                           {m.tipo === "dividendo" ? "+" : ""}

@@ -106,9 +106,9 @@ export function UsuariosClient({ usuarios }: { usuarios: UsuarioView[] }) {
               className="cursor-pointer"
               onClick={() => setSelecionado(u)}
             >
-              <Td>
-                <div className="font-medium text-ice">{u.nome || u.email}</div>
-                {u.nome && <div className="text-[12px] text-steel">{u.email}</div>}
+              <Td className="max-w-[160px] whitespace-normal">
+                <div className="truncate font-medium text-ice">{u.nome || u.email}</div>
+                {u.nome && <div className="truncate text-[12px] text-steel">{u.email}</div>}
               </Td>
               <Td>
                 <StatusPill tone={u.role === "super_admin" ? "mint" : "steel"}>

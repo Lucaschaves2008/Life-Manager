@@ -1,9 +1,10 @@
 "use client";
 
 import { useOptimistic, useState, useTransition } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Target, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Checkbox } from "@/components/ui/checkbox";
+import { EmptyState } from "@/components/caverna/empty-state";
 import { Input } from "@/components/ui/input";
 import {
   createGoal,
@@ -53,9 +54,12 @@ export function GoalsChecklist({
   return (
     <div className="flex flex-col gap-1">
       {optimistic.length === 0 && !adding && (
-        <p className="py-3 text-[13px] text-steel">
-          Nenhuma meta para este mês ainda.
-        </p>
+        <EmptyState
+          icon={Target}
+          variant="inline"
+          title="Nenhuma meta para este mês ainda"
+          description="Defina o que você quer fechar neste mês e acompanhe o progresso aqui."
+        />
       )}
 
       {optimistic.map((goal) => (

@@ -191,6 +191,7 @@ export function DesafioMetaSheet({
               min={0}
               value={alvo || ""}
               onChange={(e) => setAlvo(Number(e.target.value))}
+              onFocus={(e) => e.target.select()}
               placeholder="Ex.: 10"
             />
           </div>

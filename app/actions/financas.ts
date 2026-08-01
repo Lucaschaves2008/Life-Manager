@@ -18,6 +18,8 @@ export type TipoPonta = "conta" | "cartao" | "ativo";
 
 export type TransacaoInput = {
   tipo: "despesa" | "receita" | "transferencia";
+  /** "compromisso" = despesa que é um comprometimento (ex.: aporte mensal fixo) — some dos totais de gasto. */
+  natureza?: "despesa" | "compromisso";
   valor: number;
   data: string; // yyyy-MM-dd
   descricao: string;
@@ -152,6 +154,7 @@ export async function createTransacao(input: TransacaoInput) {
     userId,
     contaFinanceiraId,
     tipo: input.tipo,
+    natureza: transferencia ? "despesa" : input.natureza ?? "despesa",
     valor: input.valor,
     descricao: input.descricao,
     tags: JSON.stringify(input.tags ?? []),
@@ -208,6 +211,7 @@ export async function updateTransacao(id: string, input: TransacaoInput) {
 
   const data = {
     tipo: input.tipo,
+    natureza: transferencia ? "despesa" : input.natureza ?? "despesa",
     valor: input.valor,
     data: dataSP(input.data),
     descricao: input.descricao,
@@ -280,6 +284,7 @@ export async function deleteTransacao(id: string) {
 
 export async function restoreTransacao(dados: {
   tipo: string;
+  natureza?: string;
   valor: number;
   data: Date;
   descricao: string;
@@ -342,6 +347,8 @@ export type ParcelamentoInput = {
   categoryId?: string | null;
   cardId?: string | null;
   tags: string[];
+  /** "compromisso" = ex.: aporte mensal fixo — some dos totais de gasto, mas aparece na listagem. */
+  natureza?: "despesa" | "compromisso";
 };
 
 /** Recria as parcelas do grupo com os novos dados, mantendo o mesmo parcelaGrupo. */
@@ -363,6 +370,7 @@ export async function updateParcelamento(grupo: string, input: ParcelamentoInput
         userId,
         contaFinanceiraId,
         tipo: "despesa",
+        natureza: input.natureza ?? "despesa",
         valor: input.valorParcela,
         descricao: input.descricao,
         tags: JSON.stringify(input.tags ?? []),
@@ -423,6 +431,7 @@ export async function deleteCategoria(id: string) {
 export type CartaoInput = {
   nome: string;
   bandeira: string;
+  instituicao?: string | null;
   tipo: "debito" | "credito";
   limite?: number | null;
   fechamento?: number | null;
@@ -435,6 +444,7 @@ function normalizarCartao(input: CartaoInput) {
   return {
     nome: input.nome,
     bandeira: input.bandeira,
+    instituicao: input.instituicao ?? null,
     tipo: input.tipo,
     cor: input.cor,
     limite: credito ? input.limite ?? 0 : null,

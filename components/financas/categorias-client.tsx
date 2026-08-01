@@ -84,7 +84,8 @@ export function CategoriasClient({ itens }: { itens: CategoriaItem[] }) {
         {itens.length === 0 ? (
           <EmptyState
             icon={Tag}
-            title="Nenhuma categoria cadastrada."
+            title="Nenhuma categoria cadastrada"
+            description="Crie categorias para organizar seus gastos e definir orçamentos."
             className="py-14"
             action={
               <Button variant="dashed" size="sm" onClick={() => abrir(null)}>

@@ -54,16 +54,32 @@ export const dynamic = "force-dynamic";
 
 const tabs = [
   { label: "Visão geral", href: "/financas", value: "visao" },
-  { label: "Transações", href: "/financas?tab=transacoes", value: "transacoes" },
+  {
+    label: "Transações",
+    href: "/financas?tab=transacoes",
+    value: "transacoes",
+  },
   {
     label: "Parcelamentos",
     href: "/financas?tab=parcelamentos",
     value: "parcelamentos",
   },
-  { label: "Assinaturas", href: "/financas?tab=assinaturas", value: "assinaturas" },
-  { label: "Categorias", href: "/financas?tab=categorias", value: "categorias" },
+  {
+    label: "Assinaturas",
+    href: "/financas?tab=assinaturas",
+    value: "assinaturas",
+  },
+  {
+    label: "Categorias",
+    href: "/financas?tab=categorias",
+    value: "categorias",
+  },
   { label: "Cartões", href: "/financas?tab=cartoes", value: "cartoes" },
-  { label: "Metas de poupança", href: "/financas?tab=metas-poupanca", value: "metas-poupanca" },
+  {
+    label: "Metas de poupança",
+    href: "/financas?tab=metas-poupanca",
+    value: "metas-poupanca",
+  },
 ];
 
 type Busca = {
@@ -104,11 +120,14 @@ export default async function Page({
   const user = await getCurrentUser();
   const { id: contaFinanceiraId, contas } = await getContaAtiva(user.id);
   const busca = await searchParams;
-  const tab = busca.novo === "1" ? "transacoes" : busca.tab ?? "visao";
+  const tab = busca.novo === "1" ? "transacoes" : (busca.tab ?? "visao");
   const hoje = nowSP();
 
   const [categorias, contasSaldo, faturas, ativosResumo] = await Promise.all([
-    db.category.findMany({ where: { contaFinanceiraId }, orderBy: { nome: "asc" } }),
+    db.category.findMany({
+      where: { contaFinanceiraId },
+      orderBy: { nome: "asc" },
+    }),
     contasComSaldo(contaFinanceiraId),
     faturasDosCartoes(contaFinanceiraId, hoje),
     ativosResumidos(contaFinanceiraId, hoje),
@@ -141,12 +160,14 @@ export default async function Page({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between gap-4">
-        <PillTabs tabs={tabs} param="tab" />
+      <div className="flex flex-wrap items-center gap-2">
         <ContaFinanceiraSelector contas={contas} ativaId={contaFinanceiraId} />
+        <PillTabs tabs={tabs} param="tab" inline />
       </div>
 
-      {tab === "visao" && <VisaoGeral contaFinanceiraId={contaFinanceiraId} hoje={hoje} />}
+      {tab === "visao" && (
+        <VisaoGeral contaFinanceiraId={contaFinanceiraId} hoje={hoje} />
+      )}
       {tab === "transacoes" && (
         <Card>
           <Transacoes
@@ -169,17 +190,31 @@ export default async function Page({
           opcoesCartoes={opcoesCartoes}
         />
       )}
-      {tab === "assinaturas" && <Assinaturas contaFinanceiraId={contaFinanceiraId} />}
-      {tab === "categorias" && <Categorias contaFinanceiraId={contaFinanceiraId} hoje={hoje} />}
-      {tab === "cartoes" && <Cartoes contaFinanceiraId={contaFinanceiraId} hoje={hoje} />}
-      {tab === "metas-poupanca" && <MetasPoupanca contaFinanceiraId={contaFinanceiraId} />}
+      {tab === "assinaturas" && (
+        <Assinaturas contaFinanceiraId={contaFinanceiraId} />
+      )}
+      {tab === "categorias" && (
+        <Categorias contaFinanceiraId={contaFinanceiraId} hoje={hoje} />
+      )}
+      {tab === "cartoes" && (
+        <Cartoes contaFinanceiraId={contaFinanceiraId} hoje={hoje} />
+      )}
+      {tab === "metas-poupanca" && (
+        <MetasPoupanca contaFinanceiraId={contaFinanceiraId} />
+      )}
     </div>
   );
 }
 
 // ---------- Visão geral ----------
 
-async function VisaoGeral({ contaFinanceiraId, hoje }: { contaFinanceiraId: string; hoje: Date }) {
+async function VisaoGeral({
+  contaFinanceiraId,
+  hoje,
+}: {
+  contaFinanceiraId: string;
+  hoje: Date;
+}) {
   const [
     insight,
     resumo,
@@ -276,7 +311,11 @@ async function VisaoGeral({ contaFinanceiraId, hoje }: { contaFinanceiraId: stri
         </div>
         <div className="mt-4">
           {contas.length === 0 ? (
-            <EmptyState icon={Wallet} title="Nenhuma conta cadastrada." />
+            <EmptyState
+              icon={Wallet}
+              title="Nenhuma conta cadastrada"
+              description="Cadastre suas contas para acompanhar saldos e movimentações."
+            />
           ) : (
             <>
               {contas.map((conta) => (
@@ -301,7 +340,11 @@ async function VisaoGeral({ contaFinanceiraId, hoje }: { contaFinanceiraId: stri
         <CardLabel>Top categorias do mês</CardLabel>
         <div className="mt-5">
           {topCats.length === 0 ? (
-            <EmptyState icon={Layers} title="Sem gastos categorizados neste mês." />
+            <EmptyState
+              icon={Layers}
+              title="Sem gastos categorizados neste mês"
+              description="Categorize suas despesas para ver para onde o dinheiro está indo."
+            />
           ) : (
             <BarList
               items={topCats.map((c) => ({
@@ -335,8 +378,8 @@ async function VisaoGeral({ contaFinanceiraId, hoje }: { contaFinanceiraId: stri
           />
         </div>
         <p className="mt-4 text-[12.5px] text-steel">
-          <span className="tabular text-ice">{formatBRL(resumo.gastoMes)}</span> em{" "}
-          {mesRef}
+          <span className="tabular text-ice">{formatBRL(resumo.gastoMes)}</span>{" "}
+          em {mesRef}
         </p>
       </Card>
 
@@ -344,7 +387,11 @@ async function VisaoGeral({ contaFinanceiraId, hoje }: { contaFinanceiraId: stri
         <CardLabel>Próximos 7 dias</CardLabel>
         <div className="mt-4 flex flex-col">
           {vencimentos.length === 0 ? (
-            <EmptyState icon={CalendarClock} title="Nada a vencer nesta semana." />
+            <EmptyState
+              icon={CalendarClock}
+              title="Nada a vencer nesta semana"
+              description="Nenhuma conta ou fatura com vencimento nos próximos dias."
+            />
           ) : (
             vencimentos.slice(0, 6).map((v) => (
               <div
@@ -378,7 +425,11 @@ async function VisaoGeral({ contaFinanceiraId, hoje }: { contaFinanceiraId: stri
         <CardLabel>Faturas abertas</CardLabel>
         <div className="mt-4">
           {faturas.length === 0 ? (
-            <EmptyState icon={Wallet} title="Nenhum cartão conectado." />
+            <EmptyState
+              icon={Wallet}
+              title="Nenhum cartão cadastrado"
+              description="Cadastre um cartão para acompanhar faturas e limite disponível."
+            />
           ) : (
             faturas.map((f) => (
               <EntityRow
@@ -433,8 +484,9 @@ async function Transacoes({
 
   const total = txs.reduce(
     (s, t) =>
-      s + (t.tipo === "receita" ? t.valor : t.tipo === "despesa" ? -t.valor : 0),
-    0
+      s +
+      (t.tipo === "receita" ? t.valor : t.tipo === "despesa" ? -t.valor : 0),
+    0,
   );
 
   const nomePorPonta = new Map<string, string>();
@@ -442,7 +494,7 @@ async function Transacoes({
   opcoesCartoes.forEach((c) => nomePorPonta.set(`cartao:${c.id}`, c.nome));
   opcoesAtivos.forEach((a) => nomePorPonta.set(`ativo:${a.id}`, a.nome));
   const nomeDaPonta = (tipo: string | null, id: string | null) =>
-    tipo && id ? nomePorPonta.get(`${tipo}:${id}`) ?? "Excluído" : null;
+    tipo && id ? (nomePorPonta.get(`${tipo}:${id}`) ?? "Excluído") : null;
 
   const linhas: LinhaTransacao[] = txs.map((t) => ({
     id: t.id,
@@ -466,6 +518,7 @@ async function Transacoes({
     contaNome: t.account?.nome ?? null,
     parcelaNum: t.parcelaNum,
     parcelaTotal: t.parcelaTotal,
+    natureza: t.natureza,
   }));
 
   return (
@@ -539,6 +592,8 @@ async function Parcelamentos({
               categoryId: p.categoryId,
               cardId: p.cardId,
               tags: p.tags,
+              natureza:
+                p.natureza === "compromisso" ? "compromisso" : "despesa",
             }))}
             contas={opcoesContas}
             categorias={opcoesCategorias}
@@ -553,7 +608,11 @@ async function Parcelamentos({
 
 // ---------- Assinaturas ----------
 
-async function Assinaturas({ contaFinanceiraId }: { contaFinanceiraId: string }) {
+async function Assinaturas({
+  contaFinanceiraId,
+}: {
+  contaFinanceiraId: string;
+}) {
   const assinaturas = await db.subscription.findMany({
     where: { contaFinanceiraId },
     orderBy: { nome: "asc" },
@@ -596,9 +655,18 @@ async function Assinaturas({ contaFinanceiraId }: { contaFinanceiraId: string })
 
 // ---------- Categorias ----------
 
-async function Categorias({ contaFinanceiraId, hoje }: { contaFinanceiraId: string; hoje: Date }) {
+async function Categorias({
+  contaFinanceiraId,
+  hoje,
+}: {
+  contaFinanceiraId: string;
+  hoje: Date;
+}) {
   const [categorias, cats] = await Promise.all([
-    db.category.findMany({ where: { contaFinanceiraId }, orderBy: { nome: "asc" } }),
+    db.category.findMany({
+      where: { contaFinanceiraId },
+      orderBy: { nome: "asc" },
+    }),
     categoriasComparadas(contaFinanceiraId, hoje),
   ]);
   const gastoPorCat = new Map(cats.map((c) => [c.id, c.atual]));
@@ -629,7 +697,8 @@ async function Categorias({ contaFinanceiraId, hoje }: { contaFinanceiraId: stri
           {comOrcamento.length === 0 ? (
             <EmptyState
               icon={Layers}
-              title="Defina um orçamento nas categorias para acompanhar aqui."
+              title="Nenhum orçamento definido"
+              description="Defina um orçamento mensal nas categorias para acompanhar os limites aqui."
             />
           ) : (
             <BarList
@@ -639,7 +708,7 @@ async function Categorias({ contaFinanceiraId, hoje }: { contaFinanceiraId: stri
                 emoji: c.emoji,
                 value: c.atual,
                 valueLabel: `${formatBRL(c.atual)} de ${formatBRL(
-                  c.orcamentoMensal!
+                  c.orcamentoMensal!,
                 )}`,
                 budgetPct: (c.atual / c.orcamentoMensal!) * 100,
               }))}
@@ -653,39 +722,49 @@ async function Categorias({ contaFinanceiraId, hoje }: { contaFinanceiraId: stri
 
 // ---------- Cartões ----------
 
-async function Cartoes({ contaFinanceiraId, hoje }: { contaFinanceiraId: string; hoje: Date }) {
+async function Cartoes({
+  contaFinanceiraId,
+  hoje,
+}: {
+  contaFinanceiraId: string;
+  hoje: Date;
+}) {
   const faturas = await faturasDosCartoes(contaFinanceiraId, hoje);
   return <CartoesClient faturas={faturas} />;
 }
 
 // ---------- Metas de Poupança ----------
 
-async function MetasPoupanca({ contaFinanceiraId }: { contaFinanceiraId: string }) {
+async function MetasPoupanca({
+  contaFinanceiraId,
+}: {
+  contaFinanceiraId: string;
+}) {
   const { obterMetasPoupanca } = await import("@/lib/data/metas-poupanca");
 
   const [metas, cartoes, contas, ativos, categorias] = await Promise.all([
     obterMetasPoupanca(contaFinanceiraId),
     db.card.findMany({
       where: { contaFinanceiraId },
-      orderBy: { nome: "asc" }
+      orderBy: { nome: "asc" },
     }),
     db.account.findMany({
       where: { contaFinanceiraId },
-      orderBy: { nome: "asc" }
+      orderBy: { nome: "asc" },
     }),
     db.asset.findMany({
       where: { contaFinanceiraId },
       orderBy: { nome: "asc" },
       include: {
         movements: {
-          orderBy: { data: 'desc' },
+          orderBy: { data: "desc" },
           take: 1,
-        }
-      }
+        },
+      },
     }),
     db.category.findMany({
-      where: { contaFinanceiraId, tipo: 'receita' },
-      orderBy: { nome: "asc" }
+      where: { contaFinanceiraId, tipo: "receita" },
+      orderBy: { nome: "asc" },
     }),
   ]);
 
@@ -694,24 +773,24 @@ async function MetasPoupanca({ contaFinanceiraId }: { contaFinanceiraId: string 
       <MetasPoupancaClient
         metas={metas}
         contaFinanceiraId={contaFinanceiraId}
-        cartoes={cartoes.map(c => ({
+        cartoes={cartoes.map((c) => ({
           id: c.id,
           nome: c.nome,
           saldo: c.limite || 0,
           bandeira: c.bandeira,
         }))}
-        contas={contas.map(c => ({
+        contas={contas.map((c) => ({
           id: c.id,
           nome: c.nome,
           saldo: c.saldoInicial,
           tipo: c.tipo,
         }))}
-        ativos={ativos.map(a => ({
+        ativos={ativos.map((a) => ({
           id: a.id,
           nome: a.nome,
           saldo: a.movements.length > 0 ? a.movements[0].valor : 0,
         }))}
-        categorias={categorias.map(c => ({
+        categorias={categorias.map((c) => ({
           id: c.id,
           nome: c.nome,
         }))}

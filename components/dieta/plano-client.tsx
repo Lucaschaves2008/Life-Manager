@@ -138,7 +138,8 @@ export function PlanoClient({
         <Card>
           <EmptyState
             icon={Salad}
-            title="Nenhuma dieta montada ainda."
+            title="Nenhuma dieta montada ainda"
+            description="Monte seu plano alimentar com refeições e opções para bater suas metas."
             className="py-16"
             action={
               <Button variant="dashed" size="sm" onClick={() => abrirDieta(null)}>

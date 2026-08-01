@@ -3,6 +3,7 @@ import { Card, CardLabel } from "@/components/caverna/card";
 import { Donut } from "@/components/caverna/donut";
 import { EmptyState } from "@/components/caverna/empty-state";
 import { HeroMoney } from "@/components/caverna/hero-money";
+import { Sparkline } from "@/components/caverna/sparkline";
 import { StatCard } from "@/components/caverna/stat-card";
 import { VariationBadge } from "@/components/caverna/variation-badge";
 import {
@@ -16,6 +17,7 @@ import {
   ativosResumidos,
   evolucaoPatrimonio,
   resumoCarteira,
+  revisoesDevidas,
 } from "@/lib/data/investimentos";
 import { dayKeySP, mediumDate, monthName, nowSP, toSP } from "@/lib/dates";
 import { formatBRL } from "@/lib/money";
@@ -29,14 +31,16 @@ export default async function Page() {
   const user = await getCurrentUser();
   const { id: contaFinanceiraId, contas } = await getContaAtiva(user.id);
   const hoje = nowSP();
-  const [resumo, ativos, devidos, seis, doze, tudo] = await Promise.all([
-    resumoCarteira(contaFinanceiraId, hoje),
-    ativosResumidos(contaFinanceiraId, hoje),
-    aportesDevidos(contaFinanceiraId, 7, hoje),
-    evolucaoPatrimonio(contaFinanceiraId, 6, hoje),
-    evolucaoPatrimonio(contaFinanceiraId, 12, hoje),
-    evolucaoPatrimonio(contaFinanceiraId, 24, hoje),
-  ]);
+  const [resumo, ativos, devidos, revisoes, seis, doze, tudo] =
+    await Promise.all([
+      resumoCarteira(contaFinanceiraId, hoje),
+      ativosResumidos(contaFinanceiraId, hoje),
+      aportesDevidos(contaFinanceiraId, 7, hoje),
+      revisoesDevidas(contaFinanceiraId, 7, hoje),
+      evolucaoPatrimonio(contaFinanceiraId, 6, hoje),
+      evolucaoPatrimonio(contaFinanceiraId, 12, hoje),
+      evolucaoPatrimonio(contaFinanceiraId, 24, hoje),
+    ]);
 
   const view: AtivoView[] = ativos.map((a) => ({
     id: a.id,
@@ -63,6 +67,13 @@ export default async function Page() {
   }));
 
   const mesRef = monthName(toSP(hoje));
+
+  // Rendimento acumulado até cada mês (valor - aportado - dividendos) — a
+  // diferença entre pontos consecutivos é o rendimento daquele mês.
+  const acumuladoPorMes = seis.map((p) => p.valor - p.aportado - p.dividendos);
+  const rendimentoPorMes = acumuladoPorMes.map((v, i) =>
+    i === 0 ? v : v - acumuladoPorMes[i - 1],
+  );
 
   return (
     <div className="stagger grid grid-cols-12 gap-6">
@@ -110,6 +121,22 @@ export default async function Page() {
             ? "É o que a carteira rendeu sozinha no mês, sem contar aportes."
             : "A carteira recuou no mês, descontados aportes e resgates."}
         </p>
+
+        {rendimentoPorMes.length >= 2 && (
+          <div className="mt-5">
+            <Sparkline
+              serie={rendimentoPorMes}
+              cor={
+                resumo.rendimentoMes >= 0
+                  ? "var(--color-mint)"
+                  : "var(--color-coral)"
+              }
+            />
+            <p className="mt-2 text-[11.5px] text-steel">
+              Rendimento mensal nos últimos {rendimentoPorMes.length} meses.
+            </p>
+          </div>
+        )}
       </Card>
 
       <Card className="col-span-12 lg:col-span-8">
@@ -120,7 +147,11 @@ export default async function Page() {
         <CardLabel>Alocação por classe</CardLabel>
         <div className="mt-5">
           {resumo.porClasse.length === 0 ? (
-            <EmptyState icon={PieChart} title="Cadastre um ativo para ver a alocação." />
+            <EmptyState
+              icon={PieChart}
+              title="Sem alocação para mostrar"
+              description="Cadastre um ativo e veja como sua carteira se divide por classe."
+            />
           ) : (
             <Donut
               segments={resumo.porClasse.map((c) => ({
@@ -161,6 +192,34 @@ export default async function Page() {
                 <span className="text-[13px] text-ice">{d.nome}</span>
                 <span className="text-[12px] text-steel">
                   {d.instituicao} · dia {d.diaAporte}
+                </span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {revisoes.length > 0 && (
+        <Card className="col-span-12">
+          <CardLabel>Revisões pendentes</CardLabel>
+          <div className="mt-3 flex flex-wrap gap-2.5">
+            {revisoes.map((r) => (
+              <div
+                key={r.id}
+                className="flex items-center gap-2.5 rounded-full border border-stroke bg-surface-2 py-1.5 pl-2.5 pr-3.5"
+              >
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{ background: r.cor }}
+                />
+                <span className="text-[13px] text-ice">{r.nome}</span>
+                <span
+                  className={`text-[12px] ${r.vencida ? "text-amber" : "text-steel"}`}
+                >
+                  {r.instituicao} ·{" "}
+                  {r.vencida
+                    ? "vencida"
+                    : `até ${mediumDate(r.proximaRevisao)}`}
                 </span>
               </div>
             ))}

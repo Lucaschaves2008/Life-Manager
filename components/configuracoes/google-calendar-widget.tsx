@@ -44,7 +44,11 @@ export function GoogleCalendarWidget() {
       const authUrl = await getGoogleAuthUrl();
       window.location.href = authUrl;
     } catch (error) {
-      toast.error("Erro ao conectar Google Calendar");
+      const msg =
+        error instanceof Error && error.message === "GOOGLE_CALENDAR_NOT_CONFIGURED"
+          ? "Integração com Google Calendar ainda não foi configurada neste ambiente."
+          : "Erro ao conectar Google Calendar";
+      toast.error(msg);
       setIsLoading(false);
     }
   };

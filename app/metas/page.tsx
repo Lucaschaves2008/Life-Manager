@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Target, TrendingUp } from "lucide-react";
 import { addMonths, subMonths } from "date-fns";
 import { Card, CardLabel } from "@/components/caverna/card";
 import { Donut } from "@/components/caverna/donut";
+import { EmptyState } from "@/components/caverna/empty-state";
 import { GoalsChecklist } from "@/components/caverna/goals-checklist";
 import { AreaEvolucao } from "@/components/metas/area-evolucao";
 import { MetasQuantitativasList } from "@/components/metas/metas-quantitativas-list";
@@ -10,7 +11,7 @@ import { db } from "@/lib/db";
 import { evolucaoAreas } from "@/lib/data/metas";
 import { metasQuantitativas } from "@/lib/data/metas-quantitativas";
 import { variaveisAtivas } from "@/lib/data/variaveis";
-import { monthKeySP, monthYear, nowSP } from "@/lib/dates";
+import { dayKeySP, monthKeySP, monthYear, nowSP } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import { getCurrentUser } from "@/lib/auth";
 
@@ -183,7 +184,7 @@ export default async function Page({
           )}
         </div>
         <div className="mt-4">
-          <MetasQuantitativasList metas={metasQtd} variaveis={variaveis} />
+          <MetasQuantitativasList metas={metasQtd} variaveis={variaveis} hoje={dayKeySP(agora)} />
         </div>
       </Card>
 
@@ -210,10 +211,13 @@ export default async function Page({
         <CardLabel>Histórico de metas</CardLabel>
         <div className="mt-4 flex flex-wrap gap-2">
           {historico.length === 0 && (
-            <p className="flex items-center gap-2 py-2 text-[13px] text-steel">
-              <Target className="h-4 w-4" strokeWidth={1.5} />
-              Nenhum mês com metas registradas ainda.
-            </p>
+            <EmptyState
+              icon={Target}
+              variant="inline"
+              title="Nenhum mês com metas registradas ainda"
+              description="Conforme você fecha os meses, eles aparecem aqui para consulta."
+              className="w-full"
+            />
           )}
           {historico.map((h) => (
             <Link

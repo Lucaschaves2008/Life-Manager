@@ -11,7 +11,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Plus, Scale, Trash2 } from "lucide-react";
+import { ChevronDown, Plus, Scale, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -30,6 +30,12 @@ export type RegistroPeso = {
   pesoKg: number;
   cintura: number | null;
   braco: number | null;
+  percentualGordura: number | null;
+  massaMuscular: number | null;
+  aguaCorporal: number | null;
+  massaOssea: number | null;
+  gorduraVisceral: number | null;
+  tmb: number | null;
 };
 
 const kg = (v: number) =>
@@ -40,7 +46,8 @@ export function PesoChart({ pontos }: { pontos: PesoPonto[] }) {
     return (
       <EmptyState
         icon={Scale}
-        title="Registre ao menos dois pesos para ver a evolução."
+        title="Poucos registros para traçar a evolução"
+        description="Registre ao menos dois pesos para ver a tendência ao longo do tempo."
       />
     );
   }
@@ -48,7 +55,10 @@ export function PesoChart({ pontos }: { pontos: PesoPonto[] }) {
   return (
     <div className="h-[240px] w-full">
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={pontos} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+        <LineChart
+          data={pontos}
+          margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
+        >
           <CartesianGrid horizontal vertical={false} stroke={chart.grid} />
           <XAxis dataKey="label" {...axisProps} minTickGap={24} />
           <YAxis
@@ -66,7 +76,11 @@ export function PesoChart({ pontos }: { pontos: PesoPonto[] }) {
                   active={active}
                   label={String(label)}
                   rows={[
-                    { cor: chart.mint, nome: "Peso", valor: kg(ponto?.peso ?? 0) },
+                    {
+                      cor: chart.mint,
+                      nome: "Peso",
+                      valor: kg(ponto?.peso ?? 0),
+                    },
                     ...(ponto?.media7 != null
                       ? [
                           {
@@ -131,6 +145,13 @@ export function PesoClient({
   const [peso, setPeso] = useState("");
   const [cintura, setCintura] = useState("");
   const [braco, setBraco] = useState("");
+  const [percentualGordura, setPercentualGordura] = useState("");
+  const [massaMuscular, setMassaMuscular] = useState("");
+  const [maisMetricas, setMaisMetricas] = useState(false);
+  const [aguaCorporal, setAguaCorporal] = useState("");
+  const [massaOssea, setMassaOssea] = useState("");
+  const [gorduraVisceral, setGorduraVisceral] = useState("");
+  const [tmb, setTmb] = useState("");
 
   const abrirNovo = params.get("novo") === "1";
   useEffect(() => {
@@ -160,12 +181,19 @@ export function PesoClient({
 
       <div className="mt-4">
         {registros.length === 0 ? (
-          <EmptyState icon={Scale} title="Nenhum peso registrado." className="py-14" />
+          <EmptyState
+            icon={Scale}
+            title="Nenhum peso registrado"
+            description="Registre seu peso para acompanhar a evolução ao longo das semanas."
+            className="py-14"
+          />
         ) : (
           <Table>
             <THead>
               <Th>Data</Th>
               <Th right>Peso</Th>
+              <Th right>Gordura</Th>
+              <Th right>Massa musc.</Th>
               <Th right>Cintura</Th>
               <Th right>Braço</Th>
               <Th right> </Th>
@@ -175,6 +203,14 @@ export function PesoClient({
                 <Tr key={r.id}>
                   <Td className="tabular text-mist">{r.dataLabel}</Td>
                   <Td right>{kg(r.pesoKg)}</Td>
+                  <Td right className="text-mist">
+                    {r.percentualGordura != null
+                      ? `${r.percentualGordura}%`
+                      : "—"}
+                  </Td>
+                  <Td right className="text-mist">
+                    {r.massaMuscular != null ? `${r.massaMuscular} kg` : "—"}
+                  </Td>
                   <Td right className="text-mist">
                     {r.cintura ? `${r.cintura} cm` : "—"}
                   </Td>
@@ -197,6 +233,12 @@ export function PesoClient({
                                   pesoKg: removido.pesoKg,
                                   cintura: removido.cintura,
                                   braco: removido.braco,
+                                  percentualGordura: removido.percentualGordura,
+                                  massaMuscular: removido.massaMuscular,
+                                  aguaCorporal: removido.aguaCorporal,
+                                  massaOssea: removido.massaOssea,
+                                  gorduraVisceral: removido.gorduraVisceral,
+                                  tmb: removido.tmb,
                                 }),
                             },
                           });
@@ -215,7 +257,10 @@ export function PesoClient({
       </div>
 
       <Dialog open={aberto} onOpenChange={fechar}>
-        <DialogContent aria-describedby={undefined} className="w-[min(440px,94vw)]">
+        <DialogContent
+          aria-describedby={undefined}
+          className="w-[min(440px,94vw)]"
+        >
           <DialogTitle>Registrar peso</DialogTitle>
           <div className="mt-5 flex flex-col gap-4">
             <div>
@@ -242,6 +287,29 @@ export function PesoClient({
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
+                <Label htmlFor="peso-gordura">% Gordura</Label>
+                <Input
+                  id="peso-gordura"
+                  inputMode="decimal"
+                  value={percentualGordura}
+                  onChange={(e) => setPercentualGordura(e.target.value)}
+                  placeholder="18,5"
+                  className="tabular"
+                />
+              </div>
+              <div>
+                <Label htmlFor="peso-massa-muscular">Massa muscular (kg)</Label>
+                <Input
+                  id="peso-massa-muscular"
+                  inputMode="decimal"
+                  value={massaMuscular}
+                  onChange={(e) => setMassaMuscular(e.target.value)}
+                  className="tabular"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
                 <Label htmlFor="peso-cintura">Cintura (cm)</Label>
                 <Input
                   id="peso-cintura"
@@ -262,6 +330,66 @@ export function PesoClient({
                 />
               </div>
             </div>
+
+            <button
+              type="button"
+              onClick={() => setMaisMetricas((v) => !v)}
+              className="flex items-center gap-1.5 text-[12.5px] text-steel transition-colors hover:text-mist"
+            >
+              <ChevronDown
+                className={`h-3.5 w-3.5 transition-transform ${maisMetricas ? "rotate-180" : ""}`}
+                strokeWidth={1.5}
+              />
+              Mais métricas (opcional)
+            </button>
+
+            {maisMetricas && (
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="peso-agua">Água corporal (%)</Label>
+                  <Input
+                    id="peso-agua"
+                    inputMode="decimal"
+                    value={aguaCorporal}
+                    onChange={(e) => setAguaCorporal(e.target.value)}
+                    className="tabular"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="peso-massa-ossea">Massa óssea (kg)</Label>
+                  <Input
+                    id="peso-massa-ossea"
+                    inputMode="decimal"
+                    value={massaOssea}
+                    onChange={(e) => setMassaOssea(e.target.value)}
+                    className="tabular"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="peso-gordura-visceral">
+                    Gordura visceral
+                  </Label>
+                  <Input
+                    id="peso-gordura-visceral"
+                    inputMode="decimal"
+                    value={gorduraVisceral}
+                    onChange={(e) => setGorduraVisceral(e.target.value)}
+                    className="tabular"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="peso-tmb">TMB (kcal)</Label>
+                  <Input
+                    id="peso-tmb"
+                    inputMode="numeric"
+                    value={tmb}
+                    onChange={(e) => setTmb(e.target.value)}
+                    className="tabular"
+                  />
+                </div>
+              </div>
+            )}
+
             <div className="mt-1 flex items-center gap-3">
               <Button
                 variant="primary"
@@ -274,11 +402,28 @@ export function PesoClient({
                       pesoKg: pesoNum,
                       cintura: Number(cintura.replace(",", ".")) || null,
                       braco: Number(braco.replace(",", ".")) || null,
+                      percentualGordura:
+                        Number(percentualGordura.replace(",", ".")) || null,
+                      massaMuscular:
+                        Number(massaMuscular.replace(",", ".")) || null,
+                      aguaCorporal:
+                        Number(aguaCorporal.replace(",", ".")) || null,
+                      massaOssea: Number(massaOssea.replace(",", ".")) || null,
+                      gorduraVisceral:
+                        Number(gorduraVisceral.replace(",", ".")) || null,
+                      tmb: Number(tmb.replace(",", ".")) || null,
                     });
                     toast.success("Peso registrado");
                     setPeso("");
                     setCintura("");
                     setBraco("");
+                    setPercentualGordura("");
+                    setMassaMuscular("");
+                    setAguaCorporal("");
+                    setMassaOssea("");
+                    setGorduraVisceral("");
+                    setTmb("");
+                    setMaisMetricas(false);
                     fechar(false);
                   })
                 }

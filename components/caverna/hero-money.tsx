@@ -21,15 +21,15 @@ export function HeroMoney({
 }) {
   const { sinal, inteiro, centavos: cents } = splitBRL(centavos);
   const sizes = {
-    md: { main: "text-[28px]", small: "text-[15px]" },
-    lg: { main: "text-[40px]", small: "text-[18px]" },
-    xl: { main: "text-[52px]", small: "text-[22px]" },
+    md: { main: "text-[clamp(20px,6vw,28px)]", small: "text-[clamp(12px,3.4vw,15px)]" },
+    lg: { main: "text-[clamp(24px,8vw,40px)]", small: "text-[clamp(13px,4vw,18px)]" },
+    xl: { main: "text-[clamp(28px,10vw,52px)]", small: "text-[clamp(14px,4.6vw,22px)]" },
   }[size];
 
   return (
     <span
       className={cn(
-        "tabular inline-flex items-baseline gap-1 font-semibold leading-none text-paper",
+        "tabular inline-flex max-w-full flex-wrap items-baseline gap-1 font-semibold leading-none text-paper",
         sizes.main,
         className
       )}

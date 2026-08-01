@@ -86,7 +86,8 @@ export default async function EstudosDashboardPage() {
             {semDados ? (
               <EmptyState
                 icon={BarChart3}
-                title="Sem estudos registrados ainda. Comece uma sessão no cronômetro."
+                title="Sem estudos registrados ainda"
+                description="Comece uma sessão no cronômetro para construir seu histórico."
               />
             ) : (
               <HorasChart data={dash.porDia} />
@@ -98,7 +99,11 @@ export default async function EstudosDashboardPage() {
           <CardLabel>Por assunto</CardLabel>
           <div className="mt-5">
             {semDados ? (
-              <EmptyState icon={BookOpen} title="Nenhum assunto ainda." />
+              <EmptyState
+                icon={BookOpen}
+                title="Nenhum assunto ainda"
+                description="Os assuntos aparecem aqui conforme você registra sessões de estudo."
+              />
             ) : (
               <Donut
                 segments={dash.porAssunto.map((a, i) => ({

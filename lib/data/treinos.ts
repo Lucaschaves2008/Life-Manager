@@ -14,6 +14,7 @@ import { db } from "@/lib/db";
 import { tagUsuario } from "@/lib/cache-tags";
 import {
   kmDaSemana,
+  somarKmNoPeriodo,
   weekConfig,
   type PlanoCorridaView,
   type SessaoCorridaOpcao,
@@ -170,7 +171,7 @@ async function resumoTreinosDoDia(
     (s, sessao) => s + sessao.setLogs.reduce((t, log) => t + log.reps * log.cargaKg, 0),
     0
   );
-  const kmSemana = corridasSemana.reduce((s, c) => s + c.km, 0);
+  const kmSemana = somarKmNoPeriodo(corridasSemana, iniSemana, fimSemana);
 
   const grupos = new Map<string, number>();
   for (const log of setLogsMes) {
@@ -244,9 +245,7 @@ async function volumeSemanalDoDia(
   for (let i = semanas - 1; i >= 0; i--) {
     const inicio = spStartOfWeek(subWeeks(toSP(ref), i));
     const fim = spEndOfWeek(subWeeks(toSP(ref), i));
-    const km = corridas
-      .filter((c) => c.data >= inicio && c.data <= fim)
-      .reduce((s, c) => s + c.km, 0);
+    const km = somarKmNoPeriodo(corridas, inicio, fim);
     out.push({ label: shortDate(inicio).slice(0, 5), km, atual: i === 0 });
   }
   return out;

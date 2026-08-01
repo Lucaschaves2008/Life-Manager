@@ -181,6 +181,14 @@ body {
   background: var(--color-steel);
 }
 
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
 /* ---------- Utilitários de assinatura ---------- */
 
 /* números de dados: sempre tabulares */
@@ -302,6 +310,16 @@ body {
 @keyframes sheet-in-bottom {
   from { transform: translateY(100%); }
   to { transform: translateY(0); }
+}
+
+/* ícone do toast de conquista: um "pop" curto, sem euforia */
+@keyframes conquista-pop {
+  0% { transform: scale(0.6); opacity: 0; }
+  60% { transform: scale(1.08); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  [class*="conquista-pop"] { animation: none !important; }
 }
 
 /* skeleton de carregamento */

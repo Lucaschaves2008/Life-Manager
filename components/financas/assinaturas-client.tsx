@@ -63,7 +63,8 @@ export function AssinaturasClient({ itens }: { itens: AssinaturaItem[] }) {
         {itens.length === 0 ? (
           <EmptyState
             icon={CreditCard}
-            title="Nenhuma assinatura cadastrada."
+            title="Nenhuma assinatura cadastrada"
+            description="Cadastre suas assinaturas recorrentes para não perder nenhuma cobrança de vista."
             className="py-14"
             action={
               <Button variant="dashed" size="sm" onClick={() => abrir(null)}>

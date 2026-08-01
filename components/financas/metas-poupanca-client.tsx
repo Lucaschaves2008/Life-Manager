@@ -262,7 +262,8 @@ export function MetasPoupancaClient({
       {metas.length === 0 ? (
         <EmptyState
           icon={Plus}
-          title="Nenhuma meta de poupança criada."
+          title="Nenhuma meta de poupança criada"
+          description="Defina um objetivo e acompanhe quanto falta para chegar lá."
         />
       ) : (
         <div className="space-y-4">

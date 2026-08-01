@@ -43,7 +43,8 @@ export function RefeicoesClient({ dia }: { dia: DiaDaDieta }) {
     return (
       <EmptyState
         icon={UtensilsCrossed}
-        title="Nenhuma dieta ativa com refeições. Monte um plano alimentar primeiro."
+        title="Nenhuma dieta ativa"
+        description="Monte um plano alimentar e ative-o para acompanhar suas refeições do dia."
         className="py-14"
       />
     );

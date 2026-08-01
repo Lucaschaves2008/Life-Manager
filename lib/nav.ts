@@ -55,6 +55,19 @@ export const TAB_BAR_ESQUERDA: NavItem = { href: "/", label: "Início", icon: La
 export const TAB_BAR_TREINOS: NavItem = { href: "/treinos", label: "Treinos", icon: Dumbbell };
 export const TAB_BAR_FINANCAS: NavItem = { href: "/financas", label: "Finanças", icon: Wallet };
 
+/** Todos os módulos elegíveis para as 2 posições configuráveis da tab bar (slots 2 e 4). */
+export const TAB_BAR_SLOT_OPCOES: NavItem[] = [
+  { href: "/treinos", label: "Treinos", icon: Dumbbell },
+  { href: "/financas", label: "Finanças", icon: Wallet },
+  { href: "/investimentos", label: "Investimentos", icon: TrendingUp },
+  { href: "/dieta", label: "Dieta", icon: Salad },
+  { href: "/agenda", label: "Agenda", icon: CalendarDays },
+  { href: "/estudos", label: "Estudos", icon: BookOpen },
+  { href: "/checklist", label: "Checklist", icon: ListChecks },
+  { href: "/metas", label: "Metas", icon: Target },
+  { href: "/desafios", label: "Desafios", icon: Swords },
+];
+
 /** Módulos que vivem atrás do "Mais" no mobile — todo o resto do manifesto. */
 export const NAV_MAIS: NavItem[] = [
   { href: "/investimentos", label: "Investimentos", icon: TrendingUp },

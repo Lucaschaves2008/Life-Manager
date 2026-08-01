@@ -18,10 +18,13 @@ function PillTabsInner({
   tabs,
   param,
   className,
+  inline = false,
 }: {
   tabs: PillTab[];
   param?: string;
   className?: string;
+  /** quando true, não cria seu próprio flex-wrap — os pills viram irmãos diretos do container pai */
+  inline?: boolean;
 }) {
   const pathname = usePathname();
   const search = useSearchParams();
@@ -32,7 +35,7 @@ function PillTabsInner({
 
   return (
     <nav
-      className={cn("flex flex-wrap items-center gap-2", className)}
+      className={cn(inline ? "contents" : "flex flex-wrap items-center gap-2", className)}
       aria-label="Subnavegação"
     >
       {tabs.map((tab) => {
@@ -44,7 +47,7 @@ function PillTabsInner({
             href={tab.href}
             scroll={false}
             className={cn(
-              "inline-flex h-8.5 items-center gap-1.5 rounded-full border px-4 text-[13px] transition-colors duration-200",
+              "inline-flex h-8.5 shrink-0 items-center gap-1.5 rounded-full border px-4 text-[13px] transition-colors duration-200",
               active
                 ? "border-[rgba(13,110,253,.25)] bg-mint-soft text-mint"
                 : "border-stroke text-mist hover:border-[rgba(143,169,205,.22)] hover:text-ice"
@@ -64,6 +67,7 @@ export function PillTabs(props: {
   tabs: PillTab[];
   param?: string;
   className?: string;
+  inline?: boolean;
 }) {
   return (
     <Suspense fallback={<div className="h-8.5" />}>

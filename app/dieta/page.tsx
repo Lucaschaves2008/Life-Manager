@@ -19,6 +19,7 @@ import {
   PesoClient,
   type RegistroPeso,
 } from "@/components/dieta/peso-client";
+import { LembretePesoCard } from "@/components/dieta/lembrete-peso-client";
 import {
   aderencia7d,
   diaDaDieta,
@@ -255,12 +256,16 @@ async function Alimentos({ userId }: { userId: string }) {
 }
 
 async function Metricas({ userId, hoje }: { userId: string; hoje: Date }) {
-  const [{ pontos, atual, variacao30d, alvo, temMeta }, registros] = await Promise.all([
+  const [{ pontos, atual, variacao30d, alvo, temMeta }, registros, perfil] = await Promise.all([
     evolucaoPeso(userId, hoje),
     db.weightLog.findMany({
       where: { userId },
       orderBy: { data: "desc" },
       take: 40,
+    }),
+    db.profile.findUnique({
+      where: { id: userId },
+      select: { revisarPesoACada: true, proximaRevisaoPeso: true },
     }),
   ]);
 
@@ -271,6 +276,12 @@ async function Metricas({ userId, hoje }: { userId: string; hoje: Date }) {
     pesoKg: r.pesoKg,
     cintura: r.cintura,
     braco: r.braco,
+    percentualGordura: r.percentualGordura,
+    massaMuscular: r.massaMuscular,
+    aguaCorporal: r.aguaCorporal,
+    massaOssea: r.massaOssea,
+    gorduraVisceral: r.gorduraVisceral,
+    tmb: r.tmb,
   }));
 
   const distancia = atual != null ? atual - alvo : null;
@@ -278,6 +289,8 @@ async function Metricas({ userId, hoje }: { userId: string; hoje: Date }) {
   // ganhar peso = subir é bom. Sem meta definida, a variação de peso é neutra —
   // não faz sentido pintar de vermelho o ganho de peso de quem está em bulking.
   const pesoUpIsBad = !temMeta ? ("neutral" as const) : alvo < (atual ?? alvo);
+
+  const vencido = !!perfil?.proximaRevisaoPeso && perfil.proximaRevisaoPeso <= hoje;
 
   return (
     <div className="stagger grid grid-cols-12 gap-6">
@@ -319,6 +332,12 @@ async function Metricas({ userId, hoje }: { userId: string; hoje: Date }) {
             : "—"
         }
         contexto={`alvo de ${alvo} kg`}
+      />
+
+      <LembretePesoCard
+        revisarACada={perfil?.revisarPesoACada ?? null}
+        proximaRevisao={perfil?.proximaRevisaoPeso ? mediumDate(perfil.proximaRevisaoPeso) : null}
+        vencido={vencido}
       />
 
       <Card className="col-span-12">

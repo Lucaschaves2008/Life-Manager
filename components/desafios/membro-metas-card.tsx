@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardLabel } from "@/components/caverna/card";
+import { LancarDinheiro } from "@/components/caverna/lancar-dinheiro";
 import { Sparkline } from "@/components/caverna/sparkline";
 import { Button } from "@/components/ui/button";
 import { DesafioMetaSheet } from "@/components/desafios/desafio-meta-sheet";
@@ -71,12 +72,14 @@ function MetaGrandeBlock({
   souDono,
   templatesChecklist,
   variaveis,
+  hoje,
 }: {
   desafioId: string;
   meta: DesafioMetaView;
   souDono: boolean;
   templatesChecklist: { id: string; nome: string }[];
   variaveis: VariavelView[];
+  hoje: string;
 }) {
   const [, startTransition] = useTransition();
   const [removendo, setRemovendo] = useState(false);
@@ -122,6 +125,12 @@ function MetaGrandeBlock({
       <div className="mt-3">
         <Sparkline serie={meta.serie} cor={cor} />
       </div>
+
+      {souDono && meta.metrica === "dinheiro" && (
+        <div className="mt-3">
+          <LancarDinheiro hoje={hoje} />
+        </div>
+      )}
 
       {souDono && meta.origem === "checklist" && (
         <div className="mt-3">
@@ -176,6 +185,7 @@ export function MembroMetasCard({
   metasGrandesLimite,
   templatesChecklist,
   variaveis,
+  hoje,
 }: {
   desafioId: string;
   membro: MembroDesafio;
@@ -183,6 +193,7 @@ export function MembroMetasCard({
   metasGrandesLimite: number;
   templatesChecklist: { id: string; nome: string }[];
   variaveis: VariavelView[];
+  hoje: string;
 }) {
   const [sheetAberto, setSheetAberto] = useState(false);
   const atingiuLimite = membro.metasGrandes.length >= metasGrandesLimite;
@@ -226,6 +237,7 @@ export function MembroMetasCard({
             souDono={souEu}
             templatesChecklist={templatesChecklist}
             variaveis={variaveis}
+            hoje={hoje}
           />
         ))}
       </div>

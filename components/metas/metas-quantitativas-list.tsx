@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Target, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/caverna/empty-state";
 import { excluirMetaQuantitativa } from "@/app/actions/metas-quantitativas";
+import { LancarDinheiro } from "@/components/caverna/lancar-dinheiro";
 import type { MetaQuantitativaView } from "@/lib/data/metas-quantitativas";
 import type { VariavelView } from "@/lib/data/variaveis";
 import { MetaQuantitativaSheet } from "@/components/metas/meta-quantitativa-sheet";
@@ -14,7 +16,7 @@ function formatNumero(v: number): string {
   return v % 1 === 0 ? v.toFixed(0) : v.toFixed(1);
 }
 
-function LinhaMeta({ meta }: { meta: MetaQuantitativaView }) {
+function LinhaMeta({ meta, hoje }: { meta: MetaQuantitativaView; hoje: string }) {
   const [, startTransition] = useTransition();
   const [removendo, setRemovendo] = useState(false);
   const pctBarra = Math.max(0, Math.min(100, meta.pct));
@@ -80,6 +82,8 @@ function LinhaMeta({ meta }: { meta: MetaQuantitativaView }) {
           {meta.diasRestantes} {meta.diasRestantes === 1 ? "dia restante" : "dias restantes"}
         </p>
       )}
+
+      {meta.metrica === "dinheiro" && <LancarDinheiro hoje={hoje} className="mt-2" />}
     </div>
   );
 }
@@ -87,20 +91,27 @@ function LinhaMeta({ meta }: { meta: MetaQuantitativaView }) {
 export function MetasQuantitativasList({
   metas,
   variaveis,
+  hoje,
 }: {
   metas: MetaQuantitativaView[];
   variaveis: VariavelView[];
+  hoje: string;
 }) {
   const [sheetAberto, setSheetAberto] = useState(false);
 
   return (
     <div className="flex flex-col gap-2.5">
       {metas.length === 0 && (
-        <p className="py-3 text-[13px] text-steel">Nenhuma meta quantitativa ainda.</p>
+        <EmptyState
+          icon={Target}
+          variant="inline"
+          title="Nenhuma meta quantitativa ainda"
+          description="Defina um alvo numérico (treinos, km, horas) e o progresso é calculado sozinho."
+        />
       )}
 
       {metas.map((meta) => (
-        <LinhaMeta key={meta.id} meta={meta} />
+        <LinhaMeta key={meta.id} meta={meta} hoje={hoje} />
       ))}
 
       <Button

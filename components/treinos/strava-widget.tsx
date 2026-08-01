@@ -21,7 +21,7 @@ export function StravaWidget({
 
   if (!configurado) {
     return (
-      <p className="max-w-[220px] text-right text-[12px] text-steel">
+      <p className="text-[12px] text-steel sm:max-w-[220px] sm:text-right">
         Integração não configurada (defina STRAVA_CLIENT_ID/SECRET).
       </p>
     );

@@ -248,7 +248,13 @@ async function receitasCard(
   const [agg, assinaturas] = await Promise.all([
     db.transaction.groupBy({
       by: ["tipo"],
-      where: { contaFinanceiraId, data: { gte: inicio, lte: fim } },
+      where: {
+        contaFinanceiraId,
+        data: { gte: inicio, lte: fim },
+        // espelha contaNosTotaisDeFluxo() (lib/data/financas-calc.ts):
+        // compromisso não conta nos totais de receita/despesa.
+        OR: [{ tipo: "receita" }, { tipo: "despesa", natureza: "despesa" }],
+      },
       _sum: { valor: true },
     }),
     assinaturasNoPeriodo(contaFinanceiraId, inicio, fim),
@@ -286,7 +292,12 @@ async function despesasCard(
 ): Promise<HomeCardData> {
   const [transacoes, assinaturas] = await Promise.all([
     db.transaction.findMany({
-      where: { contaFinanceiraId, tipo: "despesa", data: { gte: inicio, lte: fim } },
+      where: {
+        contaFinanceiraId,
+        tipo: "despesa",
+        natureza: "despesa",
+        data: { gte: inicio, lte: fim },
+      },
       include: { category: true },
     }),
     (async () => {

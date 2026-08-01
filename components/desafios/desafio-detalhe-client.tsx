@@ -17,6 +17,7 @@ export function DesafioDetalheClient({
   variaveis,
   mensagensIniciais,
   documentoInicial,
+  hoje,
 }: {
   desafio: DesafioDetalhe;
   viewerUserId: string;
@@ -24,6 +25,7 @@ export function DesafioDetalheClient({
   variaveis: VariavelView[];
   mensagensIniciais: MensagemView[];
   documentoInicial: DesafioDocumentoView | null;
+  hoje: string;
 }) {
   const eu = desafio.membros.find((m) => m.userId === viewerUserId);
   const outros = desafio.membros.filter((m) => m.userId !== viewerUserId);
@@ -40,6 +42,7 @@ export function DesafioDetalheClient({
             metasGrandesLimite={desafio.metasGrandesLimite}
             templatesChecklist={templatesChecklist}
             variaveis={variaveis}
+            hoje={hoje}
           />
         )}
 
@@ -52,6 +55,7 @@ export function DesafioDetalheClient({
             metasGrandesLimite={desafio.metasGrandesLimite}
             templatesChecklist={templatesChecklist}
             variaveis={variaveis}
+            hoje={hoje}
           />
         ))}
       </div>

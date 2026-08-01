@@ -365,3 +365,38 @@ function safeArray(raw: string): string[] {
     return [];
   }
 }
+
+export type DiaRegistroView = {
+  id: string;
+  dia: string;
+  diaLabel: string;
+  descricao: string;
+  pct: number;
+};
+
+/** Registros de dia (descrição escrita pelo usuário) mais recentes primeiro — timeline do dashboard. */
+export async function historicoDiaRegistros(
+  userId: string,
+  limite = 60
+): Promise<DiaRegistroView[]> {
+  const registros = await db.diaRegistro.findMany({
+    where: { userId },
+    orderBy: { data: "desc" },
+    take: limite,
+  });
+  return registros.map((r) => ({
+    id: r.id,
+    dia: dayKeySP(r.data),
+    diaLabel: shortDate(r.data),
+    descricao: r.descricao,
+    pct: r.pct,
+  }));
+}
+
+/** Registro do dia (se já escrito), para o form de descrição saber se é criação ou edição. */
+export async function diaRegistroDoDia(userId: string, dia: Date): Promise<DiaRegistroView | null> {
+  const data = spStartOfDay(dia);
+  const r = await db.diaRegistro.findUnique({ where: { userId_data: { userId, data } } });
+  if (!r) return null;
+  return { id: r.id, dia: dayKeySP(r.data), diaLabel: shortDate(r.data), descricao: r.descricao, pct: r.pct };
+}

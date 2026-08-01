@@ -41,7 +41,7 @@ export async function somaDespesas(
   to: Date
 ): Promise<number> {
   const agg = await db.transaction.aggregate({
-    where: { contaFinanceiraId, tipo: "despesa", data: { gte: from, lte: to } },
+    where: { contaFinanceiraId, tipo: "despesa", natureza: "despesa", data: { gte: from, lte: to } },
     _sum: { valor: true },
   });
   return agg._sum.valor ?? 0;
@@ -125,7 +125,7 @@ async function resumoDoDia(contaFinanceiraId: string, dia: string): Promise<Resu
       somaDespesas(contaFinanceiraId, iniAnt, mesmoDiaAnterior),
       db.transaction.groupBy({
         by: ["categoryId"],
-        where: { contaFinanceiraId, tipo: "despesa", data: { gte: iniMes, lte: fimMes } },
+        where: { contaFinanceiraId, tipo: "despesa", natureza: "despesa", data: { gte: iniMes, lte: fimMes } },
         _sum: { valor: true },
         orderBy: { _sum: { valor: "desc" } },
         take: 1,
@@ -210,6 +210,7 @@ async function ritmoDoDia(
       where: {
         contaFinanceiraId,
         tipo: "despesa",
+        natureza: "despesa",
         data: { gte: spStartOfMonth(ref), lte: spEndOfMonth(ref) },
       },
       select: { valor: true, data: true },
@@ -218,6 +219,7 @@ async function ritmoDoDia(
       where: {
         contaFinanceiraId,
         tipo: "despesa",
+        natureza: "despesa",
         data: {
           gte: spStartOfMonth(refAnterior),
           lte: spEndOfMonth(refAnterior),
@@ -315,6 +317,7 @@ async function categoriasDoMes(
       where: {
         contaFinanceiraId,
         tipo: "despesa",
+        natureza: "despesa",
         data: { gte: spStartOfMonth(ref), lte: spEndOfMonth(ref) },
       },
       _sum: { valor: true },
@@ -324,6 +327,7 @@ async function categoriasDoMes(
       where: {
         contaFinanceiraId,
         tipo: "despesa",
+        natureza: "despesa",
         data: {
           gte: spStartOfMonth(refAnterior),
           lte: spEndOfMonth(refAnterior),
@@ -441,6 +445,7 @@ export type FaturaCartao = {
   id: string;
   nome: string;
   bandeira: string;
+  instituicao: string | null;
   tipo: "debito" | "credito";
   cor: string;
   limite: number;
@@ -519,6 +524,7 @@ async function faturasDoDia(
       id: card.id,
       nome: card.nome,
       bandeira: card.bandeira,
+      instituicao: card.instituicao,
       tipo: card.tipo === "debito" ? "debito" : "credito",
       cor: card.cor,
       limite,
@@ -570,7 +576,9 @@ async function fluxoDeCaixaDoMes(
       where: {
         contaFinanceiraId,
         data: { gte: inicio, lte: fim },
-        tipo: { in: ["receita", "despesa"] },
+        // espelha contaNosTotaisDeFluxo() (financas-calc.ts): compromisso
+        // fica fora do fluxo de caixa, mesmo regra do resto do arquivo.
+        OR: [{ tipo: "receita" }, { tipo: "despesa", natureza: "despesa" }],
       },
       select: { tipo: true, valor: true, data: true },
     }),
@@ -628,6 +636,7 @@ async function gastosDoMes(
       where: {
         contaFinanceiraId,
         tipo: "despesa",
+        natureza: "despesa",
         data: { gte: spStartOfMonth(ref), lte: spEndOfMonth(ref) },
       },
       select: { valor: true, data: true },
@@ -745,6 +754,7 @@ export type Parcelamento = {
   categoryId: string | null;
   cardId: string | null;
   tags: string[];
+  natureza: string;
 };
 
 export async function parcelamentos(
@@ -793,6 +803,7 @@ async function parcelamentosDoDia(
         categoryId: itens[0].categoryId,
         cardId: itens[0].cardId,
         tags: parseJSON<string[]>(itens[0].tags, []),
+        natureza: itens[0].natureza,
       };
     })
     .filter((p) => p.pagas < p.parcelas)

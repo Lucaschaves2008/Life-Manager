@@ -1,19 +1,39 @@
 import "server-only";
 import { google } from "googleapis";
-import { OAuth2Client } from "google-auth-library";
 import { db } from "@/lib/db";
 
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
-const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
-const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI;
+type OAuth2Client = InstanceType<typeof google.auth.OAuth2>;
 
-if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_REDIRECT_URI) {
-  throw new Error(
-    "Google OAuth env vars não configuradas: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI"
+/**
+ * Integração com Google Calendar é opcional e pode não estar configurada
+ * (ex: ambiente de desenvolvimento). Nunca lançar erro na avaliação do
+ * módulo — a checagem é lazy, dentro de cada função, para que features
+ * incompletas nunca derrubem a página; apenas a ação específica falha
+ * de forma tratável.
+ */
+export function isGoogleCalendarConfigured(): boolean {
+  return !!(
+    process.env.GOOGLE_CLIENT_ID &&
+    process.env.GOOGLE_CLIENT_SECRET &&
+    process.env.GOOGLE_REDIRECT_URI
   );
 }
 
+function getEnvOrThrow() {
+  const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+  const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+  const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI;
+
+  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_REDIRECT_URI) {
+    throw new Error("GOOGLE_CALENDAR_NOT_CONFIGURED");
+  }
+
+  return { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI };
+}
+
 export function getOAuthClient(): OAuth2Client {
+  const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI } =
+    getEnvOrThrow();
   return new google.auth.OAuth2(
     GOOGLE_CLIENT_ID,
     GOOGLE_CLIENT_SECRET,
@@ -34,6 +54,10 @@ export function getAuthUrl(): string {
 }
 
 export async function getCalendarClient(userId: string) {
+  if (!isGoogleCalendarConfigured()) {
+    throw new Error("GOOGLE_CALENDAR_NOT_CONFIGURED");
+  }
+
   const integration = await db.googleIntegration.findUnique({
     where: { userId },
   });

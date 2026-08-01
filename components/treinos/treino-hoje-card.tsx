@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CalendarDays, Check, Dumbbell, Eye, Footprints, Layers, Play, X } from "lucide-react";
+import { CalendarDays, Check, Dumbbell, Eye, Footprints, Layers, Play, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardLabel } from "@/components/caverna/card";
 import { EmptyState } from "@/components/caverna/empty-state";
@@ -43,7 +44,16 @@ export function TreinoHojeCard({
       {treinos.length === 0 ? (
         <EmptyState
           icon={Dumbbell}
-          title="Nenhum treino agendado para hoje."
+          title="Nenhum treino agendado para hoje"
+          description="Dia livre no plano. Se treinou mesmo assim, registre para manter a sequência."
+          action={
+            <Button variant="dashed" size="sm" asChild>
+              <Link href="/treinos">
+                <Plus className="h-4 w-4" strokeWidth={1.5} />
+                Registrar treino
+              </Link>
+            </Button>
+          }
           className="py-10"
         />
       ) : (

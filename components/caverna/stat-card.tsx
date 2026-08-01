@@ -28,7 +28,7 @@ export function StatCard({
   return (
     <Card destaque={destaque} className={cn("flex flex-col gap-3 p-5", className)}>
       <CardLabel>{label}</CardLabel>
-      <div className="tabular text-[26px] font-semibold leading-none text-paper">
+      <div className="tabular text-[clamp(18px,5.5vw,26px)] font-semibold leading-tight text-paper">
         {value}
       </div>
       <div className="mt-auto flex items-center gap-2 text-[12.5px] text-steel">

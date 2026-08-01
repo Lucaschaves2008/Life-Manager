@@ -4,6 +4,7 @@ import { GeistSans } from "geist/font/sans";
 import { Toaster } from "sonner";
 import "./globals.css";
 import { AppShell } from "@/components/shell/app-shell";
+import { ConquistasServer } from "@/components/shell/conquistas-server";
 import { NotificacoesBell } from "@/components/shell/notificacoes-bell";
 import { NotificacoesBellServer } from "@/components/shell/notificacoes-bell-server";
 import { StreakBadgeServer } from "@/components/shell/streak-badge-server";
@@ -68,6 +69,13 @@ export default async function RootLayout({
         >
           {children}
         </AppShell>
+        {/* Comemora metas batidas / checklist 100% / marcos de streak.
+            Via streaming: nunca bloqueia o shell. */}
+        {user && user.status === "ativo" && (
+          <Suspense fallback={null}>
+            <ConquistasServer userId={user.id} />
+          </Suspense>
+        )}
         <Toaster
           position="bottom-right"
           toastOptions={{

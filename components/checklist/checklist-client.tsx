@@ -89,7 +89,8 @@ export function ChecklistHoje({
         {habitos.length === 0 ? (
           <EmptyState
             icon={Heart}
-            title="Nenhum hábito cadastrado ainda. Adicione o primeiro em Gerenciar."
+            title="Nenhum hábito cadastrado ainda"
+            description="Cadastre um hábito em Gerenciar para acompanhar a constância no dia a dia."
             className="py-14"
           />
         ) : (

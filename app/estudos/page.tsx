@@ -86,7 +86,8 @@ export default async function EstudosPage() {
             {concluidas.length === 0 ? (
               <EmptyState
                 icon={BookOpen}
-                title="Nenhuma sessão concluída hoje. Inicie o cronômetro para registrar seu primeiro estudo."
+                title="Nenhuma sessão concluída hoje"
+                description="Inicie o cronômetro para registrar seu primeiro estudo do dia."
               />
             ) : (
               <SessoesDoDia sessoes={concluidas} />

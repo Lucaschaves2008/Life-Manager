@@ -2,11 +2,19 @@
 
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { getAuthUrl } from "@/lib/google-calendar/client";
+import { getAuthUrl, isGoogleCalendarConfigured } from "@/lib/google-calendar/client";
 
 export async function getGoogleAuthUrl(): Promise<string> {
   await requireUser();
+  if (!isGoogleCalendarConfigured()) {
+    throw new Error("GOOGLE_CALENDAR_NOT_CONFIGURED");
+  }
   return getAuthUrl();
+}
+
+export async function isGoogleCalendarAvailable(): Promise<boolean> {
+  await requireUser();
+  return isGoogleCalendarConfigured();
 }
 
 export async function disconnectGoogleCalendar(): Promise<void> {

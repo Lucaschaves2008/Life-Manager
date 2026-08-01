@@ -37,6 +37,7 @@ import {
   moverVariavel,
   toggleVariavelCheckDia,
 } from "@/app/actions/variaveis";
+import { escolherOpcao, toggleRefeicaoCumprida } from "@/app/actions/dieta";
 import type {
   RotinaOcorrenciaView,
   RotinaOpcao,
@@ -45,6 +46,7 @@ import type {
   TipoRotina,
 } from "@/lib/data/rotinas";
 import type { VariavelChecklistItem } from "@/lib/data/variaveis";
+import type { RefeicaoChecklistItem } from "@/lib/data/dieta";
 import type { CategoriaView } from "@/lib/data/estudos";
 import type { SessaoCorridaOpcao } from "@/lib/data/treinos-format";
 import { formatHoras } from "@/lib/data/estudos-format";
@@ -61,10 +63,16 @@ const TIPO_META: Record<TipoRotina, { label: string; emoji: string }> = {
 
 const VARIAVEL_META = { label: "Variável", emoji: "🔥" };
 
-/** Tipo de item exibido na lista — "rotina" (RotinaTemplate) ou "variavel" (Variavel). */
+const REFEICAO_EMOJI = "🍽️";
+
+/**
+ * Tipo de item exibido na lista — "rotina" (RotinaTemplate), "variavel"
+ * (Variavel) ou "refeicao" (Meal da dieta ativa, espelhada do DietDayLog).
+ */
 type ItemChecklist =
   | (RotinaOcorrenciaView & { origem: "rotina"; itemId: string })
-  | (VariavelChecklistItem & { origem: "variavel"; itemId: string });
+  | (VariavelChecklistItem & { origem: "variavel"; itemId: string })
+  | (RefeicaoChecklistItem & { origem: "refeicao"; itemId: string });
 
 const METAS = [
   { label: "Sem meta", min: null },
@@ -141,6 +149,7 @@ export function MinhaRotina({
   planos,
   planoAtivoId,
   variaveis,
+  refeicoes,
   dia,
 }: {
   ocorrencias: RotinaOcorrenciaView[];
@@ -151,6 +160,7 @@ export function MinhaRotina({
   planos: RotinaPlanoView[];
   planoAtivoId: string | null;
   variaveis: VariavelChecklistItem[];
+  refeicoes: RefeicaoChecklistItem[];
   /** yyyy-MM-dd */
   dia: string;
 }) {
@@ -161,6 +171,7 @@ export function MinhaRotina({
   const [form, setForm] = useState<FormState | null>(null);
   const [ordemOtimista, setOrdemOtimista] = useState(ocorrencias);
   const [variaveisOtimista, setVariaveisOtimista] = useState(variaveis);
+  const [refeicoesOtimista, setRefeicoesOtimista] = useState(refeicoes);
 
   useEffect(() => {
     setOrdemOtimista(ocorrencias);
@@ -170,16 +181,26 @@ export function MinhaRotina({
     setVariaveisOtimista(variaveis);
   }, [variaveis]);
 
+  useEffect(() => {
+    setRefeicoesOtimista(refeicoes);
+  }, [refeicoes]);
+
   const catPorId = useMemo(() => new Map(categorias.map((c) => [c.id, c])), [categorias]);
 
-  // Lista unificada exibida: rotinas (arrastáveis entre si) seguidas de
-  // variáveis (sempre no fim, ordem própria — ver decisão no plano).
+  // Lista unificada exibida: rotinas (arrastáveis entre si), variáveis (ordem
+  // própria) e, por último, as refeições da dieta ativa. Refeições não são
+  // arrastáveis: a ordem delas é a da dieta (Meal.ordem), editada em /dieta.
   const itens: ItemChecklist[] = useMemo(
     () => [
       ...ordemOtimista.map((oc) => ({ ...oc, origem: "rotina" as const, itemId: oc.templateId })),
       ...variaveisOtimista.map((v) => ({ ...v, origem: "variavel" as const, itemId: v.id })),
+      ...refeicoesOtimista.map((r) => ({
+        ...r,
+        origem: "refeicao" as const,
+        itemId: `refeicao:${r.id}`,
+      })),
     ],
-    [ordemOtimista, variaveisOtimista]
+    [ordemOtimista, variaveisOtimista, refeicoesOtimista]
   );
 
   function toggle(templateId: string) {
@@ -200,11 +221,39 @@ export function MinhaRotina({
     startTransition(() => toggleVariavelCheckDia(variavelId, dia));
   }
 
+  /**
+   * Marca/desmarca a refeição. Sem opções cadastradas, é um toggle simples.
+   * Com opções, marcar exige escolher qual foi comida (senão os macros do dia
+   * não fecham) — quem chama abre o seletor; aqui só desmarcamos.
+   */
+  function toggleRefeicao(mealId: string) {
+    setRefeicoesOtimista((atuais) =>
+      atuais.map((r) =>
+        r.id === mealId ? { ...r, feito: !r.feito, escolhaId: r.feito ? null : r.escolhaId } : r
+      )
+    );
+    startTransition(() => toggleRefeicaoCumprida(dia, mealId));
+  }
+
+  /** Registra a opção comida — marca a refeição como cumprida junto (ver escolherOpcao). */
+  function escolherOpcaoRefeicao(mealId: string, optionId: string) {
+    setRefeicoesOtimista((atuais) =>
+      atuais.map((r) => (r.id === mealId ? { ...r, feito: true, escolhaId: optionId } : r))
+    );
+    startTransition(() => escolherOpcao(dia, mealId, optionId));
+  }
+
   function reordenar(deIndex: number, paraIndex: number) {
     if (deIndex === paraIndex) return;
     // Arraste só é permitido dentro do próprio grupo (rotinas ou variáveis).
+    // Refeições ficam fora dos dois ranges, então nunca reordenam.
     const dentroDeRotinas = deIndex < ordemOtimista.length && paraIndex < ordemOtimista.length;
-    const dentroDeVariaveis = deIndex >= ordemOtimista.length && paraIndex >= ordemOtimista.length;
+    const limiteVariaveis = ordemOtimista.length + variaveisOtimista.length;
+    const dentroDeVariaveis =
+      deIndex >= ordemOtimista.length &&
+      deIndex < limiteVariaveis &&
+      paraIndex >= ordemOtimista.length &&
+      paraIndex < limiteVariaveis;
 
     if (dentroDeRotinas) {
       const proxima = ordemOtimista.slice();
@@ -406,32 +455,45 @@ export function MinhaRotina({
         {itens.length === 0 ? (
           <EmptyState
             icon={CalendarDays}
-            title="Nenhum item planejado para hoje. Adicione um treino, estudo, tarefa ou variável e organize seu dia."
+            title="Nenhum item planejado para hoje"
+            description="Adicione um treino, estudo, tarefa ou variável e organize seu dia."
             className="py-12"
           />
         ) : (
           <ListaArrastavel itens={itens} onReordenar={reordenar}>
-            {(item) =>
-              item.origem === "rotina" ? (
-                <ItemLinha
+            {(item) => {
+              if (item.origem === "rotina") {
+                return (
+                  <ItemLinha
+                    item={item}
+                    categoria={item.studyCategoryId ? catPorId.get(item.studyCategoryId) : undefined}
+                    onToggle={() => toggle(item.templateId)}
+                    onEditar={() => {
+                      const t = templates.find((tt) => tt.id === item.templateId);
+                      if (t) abrirEdicao(t);
+                    }}
+                    onPular={() => pular(item.templateId)}
+                  />
+                );
+              }
+              if (item.origem === "variavel") {
+                return (
+                  <ItemLinhaVariavel
+                    item={item}
+                    onToggle={() => toggleVariavel(item.id)}
+                    onEditar={() => abrirEdicaoVariavel(item)}
+                    onExcluir={() => excluirVariavelItem(item.id)}
+                  />
+                );
+              }
+              return (
+                <ItemLinhaRefeicao
                   item={item}
-                  categoria={item.studyCategoryId ? catPorId.get(item.studyCategoryId) : undefined}
-                  onToggle={() => toggle(item.templateId)}
-                  onEditar={() => {
-                    const t = templates.find((tt) => tt.id === item.templateId);
-                    if (t) abrirEdicao(t);
-                  }}
-                  onPular={() => pular(item.templateId)}
+                  onToggle={() => toggleRefeicao(item.id)}
+                  onEscolher={(optionId) => escolherOpcaoRefeicao(item.id, optionId)}
                 />
-              ) : (
-                <ItemLinhaVariavel
-                  item={item}
-                  onToggle={() => toggleVariavel(item.id)}
-                  onEditar={() => abrirEdicaoVariavel(item)}
-                  onExcluir={() => excluirVariavelItem(item.id)}
-                />
-              )
-            }
+              );
+            }}
           </ListaArrastavel>
         )}
       </div>
@@ -1067,6 +1129,136 @@ function ItemLinhaVariavel({
           { label: "Excluir", icon: Trash2, destructive: true, onSelect: onExcluir },
         ]}
       />
+    </div>
+  );
+}
+
+/**
+ * Refeição da dieta ativa como linha do checklist.
+ *
+ * Escreve no mesmo DietDayLog da tela de Dieta, então marcar aqui já conta na
+ * métrica "refeicoes_cumpridas" de metas e desafios. Quando a refeição tem
+ * opções cadastradas (Opção A/B/C), marcar abre o seletor: sem registrar QUAL
+ * opção foi comida os macros do dia não fecham (ver diaDaDieta). Sem opções,
+ * o clique é um toggle direto.
+ */
+function ItemLinhaRefeicao({
+  item,
+  onToggle,
+  onEscolher,
+}: {
+  item: RefeicaoChecklistItem;
+  onToggle: () => void;
+  onEscolher: (optionId: string) => void;
+}) {
+  const [escolhendo, setEscolhendo] = useState(false);
+  const temOpcoes = item.opcoes.length > 0;
+  // Só vale oferecer escolha quando há de fato o que escolher.
+  const temEscolha = item.opcoes.length > 1;
+  const opcaoEscolhida = item.opcoes.find((o) => o.id === item.escolhaId);
+
+  function aoClicarCheck() {
+    // Desmarcar é sempre direto.
+    if (item.feito) {
+      onToggle();
+      return;
+    }
+    // Opção única: não há o que escolher — registra direto (fecha os macros
+    // do dia sem um clique extra em um seletor de um item só).
+    if (item.opcoes.length === 1) {
+      onEscolher(item.opcoes[0].id);
+      return;
+    }
+    // Duas ou mais: precisa saber QUAL foi comida.
+    if (temOpcoes) {
+      setEscolhendo((v) => !v);
+      return;
+    }
+    onToggle();
+  }
+
+  return (
+    <div
+      className={cn(
+        "rounded-[14px] border transition-colors",
+        item.feito
+          ? "border-mint/30 bg-mint-soft"
+          : "border-stroke bg-surface-2 hover:border-[rgba(143,169,205,.25)]"
+      )}
+    >
+      <div className="flex items-center gap-3 px-4 py-3">
+        {/* Espaçador no lugar do handle: a ordem das refeições é a da dieta,
+            então a linha não arrasta — mas alinha com rotinas e variáveis. */}
+        <span className="-ml-1 h-8 w-5 shrink-0" aria-hidden="true"></span>
+
+        <button
+          type="button"
+          onClick={aoClicarCheck}
+          aria-label={item.feito ? "Desmarcar refeição" : "Marcar refeição como feita"}
+          className={cn(
+            "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-colors",
+            item.feito ? "border-mint bg-mint" : "border-stroke hover:border-mint/60"
+          )}
+        >
+          {item.feito && (
+            <svg viewBox="0 0 12 12" className="h-3 w-3 fill-none stroke-[var(--color-bg)]">
+              <path d="M2 6l2.5 2.5L10 3" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          )}
+        </button>
+
+        {item.horario ? (
+          <span className="tabular w-11 shrink-0 text-[12.5px] text-steel">{item.horario}</span>
+        ) : (
+          <span className="w-11 shrink-0 text-center text-[12px] text-steel/60">–</span>
+        )}
+
+        <span className="text-[15px] leading-none">{REFEICAO_EMOJI}</span>
+
+        <div className="min-w-0 flex-1">
+          <p className={cn("truncate text-[13.5px]", item.feito ? "text-ice" : "text-mist")}>
+            {item.nome}
+          </p>
+          {opcaoEscolhida && (
+            <span className="mt-1 block truncate text-[11px] text-steel">
+              {opcaoEscolhida.nome}
+            </span>
+          )}
+        </div>
+
+        {temEscolha && (
+          <button
+            type="button"
+            onClick={() => setEscolhendo((v) => !v)}
+            className="shrink-0 text-[11px] text-steel transition-colors hover:text-ice"
+          >
+            {item.feito ? "Trocar" : "Opções"}
+          </button>
+        )}
+      </div>
+
+      {escolhendo && temEscolha && (
+        <div className="flex flex-wrap gap-2 border-t border-stroke px-4 py-2.5">
+          {item.opcoes.map((o) => (
+            <button
+              key={o.id}
+              type="button"
+              onClick={() => {
+                onEscolher(o.id);
+                setEscolhendo(false);
+              }}
+              className={cn(
+                "rounded-full border px-3 py-1.5 text-[12px] transition-colors",
+                o.id === item.escolhaId
+                  ? "border-mint bg-mint-soft text-ice"
+                  : "border-stroke text-mist hover:border-mint/60 hover:text-ice"
+              )}
+            >
+              {o.nome}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

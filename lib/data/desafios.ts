@@ -19,7 +19,11 @@ import {
   toSP,
   weekKeySP,
 } from "@/lib/dates";
-import { METRICAS, type MetaMetrica } from "@/lib/data/metas-quantitativas-constantes";
+import {
+  METRICAS,
+  calcularMetrica,
+  type MetaMetrica,
+} from "@/lib/data/metas-quantitativas-constantes";
 import { gerarInsights, type InsightView } from "@/lib/data/desafios-insights";
 import { streakLC } from "@/lib/data/home";
 import { parseJSON } from "@/lib/utils";
@@ -98,6 +102,7 @@ type DadosBrutosUsuario = {
   studySessions: { startedAt: Date; netSeconds: number }[];
   rotinaChecks: Map<string, { data: Date }[]>; // por rotinaTemplateId
   variavelChecks: Map<string, { data: Date }[]>; // por variavelId
+  dinheiroLancamentos: { data: Date; valor: number }[];
 };
 
 function dentro(data: Date, inicio: Date, fim: Date): boolean {
@@ -124,8 +129,15 @@ async function carregarDadosBrutosMultiUsuario(
   const rotinaIdsUnicos = [...new Set(membros.flatMap((m) => m.rotinaTemplateIds))];
   const variavelIdsUnicos = [...new Set(membros.flatMap((m) => m.variavelIds))];
 
-  const [workoutSessions, runs, dietLogs, studySessions, rotinaChecksFlat, variavelChecksFlat] =
-    await Promise.all([
+  const [
+    workoutSessions,
+    runs,
+    dietLogs,
+    studySessions,
+    rotinaChecksFlat,
+    variavelChecksFlat,
+    dinheiroLancamentosFlat,
+  ] = await Promise.all([
     db.workoutSession.findMany({
       where: { userId: { in: userIds }, data: { gte: inicioTotal, lte: fimTotal } },
       select: { userId: true, data: true },
@@ -166,6 +178,10 @@ async function carregarDadosBrutosMultiUsuario(
           select: { userId: true, variavelId: true, data: true },
         })
       : Promise.resolve([]),
+    db.dinheiroLancamento.findMany({
+      where: { userId: { in: userIds }, data: { gte: inicioTotal, lte: fimTotal } },
+      select: { userId: true, data: true, valor: true },
+    }),
   ]);
 
   const porUsuario = new Map<string, DadosBrutosUsuario>();
@@ -177,6 +193,7 @@ async function carregarDadosBrutosMultiUsuario(
       studySessions: [],
       rotinaChecks: new Map(),
       variavelChecks: new Map(),
+      dinheiroLancamentos: [],
     });
   }
   for (const s of workoutSessions) porUsuario.get(s.userId)?.workoutSessions.push({ data: s.data });
@@ -203,6 +220,8 @@ async function carregarDadosBrutosMultiUsuario(
     lista.push({ data: c.data });
     dados.variavelChecks.set(c.variavelId, lista);
   }
+  for (const l of dinheiroLancamentosFlat)
+    porUsuario.get(l.userId)?.dinheiroLancamentos.push({ data: l.data, valor: l.valor });
 
   return porUsuario;
 }
@@ -210,31 +229,24 @@ async function carregarDadosBrutosMultiUsuario(
 /** Progresso (atual) de UMA meta folha num período específico, calculado em memória a partir de DadosBrutosUsuario. */
 function calcularAtualMeta(meta: MetaRow, dados: DadosBrutosUsuario, inicio: Date, fim: Date): number {
   if (meta.origem === "metrica" && meta.metrica) {
-    const metrica = meta.metrica as MetaMetrica;
-    if (metrica === "treinos") {
-      const sessoes = dados.workoutSessions.filter((s) => dentro(s.data, inicio, fim)).length;
-      const corridas = dados.runs.filter((r) => dentro(r.data, inicio, fim)).length;
-      return sessoes + corridas;
-    }
-    if (metrica === "corridas_completas") {
-      return dados.runs.filter((r) => dentro(r.data, inicio, fim)).length;
-    }
-    if (metrica === "km_corridos") {
-      return dados.runs
+    // As fórmulas moram em metas-quantitativas-constantes.ts (fonte única,
+    // compartilhada com metas-quantitativas.ts): aqui só recortamos o período.
+    return calcularMetrica(meta.metrica as MetaMetrica, {
+      treinos: dados.workoutSessions.filter((s) => dentro(s.data, inicio, fim)).length,
+      corridas: dados.runs.filter((r) => dentro(r.data, inicio, fim)).length,
+      km: dados.runs
         .filter((r) => dentro(r.data, inicio, fim))
-        .reduce((s, r) => s + r.km, 0);
-    }
-    if (metrica === "refeicoes_cumpridas") {
-      return dados.dietLogs
+        .reduce((s, r) => s + r.km, 0),
+      refeicoesCumpridas: dados.dietLogs
         .filter((l) => dentro(l.data, inicio, fim))
-        .reduce((s, l) => s + parseJSON<string[]>(l.refeicoesCumpridas, []).length, 0);
-    }
-    if (metrica === "horas_estudo") {
-      const segundos = dados.studySessions
+        .reduce((s, l) => s + parseJSON<string[]>(l.refeicoesCumpridas, []).length, 0),
+      segundosEstudo: dados.studySessions
         .filter((s) => dentro(s.startedAt, inicio, fim))
-        .reduce((s, x) => s + x.netSeconds, 0);
-      return segundos / 3600;
-    }
+        .reduce((s, x) => s + x.netSeconds, 0),
+      dinheiroCentavos: dados.dinheiroLancamentos
+        .filter((l) => dentro(l.data, inicio, fim))
+        .reduce((s, l) => s + l.valor, 0),
+    });
   }
   if (meta.origem === "checklist" && meta.rotinaTemplateId) {
     const checks = dados.rotinaChecks.get(meta.rotinaTemplateId) ?? [];

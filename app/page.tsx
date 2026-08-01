@@ -98,7 +98,8 @@ export default async function HomePage() {
           {carteira.porClasse.length === 0 ? (
             <EmptyState
               icon={CalendarX2}
-              title="Nenhum ativo cadastrado ainda."
+              title="Nenhum ativo cadastrado ainda"
+              description="Cadastre seus investimentos para ver a distribuição da carteira."
             />
           ) : (
             <Donut
@@ -143,7 +144,8 @@ export default async function HomePage() {
           {eventosProximos.length === 0 ? (
             <EmptyState
               icon={CalendarX2}
-              title="Nada na agenda de hoje."
+              title="Nada na agenda de hoje"
+              description="Dia livre. Se surgir algo, adicione na agenda para não perder de vista."
             />
           ) : (
             <ul className="mt-4 flex flex-col">
