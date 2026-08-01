@@ -40,7 +40,7 @@ async function insightsFinanceirosDoDia(
   "use cache";
   // lê transaction/category (via resumoDoMes/categoriasComparadas) e subscription
   cacheTag(tagUsuario(contaFinanceiraId, "financas"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const ref = refDoDiaSP(dia);
   const mes = monthName(ref);
@@ -115,7 +115,7 @@ async function insightDoDiaKey(
     tagUsuario(userId, "dieta"),
     tagUsuario(userId, "treinos")
   );
-  cacheLife("days");
+  cacheLife("usuario");
 
   const ref = refDoDiaSP(dia);
   const [financeiros, kcal7d, streak, dieta, resumo] = await Promise.all([
@@ -157,7 +157,7 @@ async function insightFinanceiroPrincipalDoDia(
 ): Promise<Insight> {
   "use cache";
   cacheTag(tagUsuario(contaFinanceiraId, "financas"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const ref = refDoDiaSP(dia);
   const [financeiros, resumo] = await Promise.all([

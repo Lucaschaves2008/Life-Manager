@@ -111,7 +111,7 @@ export async function diaDaDieta(
 async function diaDaDietaDoDia(userId: string, dia: string): Promise<DiaDaDieta> {
   "use cache";
   cacheTag(tagUsuario(userId, "dieta"), tagUsuario(userId, "settings"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const ref = refDoDiaSP(dia);
   const [dieta, log, metaAgua, copoAgua] = await Promise.all([
@@ -257,7 +257,7 @@ export async function aderencia7d(
 async function aderencia7dDoDia(userId: string, dia: string): Promise<number> {
   "use cache";
   cacheTag(tagUsuario(userId, "dieta"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const ref = refDoDiaSP(dia);
   const dieta = await db.diet.findFirst({
@@ -292,7 +292,7 @@ export async function streakDieta(
 async function streakDietaDoDia(userId: string, dia: string): Promise<number> {
   "use cache";
   cacheTag(tagUsuario(userId, "dieta"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const ref = refDoDiaSP(dia);
   const logs = await db.dietDayLog.findMany({
@@ -343,7 +343,7 @@ export async function evolucaoPeso(
 async function evolucaoPesoDoDia(userId: string, dia: string): Promise<EvolucaoPeso> {
   "use cache";
   cacheTag(tagUsuario(userId, "dieta"), tagUsuario(userId, "settings"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const ref = refDoDiaSP(dia);
   // Janela de 12 meses; 6 pontos anteriores mantêm a média móvel correta no início.

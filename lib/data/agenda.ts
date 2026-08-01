@@ -30,7 +30,7 @@ export async function getFeriados(ano: number): Promise<FeriadoView[]> {
 async function feriadosDoAno(ano: number): Promise<FeriadoView[]> {
   "use cache";
   cacheTag(TAG_FERIADOS);
-  cacheLife("days");
+  cacheLife("usuario");
   const salvos = await db.holiday.findMany({ where: { ano }, orderBy: { data: "asc" } });
   return salvos.map((h) => ({ data: dayKeySP(h.data), nome: h.nome }));
 }
@@ -109,7 +109,7 @@ async function ocorrenciasDaJanela(
 ): Promise<OcorrenciaView[]> {
   "use cache";
   cacheTag(tagUsuario(userId, "agenda"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const from = refDoDiaSP(diaDe);
   const to = spEndOfDay(refDoDiaSP(diaAte));
@@ -161,7 +161,7 @@ async function feriadosDaJanela(
 ): Promise<OcorrenciaView[]> {
   "use cache";
   cacheTag(TAG_FERIADOS);
-  cacheLife("days");
+  cacheLife("usuario");
 
   const from = refDoDiaSP(diaDe);
   const to = spEndOfDay(refDoDiaSP(diaAte));
@@ -235,7 +235,7 @@ async function planoDaJanela(
   "use cache";
   cacheTag(tagUsuario(userId, "checklist"));
   cacheTag(tagUsuario(userId, "estudos")); // emoji/cor da categoria
-  cacheLife("days");
+  cacheLife("usuario");
 
   const from = spStartOfDay(refDoDiaSP(diaDe));
   const to = spEndOfDay(refDoDiaSP(diaAte));
@@ -288,7 +288,7 @@ async function planoDaJanela(
 export async function notasDoEvento(userId: string, eventId: string) {
   "use cache";
   cacheTag(tagUsuario(userId, "agenda"));
-  cacheLife("days");
+  cacheLife("usuario");
   return db.eventNote.findMany({
     where: { userId, eventId },
     orderBy: { criadoEm: "desc" },

@@ -101,7 +101,7 @@ export const resumoDoMes = cache(async function resumoDoMes(
 async function resumoDoDia(contaFinanceiraId: string, dia: string): Promise<ResumoMes> {
   "use cache";
   cacheTag(tagUsuario(contaFinanceiraId, "financas"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const ref = refDoDiaSP(dia);
   const iniMes = spStartOfMonth(ref);
@@ -196,7 +196,7 @@ async function ritmoDoDia(
 ): Promise<{ data: RitmoPoint[]; acima: boolean }> {
   "use cache";
   cacheTag(tagUsuario(contaFinanceiraId, "financas"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const ref = refDoDiaSP(dia);
   const refSP = toSP(ref);
@@ -306,7 +306,7 @@ async function categoriasDoMes(
 ): Promise<CategoriaComparada[]> {
   "use cache";
   cacheTag(tagUsuario(contaFinanceiraId, "financas"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const ref = refDoMesSP(mes);
   const refAnterior = subMonths(toSP(ref), 1);
@@ -372,7 +372,7 @@ export async function assinaturasResumidas(
 ): Promise<AssinaturaResumo[]> {
   "use cache";
   cacheTag(tagUsuario(contaFinanceiraId, "financas"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const subs = await db.subscription.findMany({
     where: { contaFinanceiraId, status: "ativa" },
@@ -396,7 +396,7 @@ export type ContaComSaldo = {
 export async function contasComSaldo(contaFinanceiraId: string): Promise<ContaComSaldo[]> {
   "use cache";
   cacheTag(tagUsuario(contaFinanceiraId, "financas"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const [contas, txs] = await Promise.all([
     db.account.findMany({ where: { contaFinanceiraId }, orderBy: { criadoEm: "asc" } }),
@@ -472,7 +472,7 @@ async function faturasDoDia(
 ): Promise<FaturaCartao[]> {
   "use cache";
   cacheTag(tagUsuario(contaFinanceiraId, "financas"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const refSP = toSP(refDoDiaSP(dia));
   const [cards, txs, transferenciasCartao] = await Promise.all([
@@ -565,7 +565,7 @@ async function fluxoDeCaixaDoMes(
 ): Promise<FluxoMes[]> {
   "use cache";
   cacheTag(tagUsuario(contaFinanceiraId, "financas"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const ref = refDoMesSP(mes);
   const inicio = spStartOfMonth(subMonths(toSP(ref), meses - 1));
@@ -628,7 +628,7 @@ async function gastosDoMes(
 ): Promise<{ dia: number; valor: number }[]> {
   "use cache";
   cacheTag(tagUsuario(contaFinanceiraId, "financas"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const ref = refDoMesSP(mes);
   const [txs, assinaturas] = await Promise.all([
@@ -687,7 +687,7 @@ async function vencimentosDoDia(
 ): Promise<Vencimento[]> {
   "use cache";
   cacheTag(tagUsuario(contaFinanceiraId, "financas"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const ref = refDoDiaSP(diaKey);
   const de = spStartOfDay(ref);
@@ -770,7 +770,7 @@ async function parcelamentosDoDia(
 ): Promise<Parcelamento[]> {
   "use cache";
   cacheTag(tagUsuario(contaFinanceiraId, "financas"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const txs = await db.transaction.findMany({
     where: { contaFinanceiraId, parcelaGrupo: { not: null } },

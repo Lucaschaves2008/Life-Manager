@@ -27,7 +27,7 @@ import { parseJSON } from "@/lib/utils";
 export async function getSetting(userId: string, key: string, fallback: string) {
   "use cache";
   cacheTag(tagUsuario(userId, "settings"));
-  cacheLife("days");
+  cacheLife("usuario");
   const s = await db.setting.findUnique({ where: { userId_key: { userId, key } } });
   return s?.value ?? fallback;
 }
@@ -53,7 +53,7 @@ export async function eventosDeHoje(
 async function eventosDoDia(userId: string, dia: string): Promise<EventoHoje[]> {
   "use cache";
   cacheTag(tagUsuario(userId, "agenda"), TAG_FERIADOS);
-  cacheLife("days");
+  cacheLife("usuario");
 
   const ref = refDoDiaSP(dia);
   const ini = spStartOfDay(ref);
@@ -140,7 +140,7 @@ async function ocorrenciasProximas(
 ): Promise<OcorrenciaProxima[]> {
   "use cache";
   cacheTag(tagUsuario(userId, "agenda"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const ini = spStartOfDay(refDoDiaSP(dia));
   const fimJanela = spEndOfDay(addDays(ini, 8)); // superjanela; o wrapper refina
@@ -171,7 +171,7 @@ export async function treinosDaSemana(userId: string, ref: Date = new Date()) {
 async function treinosDaSemanaDoDia(userId: string, dia: string) {
   "use cache";
   cacheTag(tagUsuario(userId, "treinos"), tagUsuario(userId, "settings"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const ref = refDoDiaSP(dia);
   const ini = spStartOfWeek(ref);
@@ -246,7 +246,7 @@ export async function kcalHoje(
 async function kcalDoDia(userId: string, dia: string): Promise<KcalHoje> {
   "use cache";
   cacheTag(tagUsuario(userId, "dieta"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const ref = refDoDiaSP(dia);
   const dieta = await db.diet.findFirst({
@@ -281,7 +281,7 @@ export async function mediaKcal7d(
 async function mediaKcal7dDoDia(userId: string, dia: string): Promise<number> {
   "use cache";
   cacheTag(tagUsuario(userId, "dieta"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const ref = refDoDiaSP(dia);
   const dieta = await db.diet.findFirst({
@@ -340,7 +340,7 @@ export async function streakLC(
 async function streakDoDia(userId: string, dia: string): Promise<StreakData> {
   "use cache";
   cacheTag(tagUsuario(userId, "streak"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const ref = refDoDiaSP(dia);
   const inicio = subDays(spStartOfDay(ref), 400);

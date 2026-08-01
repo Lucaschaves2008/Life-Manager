@@ -18,7 +18,7 @@ export type HabitoView = { id: string; nome: string; nota: string | null; ordem:
 export async function habitosAtivos(userId: string): Promise<HabitoView[]> {
   "use cache";
   cacheTag(tagUsuario(userId, "checklist"));
-  cacheLife("days");
+  cacheLife("usuario");
   const habitos = await db.habit.findMany({
     where: { userId, ativo: true },
     orderBy: { ordem: "asc" },
@@ -34,7 +34,7 @@ export async function itensFeitosNoDia(userId: string, dia: Date): Promise<strin
 async function itensFeitosDoDia(userId: string, dia: string): Promise<string[]> {
   "use cache";
   cacheTag(tagUsuario(userId, "checklist"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const ref = refDoDiaSP(dia);
   const log = await db.habitDayLog.findFirst({
@@ -62,7 +62,7 @@ async function percentualMensalHabitosDoMes(
 ): Promise<PctMensalHabito[]> {
   "use cache";
   cacheTag(tagUsuario(userId, "checklist"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const hoje = refDoDiaSP(hojeKey);
   const inicioMes = spStartOfMonth(hoje);

@@ -146,7 +146,7 @@ export async function sessaoEmAndamento(userId: string): Promise<SessaoView | nu
 async function sessaoAtivaDb(userId: string): Promise<SessaoDb | null> {
   "use cache";
   cacheTag(tagUsuario(userId, "estudos"));
-  cacheLife("days");
+  cacheLife("usuario");
   const s = await db.studySession.findFirst({
     where: { userId, endedAt: null },
     orderBy: { startedAt: "desc" },
@@ -165,7 +165,7 @@ export async function sessoesDoDia(userId: string, dia: Date): Promise<SessaoVie
 async function sessoesDoDiaDb(userId: string, dia: string): Promise<SessaoDb[]> {
   "use cache";
   cacheTag(tagUsuario(userId, "estudos"));
-  cacheLife("days");
+  cacheLife("usuario");
   const ref = refDoDiaSP(dia);
   const sessoes = await db.studySession.findMany({
     where: {
@@ -188,7 +188,7 @@ export async function sessaoPorId(userId: string, id: string): Promise<SessaoVie
 async function sessaoPorIdDb(userId: string, id: string): Promise<SessaoDb | null> {
   "use cache";
   cacheTag(tagUsuario(userId, "estudos"));
-  cacheLife("days");
+  cacheLife("usuario");
   const s = await db.studySession.findFirst({
     where: { id, userId },
     include: includePausas,
@@ -309,7 +309,7 @@ export async function dashboardEstudos(
 async function sessoesDashboardDb(userId: string, dia: string): Promise<SessaoDb[]> {
   "use cache";
   cacheTag(tagUsuario(userId, "estudos"));
-  cacheLife("days");
+  cacheLife("usuario");
   const desde = spStartOfDay(addDays(refDoDiaSP(dia), -55)); // ~8 semanas de histórico
   // pausas só influenciam o snapshot de sessões em andamento; nas finalizadas
   // os totais vêm de totalSeconds/netSeconds — evita carregar ~8 semanas de pausas
@@ -343,7 +343,7 @@ export type CategoriaView = {
 export async function categoriasEstudo(userId: string): Promise<CategoriaView[]> {
   "use cache";
   cacheTag(tagUsuario(userId, "estudos"));
-  cacheLife("days");
+  cacheLife("usuario");
   const cats = await db.studyCategory.findMany({
     where: { userId, ativo: true },
     orderBy: { ordem: "asc" },

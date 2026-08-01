@@ -34,7 +34,7 @@ const carregarCarteira = cache(async (contaFinanceiraId: string) => carteiraCach
 async function carteiraCacheada(contaFinanceiraId: string) {
   "use cache";
   cacheTag(tagUsuario(contaFinanceiraId, "investimentos"));
-  cacheLife("days");
+  cacheLife("usuario");
   return db.asset.findMany({
     where: { contaFinanceiraId },
     include: { movements: { orderBy: { data: "asc" } } },
@@ -73,7 +73,7 @@ async function ativosResumidosDoDia(
 ): Promise<AtivoResumo[]> {
   "use cache";
   cacheTag(tagUsuario(contaFinanceiraId, "investimentos"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   // fim do dia: inclui os movimentos datados de hoje (gravados às 12:00 SP)
   const ref = spEndOfDay(refDoDiaSP(dia));
@@ -144,7 +144,7 @@ async function evolucaoPatrimonioDoDia(
 ): Promise<PontoPatrimonio[]> {
   "use cache";
   cacheTag(tagUsuario(contaFinanceiraId, "investimentos"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const ref = refDoDiaSP(dia);
   const ativos = await carregarCarteira(contaFinanceiraId);
@@ -255,7 +255,7 @@ async function aportesDevidosDoDia(
 ): Promise<AporteDevido[]> {
   "use cache";
   cacheTag(tagUsuario(contaFinanceiraId, "investimentos"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const hoje = toSP(refDoDiaSP(dia));
   const diaHoje = hoje.getDate();
@@ -304,7 +304,7 @@ async function revisoesDevidasDoDia(
 ): Promise<RevisaoDevida[]> {
   "use cache";
   cacheTag(tagUsuario(contaFinanceiraId, "investimentos"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const hoje = spEndOfDay(refDoDiaSP(dia));
   const limite = new Date(hoje);
@@ -350,7 +350,7 @@ async function resumoCarteiraDoDia(
 ): Promise<ResumoCarteira> {
   "use cache";
   cacheTag(tagUsuario(contaFinanceiraId, "investimentos"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   // mesmo corte fim-do-dia dos ativos para manter os números consistentes
   const ref = spEndOfDay(refDoDiaSP(dia));

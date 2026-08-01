@@ -34,7 +34,7 @@ async function revisoesPendentesDoDia(
 ): Promise<NotificacaoRevisao[]> {
   "use cache";
   cacheTag(tagUsuario(userId, "investimentos"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const hoje = refDoDiaSP(dia); // início do dia em SP
   const limite = new Date(hoje);

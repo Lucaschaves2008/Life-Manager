@@ -132,7 +132,7 @@ async function resumoSemanalRotinaDoDia(
 ): Promise<DiaResumoRotina[]> {
   "use cache";
   cacheTag(tagUsuario(userId, "checklist"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const ref = refDoDiaSP(dia);
   const de = spStartOfDay(subDays(ref, dias - 1));
@@ -181,7 +181,7 @@ async function resumoSemanalRotinaDoDia(
 async function templatesAtivos(userId: string): Promise<RotinaTemplateDb[]> {
   "use cache";
   cacheTag(tagUsuario(userId, "checklist"));
-  cacheLife("days");
+  cacheLife("usuario");
   const templates = await db.rotinaTemplate.findMany({
     where: { userId, ativo: true },
     orderBy: { ordem: "asc" },
@@ -193,7 +193,7 @@ async function templatesAtivos(userId: string): Promise<RotinaTemplateDb[]> {
 async function planoAtivoNoDia(userId: string, dayKey: string): Promise<string | null> {
   "use cache";
   cacheTag(tagUsuario(userId, "checklist"));
-  cacheLife("days");
+  cacheLife("usuario");
   const ref = refDoDiaSP(dayKey);
   const [escolha, padrao] = await Promise.all([
     db.rotinaDiaPlano.findFirst({
@@ -212,7 +212,7 @@ async function planoAtivoNoDia(userId: string, dayKey: string): Promise<string |
 async function checksDoDia(userId: string, dayKey: string): Promise<Map<string, boolean>> {
   "use cache";
   cacheTag(tagUsuario(userId, "checklist"));
-  cacheLife("days");
+  cacheLife("usuario");
   const ref = refDoDiaSP(dayKey);
   const checks = await db.rotinaCheckDia.findMany({
     where: { userId, data: { gte: spStartOfDay(ref), lte: spEndOfDay(ref) } },
@@ -282,7 +282,7 @@ export type RotinaOpcao = { id: string; nome: string; foco: string | null };
 export async function rotinasParaPlano(userId: string): Promise<RotinaOpcao[]> {
   "use cache";
   cacheTag(tagUsuario(userId, "treinos"));
-  cacheLife("days");
+  cacheLife("usuario");
   const rotinas = await db.routine.findMany({
     where: { userId },
     orderBy: { ordem: "asc" },
@@ -313,7 +313,7 @@ export type RotinaTemplateView = {
 export async function rotinaTemplates(userId: string): Promise<RotinaTemplateView[]> {
   "use cache";
   cacheTag(tagUsuario(userId, "checklist"));
-  cacheLife("days");
+  cacheLife("usuario");
   const templates = await db.rotinaTemplate.findMany({
     where: { userId, ativo: true },
     orderBy: { ordem: "asc" },
@@ -343,7 +343,7 @@ export type RotinaPlanoView = { id: string; nome: string; padrao: boolean; ordem
 export async function rotinaPlanos(userId: string): Promise<RotinaPlanoView[]> {
   "use cache";
   cacheTag(tagUsuario(userId, "checklist"));
-  cacheLife("days");
+  cacheLife("usuario");
   const planos = await db.rotinaPlano.findMany({
     where: { userId, ativo: true },
     orderBy: { ordem: "asc" },

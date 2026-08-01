@@ -440,7 +440,7 @@ async function evolucaoAreasDoDia(
     tagUsuario(userId, "settings"),
     tagUsuario(userId, "metas")
   );
-  cacheLife("days");
+  cacheLife("usuario");
 
   const ref = refDoDiaSP(dia);
   return Promise.all([

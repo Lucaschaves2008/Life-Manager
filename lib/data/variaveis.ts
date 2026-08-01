@@ -35,7 +35,7 @@ export async function variaveisAtivas(userId: string): Promise<VariavelView[]> {
   "use cache";
   cacheTag(tagUsuario(userId, "checklist"));
   cacheTag(tagUsuario(userId, "metas"));
-  cacheLife("days");
+  cacheLife("usuario");
   const variaveis = await db.variavel.findMany({
     where: { userId, ativo: true },
     orderBy: [{ ordem: "asc" }, { criadoEm: "asc" }],
@@ -142,7 +142,7 @@ export type VariavelChecklistItem = VariavelView & { feito: boolean; streakAtual
 export async function checksVariavelDoDia(userId: string, dayKey: string): Promise<Set<string>> {
   "use cache";
   cacheTag(tagUsuario(userId, "checklist"));
-  cacheLife("days");
+  cacheLife("usuario");
   const from = spStartOfDay(new Date(`${dayKey}T12:00:00-03:00`));
   const to = spEndOfDay(from);
   const checks = await db.variavelCheckDia.findMany({

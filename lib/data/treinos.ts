@@ -58,7 +58,7 @@ export type {
 export async function semanaCicloAtual(userId: string): Promise<number> {
   "use cache";
   cacheTag(tagUsuario(userId, "settings"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const s = await db.setting.findUnique({
     where: { userId_key: { userId, key: "treino_ciclo_semana" } },
@@ -84,7 +84,7 @@ async function frequenciaDoDia(
 ): Promise<FrequenciaCell[]> {
   "use cache";
   cacheTag(tagUsuario(userId, "treinos"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const ref = refDoDiaSP(dia);
   const de = spStartOfDay(subDays(toSP(ref), dias));
@@ -140,7 +140,7 @@ async function resumoTreinosDoDia(
   "use cache";
   // lê tabelas de treinos + Setting (meta_treinos_mes)
   cacheTag(tagUsuario(userId, "treinos"), tagUsuario(userId, "settings"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const ref = refDoDiaSP(dia);
   const iniMes = spStartOfMonth(ref);
@@ -233,7 +233,7 @@ async function volumeSemanalDoDia(
 ): Promise<VolumeSemana[]> {
   "use cache";
   cacheTag(tagUsuario(userId, "treinos"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const ref = refDoDiaSP(dia);
   const de = spStartOfWeek(subWeeks(toSP(ref), semanas - 1));
@@ -259,7 +259,7 @@ export async function recordes(
 ): Promise<{ cinco: Recorde; dez: Recorde }> {
   "use cache";
   cacheTag(tagUsuario(userId, "treinos"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   // só as faixas usadas nos cálculos de 5k e 10k
   const corridas = await db.run.findMany({
@@ -302,7 +302,7 @@ export async function progressaoDoExercicio(
 ): Promise<ProgressaoPonto[]> {
   "use cache";
   cacheTag(tagUsuario(userId, "treinos"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const logs = await db.setLog.findMany({
     where: { userId, exerciseId },
@@ -351,7 +351,7 @@ async function diasDesdeUltimoTreinoDoDia(
 ): Promise<number | null> {
   "use cache";
   cacheTag(tagUsuario(userId, "treinos"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const ref = refDoDiaSP(dia);
   const ultima = await db.workoutSession.findFirst({
@@ -383,7 +383,7 @@ async function planosCorridaDoDia(
 ): Promise<PlanoCorridaView[]> {
   "use cache";
   cacheTag(tagUsuario(userId, "treinos"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const ref = refDoDiaSP(dia);
   const inicio = spStartOfWeek(ref);
@@ -499,7 +499,7 @@ async function treinosDeHojeDoDia(
 ): Promise<TreinoHojeView[]> {
   "use cache";
   cacheTag(tagUsuario(userId, "treinos"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const ref = refDoDiaSP(dia);
   const diaSemana = toSP(ref).getDay();
@@ -595,7 +595,7 @@ export async function sessoesCorridaParaPlano(
 ): Promise<SessaoCorridaOpcao[]> {
   "use cache";
   cacheTag(tagUsuario(userId, "treinos"));
-  cacheLife("days");
+  cacheLife("usuario");
   const planos = await db.runRoutine.findMany({
     where: { userId },
     orderBy: { ordem: "asc" },
@@ -635,7 +635,7 @@ async function mediaMensalDoDia(
 ): Promise<MediaPeriodo[]> {
   "use cache";
   cacheTag(tagUsuario(userId, "treinos"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const ref = refDoDiaSP(dia);
   const de = spStartOfMonth(subMonths(toSP(ref), meses - 1));
@@ -676,7 +676,7 @@ async function mediaAnualDoDia(
 ): Promise<MediaPeriodo[]> {
   "use cache";
   cacheTag(tagUsuario(userId, "treinos"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const ref = refDoDiaSP(dia);
   const anoAtual = toSP(ref).getFullYear();
@@ -712,7 +712,7 @@ export async function perfilCorrida(userId: string): Promise<PerfilCorrida> {
   "use cache";
   // só lê Setting → tag "settings"
   cacheTag(tagUsuario(userId, "settings"));
-  cacheLife("days");
+  cacheLife("usuario");
 
   const settings = await db.setting.findMany({
     where: {

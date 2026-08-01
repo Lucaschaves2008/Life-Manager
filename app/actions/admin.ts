@@ -5,9 +5,20 @@ import { requireSuperAdmin, revalidateProfile } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { createAdminClient } from "@/lib/supabase/admin";
 
+/**
+ * Invalidação de cache NUNCA pode derrubar uma escrita já commitada. Em
+ * criarUsuario o usuário do Supabase Auth já existe quando isto roda: deixar
+ * um erro de cache subir aqui aborta a action DEPOIS do efeito colateral
+ * irreversível, e o retry seguinte esbarra em "email_exists" pra sempre.
+ * Cache defasado se resolve sozinho (perfil "usuario", 30s); auth órfão não.
+ */
 function revalidar(userId?: string) {
-  if (userId) revalidateProfile(userId);
-  revalidatePath("/admin");
+  try {
+    if (userId) revalidateProfile(userId);
+    revalidatePath("/admin");
+  } catch (e) {
+    console.error("[admin] falha ao invalidar cache (ignorada):", e);
+  }
 }
 
 export async function bloquearUsuario(id: string) {
@@ -65,26 +76,69 @@ export async function criarUsuario(
 ): Promise<string> {
   await requireSuperAdmin();
   const supabaseAdmin = createAdminClient();
+  const emailNormalizado = email.trim().toLowerCase();
   const senhaFinal = senha?.trim() || crypto.randomUUID().replace(/-/g, "").slice(0, 12);
 
+  let usuario: { id: string; email?: string } | null = null;
+
   const { data, error } = await supabaseAdmin.auth.admin.createUser({
-    email,
+    email: emailNormalizado,
     password: senhaFinal,
     email_confirm: true,
     user_metadata: nome ? { nome } : undefined,
   });
-  if (error) throw new Error(error.message);
 
-  if (data.user) {
-    await db.profile.upsert({
-      where: { id: data.user.id },
-      create: { id: data.user.id, email: data.user.email!, nome: nome || null },
-      update: { nome: nome || undefined },
+  if (error) {
+    // Criar no Auth e gravar o Profile são dois sistemas distintos, sem
+    // transação em volta. Se a primeira tentativa criou o usuário no Auth e
+    // morreu antes do Profile, o Auth passa a responder "email_exists" e o
+    // admin fica travado: o usuário existe, não tem Profile (resolveUser
+    // devolve null, ele não consegue entrar) e recriar é impossível.
+    // Em vez de repetir o erro, adota o usuário órfão: reaplica a senha e
+    // grava o Profile que faltou.
+    if (error.code !== "email_exists") throw new Error(error.message);
+
+    const existente = await buscarUsuarioAuthPorEmail(supabaseAdmin, emailNormalizado);
+    if (!existente) throw new Error(error.message);
+
+    const { error: erroSenha } = await supabaseAdmin.auth.admin.updateUserById(existente.id, {
+      password: senhaFinal,
+      email_confirm: true,
+      ...(nome ? { user_metadata: { nome } } : {}),
     });
+    if (erroSenha) throw new Error(erroSenha.message);
+
+    usuario = existente;
+  } else {
+    usuario = data.user;
   }
 
-  revalidar(data.user?.id);
+  if (!usuario) throw new Error("Não foi possível criar o usuário no Auth.");
+
+  await db.profile.upsert({
+    where: { id: usuario.id },
+    create: { id: usuario.id, email: usuario.email ?? emailNormalizado, nome: nome || null },
+    update: { nome: nome || undefined },
+  });
+
+  revalidar(usuario.id);
   return senhaFinal;
+}
+
+/** Procura um usuário no Supabase Auth pelo email, paginando a listagem. */
+async function buscarUsuarioAuthPorEmail(
+  supabaseAdmin: ReturnType<typeof createAdminClient>,
+  email: string
+): Promise<{ id: string; email?: string } | null> {
+  const alvo = email.toLowerCase();
+  for (let page = 1; page <= 20; page++) {
+    const { data, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: 200 });
+    if (error) throw new Error(error.message);
+    const achado = data.users.find((u) => u.email?.toLowerCase() === alvo);
+    if (achado) return { id: achado.id, email: achado.email };
+    if (data.users.length < 200) break;
+  }
+  return null;
 }
 
 export async function excluirUsuario(id: string) {
