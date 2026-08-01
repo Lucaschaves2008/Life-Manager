@@ -1,37 +1,35 @@
-import { BarChart3, BookOpen, Flame } from "lucide-react";
+import Link from "next/link";
+import { BarChart3, BookOpen, ChevronRight, Flame } from "lucide-react";
 import { Card, CardLabel } from "@/components/caverna/card";
 import { Donut } from "@/components/caverna/donut";
 import { EmptyState } from "@/components/caverna/empty-state";
 import { PillTabs } from "@/components/caverna/pill-tabs";
 import { StatCard } from "@/components/caverna/stat-card";
 import { HorasChart } from "@/components/estudos/horas-chart";
-import { dashboardEstudos, formatHoras } from "@/lib/data/estudos";
+import { ESTUDOS_TABS } from "@/components/estudos/tabs";
+import {
+  dashboardEstudos,
+  formatHoras,
+  rotuloDesde,
+  topicosEstudo,
+} from "@/lib/data/estudos";
 import { fullDate, nowSP } from "@/lib/dates";
 import { getCurrentUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-const tabs = [
-  { label: "Cronômetro", href: "/estudos" },
-  { label: "Dashboard", href: "/estudos/dashboard" },
-];
-
-const coresAssunto = [
-  "var(--color-mint)",
-  "var(--cal-blue)",
-  "var(--cal-amber)",
-  "var(--cal-teal)",
-  "var(--cal-lilac)",
-  "var(--color-steel)",
-];
-
 export default async function EstudosDashboardPage() {
   const user = await getCurrentUser();
   const hoje = nowSP();
-  const dash = await dashboardEstudos(user.id, hoje);
+  const [dash, topicos] = await Promise.all([
+    dashboardEstudos(user.id, hoje),
+    topicosEstudo(user.id, hoje),
+  ]);
 
-  const totalSegAssunto = dash.porAssunto.reduce((s, a) => s + a.segundos, 0);
-  const semDados = totalSegAssunto === 0;
+  // o gráfico de 14 dias é uma janela; a distribuição por tópico é de sempre
+  const comEstudo = topicos.filter((t) => t.totalSec > 0);
+  const totalSegTopico = comEstudo.reduce((s, t) => s + t.totalSec, 0);
+  const semDados = totalSegTopico === 0;
 
   return (
     <div className="flex flex-col gap-6">
@@ -44,7 +42,7 @@ export default async function EstudosDashboardPage() {
         </p>
       </header>
 
-      <PillTabs tabs={tabs} />
+      <PillTabs tabs={ESTUDOS_TABS} />
 
       {/* KPIs */}
       <div className="stagger grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
@@ -78,7 +76,7 @@ export default async function EstudosDashboardPage() {
         />
       </div>
 
-      {/* Gráfico de horas por dia + por assunto */}
+      {/* Gráfico de horas por dia + distribuição por tópico */}
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
         <Card className="xl:col-span-8">
           <CardLabel>Horas por dia · últimos 14 dias</CardLabel>
@@ -96,24 +94,24 @@ export default async function EstudosDashboardPage() {
         </Card>
 
         <Card className="xl:col-span-4">
-          <CardLabel>Por assunto</CardLabel>
+          <CardLabel>Por tópico · todo o histórico</CardLabel>
           <div className="mt-5">
             {semDados ? (
               <EmptyState
                 icon={BookOpen}
-                title="Nenhum assunto ainda"
-                description="Os assuntos aparecem aqui conforme você registra sessões de estudo."
+                title="Nenhum tópico ainda"
+                description="Os tópicos aparecem aqui conforme você registra sessões de estudo."
               />
             ) : (
               <Donut
-                segments={dash.porAssunto.map((a, i) => ({
-                  label: a.subject,
-                  value: a.segundos,
-                  cor: coresAssunto[i % coresAssunto.length],
+                segments={comEstudo.map((t) => ({
+                  label: t.nome,
+                  value: t.totalSec,
+                  cor: t.cor,
                 }))}
                 legend
                 formatValue={(v) => formatHoras(v)}
-                center={formatHoras(totalSegAssunto)}
+                center={formatHoras(totalSegTopico)}
                 centerSub="total"
                 size={132}
               />
@@ -122,30 +120,43 @@ export default async function EstudosDashboardPage() {
         </Card>
       </div>
 
-      {/* Detalhamento por assunto */}
+      {/* Detalhamento por tópico */}
       {!semDados && (
         <Card>
-          <CardLabel className="mb-4">Detalhe por assunto</CardLabel>
+          <CardLabel className="mb-4">
+            Detalhe por tópico · toque para ver tudo
+          </CardLabel>
           <div className="flex flex-col">
-            {dash.porAssunto.map((a, i) => (
-              <div
-                key={a.subject}
-                className="flex items-center gap-3 border-b border-stroke py-3 last:border-0"
+            {comEstudo.map((t) => (
+              <Link
+                key={t.id}
+                href={`/estudos/topicos/${t.id}`}
+                className="group flex items-center gap-3 border-b border-stroke py-3 last:border-0"
               >
                 <span
                   className="h-2.5 w-2.5 shrink-0 rounded-full"
-                  style={{ background: coresAssunto[i % coresAssunto.length] }}
+                  style={{ background: t.cor }}
                 />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[13.5px] text-ice">{a.subject}</p>
+                  <p className="truncate text-[13.5px] text-ice">
+                    <span className="mr-1.5">{t.emoji}</span>
+                    {t.nome}
+                  </p>
                   <p className="text-[11.5px] text-steel">
-                    {a.sessoes} {a.sessoes === 1 ? "sessão" : "sessões"}
+                    {t.sessoes} {t.sessoes === 1 ? "sessão" : "sessões"} · média{" "}
+                    {formatHoras(t.mediaSessaoSec)} ·{" "}
+                    {formatHoras(t.mediaSemanalSec)}/sem ·{" "}
+                    {rotuloDesde(t.ultimaISO, hoje)}
                   </p>
                 </div>
-                <span className="tabular text-[13.5px] text-mist">
-                  {formatHoras(a.segundos)}
+                <span className="tabular shrink-0 text-[13.5px] text-mist">
+                  {formatHoras(t.totalSec)}
                 </span>
-              </div>
+                <ChevronRight
+                  className="h-4 w-4 shrink-0 text-steel transition-transform group-hover:translate-x-0.5"
+                  strokeWidth={1.5}
+                />
+              </Link>
             ))}
           </div>
         </Card>

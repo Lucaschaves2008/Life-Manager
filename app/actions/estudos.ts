@@ -13,6 +13,7 @@ function revalidar(userId: string) {
   revalidateTag(tagUsuario(userId, "estudos"));
   revalidatePath("/estudos");
   revalidatePath("/estudos/dashboard");
+  revalidatePath("/estudos/topicos");
   revalidatePath("/");
 }
 

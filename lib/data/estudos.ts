@@ -5,7 +5,15 @@ import {
 import { addDays } from "date-fns";
 import { db } from "@/lib/db";
 import { tagUsuario } from "@/lib/cache-tags";
-import { dayKeySP, refDoDiaSP, spEndOfDay, spStartOfDay, toSP } from "@/lib/dates";
+import {
+  dayKeySP,
+  fmtSP,
+  refDoDiaSP,
+  spEndOfDay,
+  spStartOfDay,
+  spStartOfWeek,
+  toSP,
+} from "@/lib/dates";
 
 // Padrão de cache deste arquivo (ver lib/data/home.ts): a função exportada
 // mantém a assinatura original e delega para uma interna "use cache" com
@@ -327,6 +335,445 @@ async function sessoesDashboardDb(userId: string, dia: string): Promise<SessaoDb
     ...finalizadas.map((s) => ({ ...s, pauses: [] })),
     ...(abertas as SessaoDb[]),
   ];
+}
+
+// ---------- Tópicos (categoria = tópico, assunto = subtópico) ----------
+
+/** Bucket das sessões sem categoria — vira um "tópico" navegável como os outros. */
+export const TOPICO_SEM_CATEGORIA = "sem-categoria";
+
+/** "hoje" | "ontem" | "há 4 dias" | "há 3 semanas" | "nunca" — em dias de SP. */
+export function rotuloDesde(iso: string | null, hoje: Date): string {
+  if (!iso) return "nunca";
+  const dias = Math.round(
+    (spStartOfDay(hoje).getTime() - spStartOfDay(new Date(iso)).getTime()) /
+      86_400_000
+  );
+  if (dias <= 0) return "hoje";
+  if (dias === 1) return "ontem";
+  if (dias < 7) return `há ${dias} dias`;
+  if (dias < 14) return "há 1 semana";
+  if (dias < 60) return `há ${Math.floor(dias / 7)} semanas`;
+  if (dias < 365) return `há ${Math.floor(dias / 30)} meses`;
+  return `há ${Math.floor(dias / 365)} ano(s)`;
+}
+
+export type SessaoResumo = {
+  id: string;
+  subject: string;
+  startedAt: string; // ISO
+  endedAt: string | null;
+  emAndamento: boolean;
+  brutoSec: number;
+  liquidoSec: number;
+  pausadoSec: number;
+  rating: number;
+  notes: string | null;
+};
+
+export type SubtopicoEstudo = {
+  subject: string;
+  segundos: number;
+  sessoes: number;
+  mediaSec: number;
+  ultimaISO: string;
+  notas: number;
+};
+
+export type SemanaEstudo = { key: string; label: string; horas: number };
+export type BarraEstudo = { label: string; segundos: number };
+
+export type TopicoResumo = {
+  id: string; // categoryId | TOPICO_SEM_CATEGORIA
+  nome: string;
+  emoji: string;
+  cor: string;
+  ativo: boolean;
+  totalSec: number;
+  sessoes: number;
+  mediaSessaoSec: number;
+  mediaSemanalSec: number;
+  ultimaISO: string | null;
+  notas: number;
+  subtopicos: number;
+  serie12: number[]; // segundos por semana, 12 semanas (sparkline)
+};
+
+export type DetalheTopico = TopicoResumo & {
+  primeiraISO: string | null;
+  diasAtivos: number;
+  streak: number;
+  mediaDiaAtivoSec: number;
+  melhorSemanaSec: number;
+  melhorSemanaLabel: string;
+  melhorDiaSec: number;
+  melhorDiaLabel: string;
+  brutoSec: number;
+  pausadoSec: number;
+  focoPct: number;
+  semanas: SemanaEstudo[];
+  porDiaSemana: BarraEstudo[];
+  porHora: BarraEstudo[];
+  subtopicosLista: SubtopicoEstudo[];
+  sessoesLista: SessaoResumo[];
+  notasLista: SessaoResumo[];
+};
+
+type CategoriaDb = {
+  id: string;
+  nome: string;
+  emoji: string;
+  cor: string;
+  ordem: number;
+  ativo: boolean;
+};
+
+const CAMPOS_SESSAO = {
+  id: true,
+  subject: true,
+  startedAt: true,
+  endedAt: true,
+  totalSeconds: true,
+  netSeconds: true,
+  targetMinutes: true,
+  rating: true,
+  notes: true,
+  categoryId: true,
+} as const;
+
+/**
+ * Histórico COMPLETO de sessões + todas as categorias (inclusive as excluídas,
+ * que ainda nomeiam sessões antigas). É o insumo das páginas de tópico, que
+ * mostram totais de sempre — não de uma janela.
+ *
+ * As pausas só entram nas sessões em andamento: nas finalizadas os tempos já
+ * estão gravados em totalSeconds/netSeconds (o mesmo motivo de
+ * sessoesDashboardDb). O parâmetro `dia` só existe como chave de cache.
+ */
+async function historicoEstudosDb(
+  userId: string,
+  dia: string
+): Promise<{ sessoes: SessaoDb[]; categorias: CategoriaDb[] }> {
+  "use cache";
+  cacheTag(tagUsuario(userId, "estudos"));
+  cacheLife("usuario");
+  void dia;
+  const [finalizadas, abertas, categorias] = await Promise.all([
+    db.studySession.findMany({
+      where: { userId, endedAt: { not: null } },
+      orderBy: { startedAt: "asc" },
+      select: CAMPOS_SESSAO,
+    }),
+    db.studySession.findMany({
+      where: { userId, endedAt: null },
+      include: includePausas,
+    }),
+    db.studyCategory.findMany({
+      where: { userId },
+      orderBy: { ordem: "asc" },
+      select: { id: true, nome: true, emoji: true, cor: true, ordem: true, ativo: true },
+    }),
+  ]);
+  return {
+    sessoes: [
+      ...finalizadas.map((s) => ({ ...s, pauses: [] })),
+      ...(abertas as SessaoDb[]),
+    ],
+    categorias,
+  };
+}
+
+/** Chave de agrupamento por tópico: a categoria, ou o bucket "sem categoria". */
+function chaveTopico(s: { categoryId: string | null }): string {
+  return s.categoryId ?? TOPICO_SEM_CATEGORIA;
+}
+
+function identidadeTopico(
+  id: string,
+  categorias: CategoriaDb[]
+): { nome: string; emoji: string; cor: string; ativo: boolean } | null {
+  if (id === TOPICO_SEM_CATEGORIA) {
+    return {
+      nome: "Sem categoria",
+      emoji: "📌",
+      cor: "var(--color-steel)",
+      ativo: true,
+    };
+  }
+  const c = categorias.find((x) => x.id === id);
+  if (!c) return null;
+  return { nome: c.nome, emoji: c.emoji, cor: c.cor, ativo: c.ativo };
+}
+
+/** Números crus de um conjunto de sessões — base do resumo e do detalhe. */
+function acumula(sessoes: SessaoDb[], agora: Date) {
+  let totalSec = 0;
+  let brutoSec = 0;
+  let pausadoSec = 0;
+  let notas = 0;
+  let primeira: Date | null = null;
+  let ultima: Date | null = null;
+  const porDia = new Map<string, number>();
+  const porSemana = new Map<string, number>();
+  const porDiaSemana = Array<number>(7).fill(0);
+  const porHora = Array<number>(24).fill(0);
+  const porSubject = new Map<
+    string,
+    { segundos: number; sessoes: number; ultima: Date; notas: number }
+  >();
+  const lista: SessaoResumo[] = [];
+
+  for (const s of sessoes) {
+    const snap = snapshotSessao(s, agora);
+    const emSP = toSP(s.startedAt);
+    totalSec += snap.liquidoSec;
+    brutoSec += snap.brutoSec;
+    pausadoSec += snap.pausadoSec;
+    const temNota = !!s.notes?.trim();
+    if (temNota) notas++;
+    if (!primeira || s.startedAt < primeira) primeira = s.startedAt;
+    if (!ultima || s.startedAt > ultima) ultima = s.startedAt;
+
+    const chaveDia = dayKeySP(s.startedAt);
+    porDia.set(chaveDia, (porDia.get(chaveDia) ?? 0) + snap.liquidoSec);
+    const chaveSemana = dayKeySP(spStartOfWeek(s.startedAt));
+    porSemana.set(chaveSemana, (porSemana.get(chaveSemana) ?? 0) + snap.liquidoSec);
+    porDiaSemana[emSP.getDay()] += snap.liquidoSec;
+    porHora[emSP.getHours()] += snap.liquidoSec;
+
+    const sub = porSubject.get(s.subject);
+    if (sub) {
+      sub.segundos += snap.liquidoSec;
+      sub.sessoes++;
+      if (s.startedAt > sub.ultima) sub.ultima = s.startedAt;
+      if (temNota) sub.notas++;
+    } else {
+      porSubject.set(s.subject, {
+        segundos: snap.liquidoSec,
+        sessoes: 1,
+        ultima: s.startedAt,
+        notas: temNota ? 1 : 0,
+      });
+    }
+
+    lista.push({
+      id: s.id,
+      subject: s.subject,
+      startedAt: s.startedAt.toISOString(),
+      endedAt: s.endedAt ? s.endedAt.toISOString() : null,
+      emAndamento: s.endedAt === null,
+      brutoSec: snap.brutoSec,
+      liquidoSec: snap.liquidoSec,
+      pausadoSec: snap.pausadoSec,
+      rating: s.rating,
+      notes: s.notes,
+    });
+  }
+
+  lista.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+  return {
+    totalSec,
+    brutoSec,
+    pausadoSec,
+    notas,
+    primeira,
+    ultima,
+    sessoes: sessoes.length,
+    porDia,
+    porSemana,
+    porDiaSemana,
+    porHora,
+    porSubject,
+    lista,
+  };
+}
+
+type Acumulado = ReturnType<typeof acumula>;
+
+const SEMANA_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Semanas corridas desde a primeira sessão (mínimo 1) — denominador da média
+ * semanal. Conta semanas de calendário, não blocos de 7 dias: quem estudou
+ * só ontem tem 1 semana, não 0.
+ */
+function semanasCorridas(primeira: Date | null, hoje: Date): number {
+  if (!primeira) return 1;
+  const dif =
+    spStartOfWeek(hoje).getTime() - spStartOfWeek(primeira).getTime();
+  return Math.max(1, Math.round(dif / SEMANA_MS) + 1);
+}
+
+/** Dias seguidos (terminando hoje ou ontem) com ao menos uma sessão do tópico. */
+function streakDe(porDia: Map<string, number>, hoje: Date): number {
+  let streak = 0;
+  let i = (porDia.get(dayKeySP(hoje)) ?? 0) > 0 ? 0 : 1;
+  for (; i < 3650; i++) {
+    if ((porDia.get(dayKeySP(addDays(hoje, -i))) ?? 0) > 0) streak++;
+    else break;
+  }
+  return streak;
+}
+
+/** Chaves das últimas 12 semanas (domingo a domingo), da mais antiga p/ a atual. */
+function ultimas12Semanas(hoje: Date): { key: string; label: string }[] {
+  const out: { key: string; label: string }[] = [];
+  for (let i = 11; i >= 0; i--) {
+    const inicio = spStartOfWeek(addDays(hoje, -7 * i));
+    out.push({ key: dayKeySP(inicio), label: fmtSP(inicio, "dd/MM") });
+  }
+  return out;
+}
+
+function resumoDoTopico(
+  id: string,
+  ident: { nome: string; emoji: string; cor: string; ativo: boolean },
+  acc: Acumulado,
+  hoje: Date
+): TopicoResumo {
+  return {
+    id,
+    nome: ident.nome,
+    emoji: ident.emoji,
+    cor: ident.cor,
+    ativo: ident.ativo,
+    totalSec: acc.totalSec,
+    sessoes: acc.sessoes,
+    mediaSessaoSec: acc.sessoes ? Math.round(acc.totalSec / acc.sessoes) : 0,
+    mediaSemanalSec: Math.round(acc.totalSec / semanasCorridas(acc.primeira, hoje)),
+    ultimaISO: acc.ultima ? acc.ultima.toISOString() : null,
+    notas: acc.notas,
+    subtopicos: acc.porSubject.size,
+    serie12: ultimas12Semanas(hoje).map((s) => acc.porSemana.get(s.key) ?? 0),
+  };
+}
+
+/**
+ * Todos os tópicos do usuário, do mais estudado ao menos — inclusive
+ * categorias ativas ainda sem nenhuma sessão (aparecem zeradas).
+ */
+export async function topicosEstudo(
+  userId: string,
+  hoje: Date
+): Promise<TopicoResumo[]> {
+  const agora = new Date();
+  const { sessoes, categorias } = await historicoEstudosDb(userId, dayKeySP(hoje));
+
+  const grupos = new Map<string, SessaoDb[]>();
+  for (const s of sessoes) {
+    const chave = chaveTopico(s);
+    const atual = grupos.get(chave);
+    if (atual) atual.push(s);
+    else grupos.set(chave, [s]);
+  }
+
+  const topicos: TopicoResumo[] = [];
+  for (const [id, doGrupo] of grupos) {
+    const ident = identidadeTopico(id, categorias);
+    if (!ident) continue; // categoria de outro usuário/inexistente: ignora
+    topicos.push(resumoDoTopico(id, ident, acumula(doGrupo, agora), hoje));
+  }
+
+  // categorias ativas sem sessão: existem no app, então existem na lista
+  for (const c of categorias) {
+    if (!c.ativo || grupos.has(c.id)) continue;
+    topicos.push(
+      resumoDoTopico(
+        c.id,
+        { nome: c.nome, emoji: c.emoji, cor: c.cor, ativo: true },
+        acumula([], agora),
+        hoje
+      )
+    );
+  }
+
+  return topicos.sort((a, b) => b.totalSec - a.totalSec);
+}
+
+/** Tudo sobre um tópico: métricas, distribuições, subtópicos, sessões e notas. */
+export async function detalheTopico(
+  userId: string,
+  topicoId: string,
+  hoje: Date
+): Promise<DetalheTopico | null> {
+  const agora = new Date();
+  const { sessoes, categorias } = await historicoEstudosDb(userId, dayKeySP(hoje));
+  const ident = identidadeTopico(topicoId, categorias);
+  if (!ident) return null;
+  // "sem categoria" só é um tópico de verdade se houver sessão sem categoria
+  const doTopico = sessoes.filter((s) => chaveTopico(s) === topicoId);
+  if (topicoId === TOPICO_SEM_CATEGORIA && doTopico.length === 0) return null;
+
+  const acc = acumula(doTopico, agora);
+  const base = resumoDoTopico(topicoId, ident, acc, hoje);
+
+  const semanas = ultimas12Semanas(hoje).map((s) => ({
+    key: s.key,
+    label: s.label,
+    horas: (acc.porSemana.get(s.key) ?? 0) / 3600,
+  }));
+
+  // melhor semana e melhor dia consideram TODO o histórico, não só as 12 últimas
+  let melhorSemanaSec = 0;
+  let melhorSemanaKey: string | null = null;
+  for (const [key, sec] of acc.porSemana) {
+    if (sec > melhorSemanaSec) {
+      melhorSemanaSec = sec;
+      melhorSemanaKey = key;
+    }
+  }
+  let melhorDiaSec = 0;
+  let melhorDiaKey: string | null = null;
+  for (const [key, sec] of acc.porDia) {
+    if (sec > melhorDiaSec) {
+      melhorDiaSec = sec;
+      melhorDiaKey = key;
+    }
+  }
+
+  const diasAtivos = [...acc.porDia.values()].filter((v) => v > 0).length;
+
+  const subtopicosLista: SubtopicoEstudo[] = [...acc.porSubject.entries()]
+    .map(([subject, v]) => ({
+      subject,
+      segundos: v.segundos,
+      sessoes: v.sessoes,
+      mediaSec: Math.round(v.segundos / v.sessoes),
+      ultimaISO: v.ultima.toISOString(),
+      notas: v.notas,
+    }))
+    .sort((a, b) => b.segundos - a.segundos);
+
+  return {
+    ...base,
+    primeiraISO: acc.primeira ? acc.primeira.toISOString() : null,
+    diasAtivos,
+    streak: streakDe(acc.porDia, hoje),
+    mediaDiaAtivoSec: diasAtivos ? Math.round(acc.totalSec / diasAtivos) : 0,
+    melhorSemanaSec,
+    melhorSemanaLabel: melhorSemanaKey
+      ? `semana de ${fmtSP(refDoDiaSP(melhorSemanaKey), "dd/MM")}`
+      : "—",
+    melhorDiaSec,
+    melhorDiaLabel: melhorDiaKey
+      ? fmtSP(refDoDiaSP(melhorDiaKey), "dd/MM/yyyy")
+      : "—",
+    brutoSec: acc.brutoSec,
+    pausadoSec: acc.pausadoSec,
+    focoPct: acc.brutoSec ? Math.round((acc.totalSec / acc.brutoSec) * 100) : 0,
+    semanas,
+    porDiaSemana: DIAS_SEMANA.map((label, i) => ({
+      label,
+      segundos: acc.porDiaSemana[i],
+    })),
+    porHora: acc.porHora.map((segundos, h) => ({
+      label: `${String(h).padStart(2, "0")}h`,
+      segundos,
+    })),
+    subtopicosLista,
+    sessoesLista: acc.lista,
+    notasLista: acc.lista.filter((s) => !!s.notes?.trim()),
+  };
 }
 
 // ---------- Categorias de estudo (variáveis reutilizáveis) ----------

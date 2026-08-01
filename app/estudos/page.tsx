@@ -4,6 +4,7 @@ import { EmptyState } from "@/components/caverna/empty-state";
 import { PillTabs } from "@/components/caverna/pill-tabs";
 import { Cronometro } from "@/components/estudos/cronometro";
 import { SessoesDoDia } from "@/components/estudos/sessoes-dia";
+import { ESTUDOS_TABS } from "@/components/estudos/tabs";
 import {
   categoriasEstudo,
   dashboardEstudos,
@@ -15,11 +16,6 @@ import { fullDate, nowSP } from "@/lib/dates";
 import { getCurrentUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
-
-const tabs = [
-  { label: "Cronômetro", href: "/estudos" },
-  { label: "Dashboard", href: "/estudos/dashboard" },
-];
 
 export default async function EstudosPage() {
   const user = await getCurrentUser();
@@ -45,7 +41,7 @@ export default async function EstudosPage() {
         </p>
       </header>
 
-      <PillTabs tabs={tabs} />
+      <PillTabs tabs={ESTUDOS_TABS} />
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
         {/* Cronômetro */}

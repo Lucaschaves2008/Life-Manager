@@ -3,10 +3,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { Maximize2, Minimize2, Pause, Play, Settings2, Square, X } from "lucide-react";
+import {
+  Maximize2,
+  Minimize2,
+  NotebookPen,
+  Pause,
+  Play,
+  Settings2,
+  Square,
+  X,
+} from "lucide-react";
 import { FlipTime } from "@/components/caverna/flip-clock";
 import { Button } from "@/components/ui/button";
 import { CategoriasSheet } from "@/components/estudos/categorias-sheet";
+import { CampoNota, useNotaSessao } from "@/components/estudos/nota-sessao";
 import {
   finalizarSessao,
   iniciarSessao,
@@ -58,6 +68,7 @@ export function Cronometro({
   const [local, setLocal] = useState<SessaoView | null>(sessaoInicial);
   const [agora, setAgora] = useState(() => Date.now());
   const [cheio, setCheio] = useState(false);
+  const [notasCheio, setNotasCheio] = useState(false);
   const [subject, setSubject] = useState("");
   const [metaMin, setMetaMin] = useState<number | null>(null);
   const [categoriaId, setCategoriaId] = useState<string | null>(null);
@@ -146,6 +157,16 @@ export function Cronometro({
       ? idRealPromise.current
       : Promise.resolve(idAlvo);
 
+  // caderno da sessão: um só estado para os dois campos (card e tela cheia).
+  // `chave` é o startedAt — o id ainda pode ser "pending" nos primeiros
+  // instantes, e o startedAt do clique sobrevive aos refreshes do servidor.
+  const nota = useNotaSessao({
+    chave: local?.startedAt ?? "sem-sessao",
+    notaInicial: local?.notes ?? null,
+    sessionId: local?.id ?? "",
+    resolveId: () => resolveId(local?.id ?? ""),
+  });
+
   const comeca = () => {
     const cat = categoriaId ? categorias.find((c) => c.id === categoriaId) : null;
     const nome = subject.trim() || cat?.nome || "Estudo";
@@ -230,6 +251,9 @@ export function Cronometro({
   const finaliza = () => {
     if (!local) return;
     const idAlvo = local.id;
+    // grava a nota ANTES de soltar `local`: depois disso o campo não sabe mais
+    // a qual sessão o texto pertence
+    nota.descarregar();
     setLocal(null);
     setCheio(false);
     emBackground(async () => finalizarSessao(await resolveId(idAlvo)));
@@ -361,9 +385,15 @@ export function Cronometro({
         </div>
 
         {rodando ? (
-          <div className="flex flex-col items-center gap-4">
-            {statusLinha}
-            {controles(false)}
+          <div className="flex w-full flex-col items-center gap-6">
+            <div className="flex flex-col items-center gap-4">
+              {statusLinha}
+              {controles(false)}
+            </div>
+            {/* caderno da sessão: escreve enquanto estuda, salva sozinho */}
+            <div className="w-full border-t border-stroke pt-5">
+              <CampoNota nota={nota} linhas={6} />
+            </div>
           </div>
         ) : (
           // ---- Formulário de início ----
@@ -500,6 +530,21 @@ export function Cronometro({
 
             {statusLinha}
             {controles(true)}
+
+            <div className="w-full max-w-2xl px-6">
+              {notasCheio ? (
+                <CampoNota nota={nota} linhas={6} />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setNotasCheio(true)}
+                  className="mx-auto flex items-center gap-2 rounded-full border border-stroke px-4 py-2 text-[12.5px] text-mist transition-colors hover:border-[rgba(143,169,205,.22)] hover:text-ice"
+                >
+                  <NotebookPen className="h-3.5 w-3.5" strokeWidth={1.5} />
+                  {nota.texto ? "Ver notas da sessão" : "Escrever uma nota"}
+                </button>
+              )}
+            </div>
 
             <button
               type="button"

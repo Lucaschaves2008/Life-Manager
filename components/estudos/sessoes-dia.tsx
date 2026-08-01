@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { useAcao } from "@/lib/acao-cliente";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Coffee, Pencil, Trash2 } from "lucide-react";
+import { ChevronDown, Coffee, NotebookPen, Pencil, Trash2 } from "lucide-react";
+import { NotaSessao } from "@/components/estudos/nota-sessao";
 import {
   excluirSessao,
   renomearPausa,
@@ -134,11 +135,14 @@ function SessaoCard({ sessao }: { sessao: SessaoView }) {
             ) : (
               <p className="truncate text-[13.5px] text-ice">{sessao.subject}</p>
             )}
-            <p className="tabular text-[11.5px] text-steel">
+            <p className="tabular flex items-center gap-1.5 text-[11.5px] text-steel">
               {hhmm(sessao.startedAt)}
               {sessao.endedAt ? `–${hhmm(sessao.endedAt)}` : ""} ·{" "}
               {sessao.pausas.length}{" "}
               {sessao.pausas.length === 1 ? "parada" : "paradas"}
+              {!!sessao.notes?.trim() && (
+                <NotebookPen className="h-3 w-3" strokeWidth={1.5} />
+              )}
             </p>
           </div>
         </button>
@@ -189,6 +193,16 @@ function SessaoCard({ sessao }: { sessao: SessaoView }) {
               ))}
             </div>
           )}
+
+          <div className="border-t border-stroke pt-3">
+            <NotaSessao
+              sessionId={sessao.id}
+              notaInicial={sessao.notes}
+              label="Nota"
+              placeholder="O que você estudou nesta sessão?"
+              linhas={4}
+            />
+          </div>
 
           <div className="mt-3 flex items-center justify-between border-t border-stroke pt-3">
             <button
