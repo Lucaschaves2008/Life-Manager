@@ -7,7 +7,7 @@
     "dev:open": "node scripts/dev-open.mjs",
     "watch:deploy": "node scripts/auto-deploy-watch.mjs",
     "dev:live": "concurrently -n DEV,DEPLOY -c blue,green \"npm:dev:open\" \"npm:watch:deploy\"",
-    "build": "prisma db push --skip-generate && next build",
+    "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
