@@ -312,6 +312,10 @@ model DietDayLog {
   userId             String
   data               DateTime
   refeicoesCumpridas String   @default("[]")
+  // Refeições que o usuário apagou SÓ neste dia (["mealId", …]). A refeição
+  // continua na dieta; some apenas do checklist deste dia — o equivalente ao
+  // "não fazer hoje" dos itens de rotina (RotinaTemplate.exdates).
+  refeicoesPuladas   String   @default("[]")
   escolhas           String   @default("[]") // [{mealId, optionId}] — opção comida no dia
   extras             String   @default("[]")
   aguaMl             Int      @default(0)

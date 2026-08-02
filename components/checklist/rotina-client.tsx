@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, CalendarDays, Check, Clock, Flame, GripVertical, Pencil, Plus, SkipForward, Star, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, CalendarDays, Check, Clock, Flame, GripVertical, Pencil, Plus, SkipForward, Star, Trash2, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAcao } from "@/lib/acao-cliente";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Input, Label } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import {
   Select,
@@ -29,7 +29,14 @@ import {
   toggleRotinaCheckDia,
 } from "@/app/actions/rotinas";
 import { excluirVariavel, moverVariavel, toggleVariavelCheckDia } from "@/app/actions/variaveis";
-import { escolherOpcao, toggleRefeicaoCumprida } from "@/app/actions/dieta";
+import {
+  deleteRefeicao,
+  escolherOpcao,
+  pularRefeicaoHoje,
+  restaurarRefeicaoHoje,
+  toggleRefeicaoCumprida,
+  updateRefeicao,
+} from "@/app/actions/dieta";
 import {
   ItemFormSheet,
   TIPO_META,
@@ -58,11 +65,28 @@ const REFEICAO_EMOJI = "🍽️";
  * (Variavel) ou "refeicao" (Meal da dieta ativa, espelhada do DietDayLog).
  * A água do dia (também espelhada do DietDayLog) não entra nessa união: é
  * renderizada à parte, sempre visível, fora da lista arrastável/vazia.
+ *
+ * `hora` normaliza o horário das três origens (rotina.horaInicio,
+ * refeicao.horario, variável nunca tem) porque é ele, e não a origem, que
+ * define a posição do item na lista — ver `ordenarPorHora`.
  */
 type ItemChecklist =
-  | (RotinaOcorrenciaView & { origem: "rotina"; itemId: string })
-  | (VariavelChecklistItem & { origem: "variavel"; itemId: string })
-  | (RefeicaoChecklistItem & { origem: "refeicao"; itemId: string });
+  | (RotinaOcorrenciaView & { origem: "rotina"; itemId: string; hora: string | null })
+  | (VariavelChecklistItem & { origem: "variavel"; itemId: string; hora: string | null })
+  | (RefeicaoChecklistItem & { origem: "refeicao"; itemId: string; hora: string | null });
+
+/**
+ * O dia se lê pelo relógio: quem tem horário vem primeiro, em ordem crescente,
+ * misturando rotina, variável e refeição. Quem não tem cai no fim, na ordem
+ * manual do usuário (o `sort` do JS é estável, então o empate preserva a ordem
+ * de entrada: rotinas → variáveis → refeições).
+ */
+function ordenarPorHora(a: ItemChecklist, b: ItemChecklist): number {
+  if (a.hora && b.hora) return a.hora.localeCompare(b.hora);
+  if (a.hora) return -1;
+  if (b.hora) return 1;
+  return 0;
+}
 
 export function MinhaRotina({
   ocorrencias,
@@ -75,6 +99,7 @@ export function MinhaRotina({
   planoAtivoId,
   variaveis,
   refeicoes,
+  refeicoesPuladas,
   dia,
 }: {
   ocorrencias: RotinaOcorrenciaView[];
@@ -87,6 +112,8 @@ export function MinhaRotina({
   planoAtivoId: string | null;
   variaveis: VariavelChecklistItem[];
   refeicoes: RefeicaoChecklistItem[];
+  /** refeições apagadas só neste dia — ficam em uma linha de "restaurar". */
+  refeicoesPuladas: { id: string; nome: string }[];
   /** yyyy-MM-dd */
   dia: string;
 }) {
@@ -98,6 +125,11 @@ export function MinhaRotina({
   const [ordemOtimista, setOrdemOtimista] = useState(ocorrencias);
   const [variaveisOtimista, setVariaveisOtimista] = useState(variaveis);
   const [refeicoesOtimista, setRefeicoesOtimista] = useState(refeicoes);
+  const [refeicaoEditando, setRefeicaoEditando] = useState<{
+    id: string;
+    nome: string;
+    horario: string;
+  } | null>(null);
 
   useEffect(() => {
     setOrdemOtimista(ocorrencias);
@@ -113,19 +145,32 @@ export function MinhaRotina({
 
   const catPorId = useMemo(() => new Map(categorias.map((c) => [c.id, c])), [categorias]);
 
-  // Lista unificada exibida: rotinas (arrastáveis entre si), variáveis (ordem
-  // própria) e, por último, as refeições da dieta ativa. Refeições não são
-  // arrastáveis: a ordem delas é a da dieta (Meal.ordem), editada em /dieta.
+  // Lista unificada exibida: rotinas, variáveis e refeições da dieta ativa,
+  // TODAS ordenadas pelo horário (ver ordenarPorHora) — o dia se lê pelo
+  // relógio, então a origem do item não decide mais a posição. Sobra a ordem
+  // manual só para o rabo sem horário, onde o arraste continua valendo.
   const itens: ItemChecklist[] = useMemo(
-    () => [
-      ...ordemOtimista.map((oc) => ({ ...oc, origem: "rotina" as const, itemId: oc.templateId })),
-      ...variaveisOtimista.map((v) => ({ ...v, origem: "variavel" as const, itemId: v.id })),
-      ...refeicoesOtimista.map((r) => ({
-        ...r,
-        origem: "refeicao" as const,
-        itemId: `refeicao:${r.id}`,
-      })),
-    ],
+    () =>
+      [
+        ...ordemOtimista.map((oc) => ({
+          ...oc,
+          origem: "rotina" as const,
+          itemId: oc.templateId,
+          hora: oc.horaInicio,
+        })),
+        ...variaveisOtimista.map((v) => ({
+          ...v,
+          origem: "variavel" as const,
+          itemId: v.id,
+          hora: null,
+        })),
+        ...refeicoesOtimista.map((r) => ({
+          ...r,
+          origem: "refeicao" as const,
+          itemId: `refeicao:${r.id}`,
+          hora: r.horario,
+        })),
+      ].sort(ordenarPorHora),
     [ordemOtimista, variaveisOtimista, refeicoesOtimista]
   );
 
@@ -192,38 +237,78 @@ export function MinhaRotina({
     });
   }
 
+  /** Apaga a refeição só neste dia — ela volta amanhã (ver pularRefeicaoHoje). */
+  function pularRefeicao(mealId: string) {
+    const anterior = refeicoesOtimista;
+    setRefeicoesOtimista((atuais) => atuais.filter((r) => r.id !== mealId));
+    executar(() => pularRefeicaoHoje(dia, mealId), {
+      sucesso: "Refeição apagada só hoje",
+      aoFalhar: () => setRefeicoesOtimista(anterior),
+    });
+  }
+
+  function restaurarRefeicao(mealId: string) {
+    executar(() => restaurarRefeicaoHoje(dia, mealId), { sucesso: "Refeição de volta no dia" });
+  }
+
+  /** Exclui a refeição da dieta — some de todos os dias, aqui e em /dieta. */
+  function excluirRefeicao(mealId: string) {
+    const anterior = refeicoesOtimista;
+    setRefeicoesOtimista((atuais) => atuais.filter((r) => r.id !== mealId));
+    executar(() => deleteRefeicao(mealId), {
+      sucesso: "Refeição excluída da dieta",
+      aoFalhar: () => setRefeicoesOtimista(anterior),
+    });
+  }
+
+  function salvarRefeicao() {
+    const alvo = refeicaoEditando;
+    if (!alvo || !alvo.nome.trim()) return;
+    executar(
+      async () => {
+        await updateRefeicao(alvo.id, alvo.nome.trim(), alvo.horario);
+        setRefeicaoEditando(null);
+      },
+      { sucesso: "Refeição atualizada" }
+    );
+  }
+
+  /**
+   * Arraste na lista exibida. Como a exibição é ordenada por horário, os
+   * índices da tela não batem mais com os das listas de origem — por isso
+   * traduzimos pelo id antes de mexer. Só o rabo sem horário arrasta: item com
+   * hora é ordenado pelo relógio, e mão nenhuma sobrepõe isso.
+   */
   function reordenar(deIndex: number, paraIndex: number) {
     if (deIndex === paraIndex) return;
-    // Arraste só é permitido dentro do próprio grupo (rotinas ou variáveis).
-    // Refeições ficam fora dos dois ranges, então nunca reordenam.
-    const dentroDeRotinas = deIndex < ordemOtimista.length && paraIndex < ordemOtimista.length;
-    const limiteVariaveis = ordemOtimista.length + variaveisOtimista.length;
-    const dentroDeVariaveis =
-      deIndex >= ordemOtimista.length &&
-      deIndex < limiteVariaveis &&
-      paraIndex >= ordemOtimista.length &&
-      paraIndex < limiteVariaveis;
+    const de = itens[deIndex];
+    const para = itens[paraIndex];
+    if (!de || !para || de.hora || para.hora) return;
 
-    if (dentroDeRotinas) {
+    if (de.origem === "rotina" && para.origem === "rotina") {
       const anterior = ordemOtimista;
-      const proxima = ordemOtimista.slice();
-      const [item] = proxima.splice(deIndex, 1);
-      proxima.splice(paraIndex, 0, item);
+      const deI = anterior.findIndex((o) => o.templateId === de.itemId);
+      const paraI = anterior.findIndex((o) => o.templateId === para.itemId);
+      if (deI < 0 || paraI < 0) return;
+      const proxima = anterior.slice();
+      const [item] = proxima.splice(deI, 1);
+      proxima.splice(paraI, 0, item);
       setOrdemOtimista(proxima);
       executar(() => reordenarRotinaTemplates(proxima.map((o) => o.templateId)), {
         aoFalhar: () => setOrdemOtimista(anterior),
       });
       return;
     }
-    if (dentroDeVariaveis) {
+    if (de.origem === "variavel" && para.origem === "variavel") {
       const anterior = variaveisOtimista;
-      const offset = ordemOtimista.length;
-      const proxima = variaveisOtimista.slice();
-      const [item] = proxima.splice(deIndex - offset, 1);
-      proxima.splice(paraIndex - offset, 0, item);
+      const deI = anterior.findIndex((v) => v.id === de.itemId);
+      const paraI = anterior.findIndex((v) => v.id === para.itemId);
+      if (deI < 0 || paraI < 0) return;
+      const proxima = anterior.slice();
+      const [item] = proxima.splice(deI, 1);
+      proxima.splice(paraI, 0, item);
       setVariaveisOtimista(proxima);
-      const direcao = paraIndex > deIndex ? 1 : -1;
-      executar(() => moverVariavel(item.id, direcao), {
+      executar(() => moverVariavel(de.itemId, paraI > deI ? 1 : -1), {
         aoFalhar: () => setVariaveisOtimista(anterior),
       });
     }
@@ -411,6 +496,7 @@ export function MinhaRotina({
                 return (
                   <ItemLinha
                     item={item}
+                    arrastavel={!item.hora}
                     categoria={item.studyCategoryId ? catPorId.get(item.studyCategoryId) : undefined}
                     onToggle={(opcaoId) => toggle(item.templateId, opcaoId)}
                     onEditar={() => {
@@ -436,10 +522,39 @@ export function MinhaRotina({
                   item={item}
                   onToggle={() => toggleRefeicao(item.id)}
                   onEscolher={(optionId) => escolherOpcaoRefeicao(item.id, optionId)}
+                  onEditar={() =>
+                    setRefeicaoEditando({
+                      id: item.id,
+                      nome: item.nome,
+                      horario: item.horario ?? "",
+                    })
+                  }
+                  onPular={() => pularRefeicao(item.id)}
+                  onExcluir={() => excluirRefeicao(item.id)}
                 />
               );
             }}
           </ListaArrastavel>
+        )}
+
+        {/* Apagar uma refeição no dia não pode ser um caminho sem volta: as
+            escondidas de hoje ficam aqui para voltar com um clique. */}
+        {refeicoesPuladas.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 px-1 pt-1">
+            <span className="text-[11.5px] text-steel">Apagadas hoje:</span>
+            {refeicoesPuladas.map((r) => (
+              <button
+                key={r.id}
+                type="button"
+                onClick={() => restaurarRefeicao(r.id)}
+                disabled={pending}
+                className="flex items-center gap-1.5 rounded-full border border-stroke px-2.5 py-1 text-[11.5px] text-steel transition-colors hover:border-mint/60 hover:text-ice disabled:opacity-40"
+              >
+                <Undo2 className="h-3 w-3" strokeWidth={1.5} />
+                {r.nome}
+              </button>
+            ))}
+          </div>
         )}
       </div>
 
@@ -569,6 +684,55 @@ export function MinhaRotina({
         </SheetContent>
       </Sheet>
 
+      {/* Sheet: editar a refeição sem sair do checklist. Nome e horário são o
+          que a linha do dia mostra — os alimentos continuam em /dieta. */}
+      <Sheet
+        open={!!refeicaoEditando}
+        onOpenChange={(v) => !v && setRefeicaoEditando(null)}
+      >
+        <SheetContent aria-describedby={undefined}>
+          <SheetTitle>Editar refeição</SheetTitle>
+          {refeicaoEditando && (
+            <div className="mt-6 flex flex-col gap-5">
+              <div>
+                <Label htmlFor="refeicao-nome">Nome</Label>
+                <Input
+                  id="refeicao-nome"
+                  autoFocus
+                  value={refeicaoEditando.nome}
+                  onChange={(e) =>
+                    setRefeicaoEditando({ ...refeicaoEditando, nome: e.target.value })
+                  }
+                  onKeyDown={(e) => e.key === "Enter" && salvarRefeicao()}
+                />
+              </div>
+              <div>
+                <Label htmlFor="refeicao-hora">Horário (opcional)</Label>
+                <Input
+                  id="refeicao-hora"
+                  type="time"
+                  value={refeicaoEditando.horario}
+                  onChange={(e) =>
+                    setRefeicaoEditando({ ...refeicaoEditando, horario: e.target.value })
+                  }
+                  className="tabular"
+                />
+                <p className="mt-1.5 text-[11.5px] text-steel">
+                  O checklist se ordena pelo horário — sem hora, a refeição vai para o fim.
+                </p>
+              </div>
+              <Button variant="primary" onClick={salvarRefeicao} disabled={pending}>
+                Salvar
+              </Button>
+              <p className="text-[11.5px] text-steel">
+                Para mudar os alimentos e as opções, use a página de{" "}
+                <span className="text-mist">Dieta</span>.
+              </p>
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
+
       <ItemFormSheet
         form={form}
         setForm={setForm}
@@ -590,12 +754,15 @@ export function MinhaRotina({
  */
 function ItemLinha({
   item,
+  arrastavel,
   categoria,
   onToggle,
   onEditar,
   onPular,
 }: {
   item: RotinaOcorrenciaView;
+  /** false para item com horário: a posição dele é o relógio, não a mão. */
+  arrastavel: boolean;
   categoria?: CategoriaView;
   onToggle: (opcaoId?: string) => void;
   onEditar: () => void;
@@ -631,13 +798,18 @@ function ItemLinha({
       )}
     >
     <div className="flex items-center gap-3 px-4 py-3">
-      <span
-        data-drag-handle
-        aria-label="Arrastar para reordenar"
-        className="-ml-1 flex h-8 w-5 shrink-0 cursor-grab touch-none items-center justify-center text-steel/50 transition-colors hover:text-steel active:cursor-grabbing"
-      >
-        <GripVertical className="h-4 w-4" strokeWidth={1.5} />
-      </span>
+      {arrastavel ? (
+        <span
+          data-drag-handle
+          aria-label="Arrastar para reordenar"
+          className="-ml-1 flex h-8 w-5 shrink-0 cursor-grab touch-none items-center justify-center text-steel/50 transition-colors hover:text-steel active:cursor-grabbing"
+        >
+          <GripVertical className="h-4 w-4" strokeWidth={1.5} />
+        </span>
+      ) : (
+        // Item com hora não arrasta — o espaçador mantém o alinhamento.
+        <span className="-ml-1 h-8 w-5 shrink-0" aria-hidden="true" />
+      )}
 
       <button
         type="button"
@@ -814,15 +986,24 @@ function ItemLinhaVariavel({
  * opções cadastradas (Opção A/B/C), marcar abre o seletor: sem registrar QUAL
  * opção foi comida os macros do dia não fecham (ver diaDaDieta). Sem opções,
  * o clique é um toggle direto.
+ *
+ * O menu traz as três formas de mexer nela sem sair daqui: editar (nome e
+ * horário), apagar só neste dia, ou excluir da dieta inteira.
  */
 function ItemLinhaRefeicao({
   item,
   onToggle,
   onEscolher,
+  onEditar,
+  onPular,
+  onExcluir,
 }: {
   item: RefeicaoChecklistItem;
   onToggle: () => void;
   onEscolher: (optionId: string) => void;
+  onEditar: () => void;
+  onPular: () => void;
+  onExcluir: () => void;
 }) {
   const [escolhendo, setEscolhendo] = useState(false);
   const temOpcoes = item.opcoes.length > 0;
@@ -907,6 +1088,19 @@ function ItemLinhaRefeicao({
             {item.feito ? "Trocar" : "Opções"}
           </button>
         )}
+
+        <DotsMenu
+          items={[
+            { label: "Editar", icon: Pencil, onSelect: onEditar },
+            { label: "Apagar só hoje", icon: SkipForward, onSelect: onPular },
+            {
+              label: "Excluir da dieta",
+              icon: Trash2,
+              destructive: true,
+              onSelect: onExcluir,
+            },
+          ]}
+        />
       </div>
 
       {escolhendo && temEscolha && (

@@ -92,6 +92,8 @@ export type DiaDaDieta = {
   consumido: Macros;
   metas: Macros;
   cumpridas: string[];
+  /** ids de refeições apagadas só neste dia (ver DietDayLog.refeicoesPuladas). */
+  puladas: string[];
   extras: ExtraLog[];
   aguaMl: number;
   metaAguaMl: number;
@@ -137,6 +139,7 @@ async function diaDaDietaDoDia(userId: string, dia: string): Promise<DiaDaDieta>
   ]);
 
   const cumpridas = parseJSON<string[]>(log?.refeicoesCumpridas ?? "[]", []);
+  const puladas = parseJSON<string[]>(log?.refeicoesPuladas ?? "[]", []);
   const extras = parseJSON<ExtraLog[]>(log?.extras ?? "[]", []);
   const escolhas = parseJSON<EscolhaLog[]>(log?.escolhas ?? "[]", []);
   const escolhaPorMeal = new Map(escolhas.map((e) => [e.mealId, e.optionId]));
@@ -197,6 +200,7 @@ async function diaDaDietaDoDia(userId: string, dia: string): Promise<DiaDaDieta>
       gord: dieta?.metaGord ?? 60,
     },
     cumpridas,
+    puladas,
     extras,
     aguaMl: log?.aguaMl ?? 0,
     metaAguaMl: Number(metaAgua?.value ?? 3000) || 3000,
@@ -229,6 +233,9 @@ export type RefeicaoChecklistItem = {
  * Refeições do dia no formato do checklist. Reaproveita diaDaDieta (já
  * cacheado por userId+dayKey) em vez de refazer as queries — a projeção aqui é
  * só o recorte que a linha do checklist precisa.
+ *
+ * As apagadas no dia (DietDayLog.refeicoesPuladas) ficam de fora: sumiram do
+ * checklist de hoje, mas continuam na dieta e voltam amanhã.
  */
 export async function refeicoesDoDiaChecklist(
   userId: string,
@@ -236,14 +243,30 @@ export async function refeicoesDoDiaChecklist(
 ): Promise<RefeicaoChecklistItem[]> {
   const dia = await diaDaDieta(userId, ref);
   const cumpridas = new Set(dia.cumpridas);
-  return dia.refeicoes.map((r) => ({
-    id: r.id,
-    nome: r.nome,
-    horario: r.horario,
-    feito: cumpridas.has(r.id),
-    escolhaId: r.escolhaId,
-    opcoes: r.opcoes.map((o) => ({ id: o.id, nome: o.nome })),
-  }));
+  const puladas = new Set(dia.puladas);
+  return dia.refeicoes
+    .filter((r) => !puladas.has(r.id))
+    .map((r) => ({
+      id: r.id,
+      nome: r.nome,
+      horario: r.horario,
+      feito: cumpridas.has(r.id),
+      escolhaId: r.escolhaId,
+      opcoes: r.opcoes.map((o) => ({ id: o.id, nome: o.nome })),
+    }));
+}
+
+/**
+ * As refeições apagadas só neste dia — para o checklist poder oferecer o
+ * "restaurar" em vez de deixar o item sumir sem volta.
+ */
+export async function refeicoesPuladasDoDia(
+  userId: string,
+  ref: Date = new Date()
+): Promise<{ id: string; nome: string }[]> {
+  const dia = await diaDaDieta(userId, ref);
+  const puladas = new Set(dia.puladas);
+  return dia.refeicoes.filter((r) => puladas.has(r.id)).map((r) => ({ id: r.id, nome: r.nome }));
 }
 
 /**

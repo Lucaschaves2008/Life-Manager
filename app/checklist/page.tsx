@@ -1,4 +1,4 @@
-import { Clock } from "lucide-react";
+import { Clock, UtensilsCrossed } from "lucide-react";
 import { Card, CardLabel } from "@/components/caverna/card";
 import { ChecklistHoje } from "@/components/checklist/checklist-client";
 import { DiaRegistroCard } from "@/components/checklist/dia-registro-client";
@@ -6,7 +6,11 @@ import { HistoricoChecklist } from "@/components/checklist/historico-checklist";
 import { MinhaRotina } from "@/components/checklist/rotina-client";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { habitosAtivos, itensFeitosNoDia, percentualMensalHabitos } from "@/lib/data/checklist";
-import { aguaDoDiaChecklist, refeicoesDoDiaChecklist } from "@/lib/data/dieta";
+import {
+  aguaDoDiaChecklist,
+  refeicoesDoDiaChecklist,
+  refeicoesPuladasDoDia,
+} from "@/lib/data/dieta";
 import { categoriasEstudo, formatHoras, sessoesDoDia } from "@/lib/data/estudos";
 import { SemanaMontada } from "@/components/checklist/semana-client";
 import {
@@ -54,6 +58,7 @@ export default async function ChecklistPage() {
     registroHoje,
     historico,
     semanaItens,
+    refeicoesPuladas,
   ] = await Promise.all([
     habitosAtivos(user.id),
     itensFeitosNoDia(user.id, hoje),
@@ -74,6 +79,7 @@ export default async function ChecklistPage() {
     diaRegistroDoDia(user.id, hoje),
     historicoDiaRegistros(user.id),
     semanaMontada(user.id, hoje),
+    refeicoesPuladasDoDia(user.id, hoje),
   ]);
 
   // Um item pode morar na lista do dia ou no bloco de Hábitos — a diferença é
@@ -101,14 +107,19 @@ export default async function ChecklistPage() {
     ...todasRefeicoes.filter((r) => !comItemProprio.has(r.id)),
   ];
 
+  // Refeições ficam FORA do percentual do dia de propósito: comer é conta da
+  // dieta, e uma refeição pulada não deveria impedir o checklist de fechar em
+  // 100%. Elas continuam contando onde importa — marcar aqui escreve no mesmo
+  // DietDayLog que alimenta a métrica "refeicoes_cumpridas" de metas e
+  // desafios (ver toggleRefeicaoCumprida) — e ganham contador próprio abaixo.
   const itensDoDia = [...ocorrenciasChecklist, ...ocorrenciasHabitos];
-  const totalItens = itensDoDia.length + variaveis.length + refeicoes.length + 1;
+  const totalItens = itensDoDia.length + variaveis.length + 1;
   const totalFeitos =
     itensDoDia.filter((oc) => oc.feito).length +
     variaveis.filter((v) => v.feito).length +
-    refeicoes.filter((r) => r.feito).length +
     (agua.feito ? 1 : 0);
   const pctHoje = totalItens > 0 ? (totalFeitos / totalItens) * 100 : 0;
+  const refeicoesFeitas = refeicoes.filter((r) => r.feito).length;
   const segundosEstudoHoje = sessoesHoje.reduce((s, sessao) => s + sessao.liquidoSec, 0);
 
   return (
@@ -149,6 +160,15 @@ export default async function ChecklistPage() {
                   style={{ width: `${Math.min(100, pctHoje)}%` }}
                 />
               </div>
+              {refeicoes.length > 0 && (
+                <p className="mt-3 flex items-center gap-1.5 text-[12px] text-steel">
+                  <UtensilsCrossed className="h-3.5 w-3.5" strokeWidth={1.5} />
+                  <span className="tabular">
+                    {refeicoesFeitas} de {refeicoes.length}
+                  </span>
+                  refeições — contam para metas e desafios, não para o %
+                </p>
+              )}
             </Card>
 
             <Card className="col-span-12 lg:col-span-4">
@@ -198,6 +218,7 @@ export default async function ChecklistPage() {
                 planoAtivoId={planoAtivoId}
                 variaveis={variaveisChecklist}
                 refeicoes={refeicoes}
+                refeicoesPuladas={refeicoesPuladas}
                 dia={hojeKey}
               />
             </Card>

@@ -134,6 +134,46 @@ export async function escolherOpcao(
   revalidar(userId);
 }
 
+/**
+ * Apaga a refeição SÓ neste dia: ela some do checklist de hoje mas continua na
+ * dieta e volta amanhã (o equivalente ao "não fazer hoje" da rotina). Se já
+ * estava marcada, desmarca junto — refeição que não existe hoje não pode
+ * continuar contando como cumprida em metas e desafios.
+ */
+export async function pularRefeicaoHoje(dia: string, mealId: string) {
+  const { id: userId } = await requireUser();
+  const log = await logDoDia(userId, dia);
+  const puladas = parseJSON<string[]>(log.refeicoesPuladas, []);
+  if (puladas.includes(mealId)) return;
+
+  const cumpridas = parseJSON<string[]>(log.refeicoesCumpridas, []);
+  const escolhas = parseJSON<EscolhaLog[]>(log.escolhas, []);
+
+  await db.dietDayLog.update({
+    where: { id: log.id, userId },
+    data: {
+      refeicoesPuladas: JSON.stringify([...puladas, mealId]),
+      refeicoesCumpridas: JSON.stringify(cumpridas.filter((id) => id !== mealId)),
+      escolhas: JSON.stringify(escolhas.filter((e) => e.mealId !== mealId)),
+    },
+  });
+  revalidar(userId);
+}
+
+/** Desfaz o "apagar só hoje" — a refeição volta para o checklist do dia. */
+export async function restaurarRefeicaoHoje(dia: string, mealId: string) {
+  const { id: userId } = await requireUser();
+  const log = await logDoDia(userId, dia);
+  const puladas = parseJSON<string[]>(log.refeicoesPuladas, []);
+  if (!puladas.includes(mealId)) return;
+
+  await db.dietDayLog.update({
+    where: { id: log.id, userId },
+    data: { refeicoesPuladas: JSON.stringify(puladas.filter((id) => id !== mealId)) },
+  });
+  revalidar(userId);
+}
+
 export async function addExtra(dia: string, extra: ExtraLog) {
   const erro = erroCoerenciaMacros(extra);
   if (erro) throw new Error(erro);
