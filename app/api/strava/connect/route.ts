@@ -8,8 +8,13 @@ import {
   stravaConfigurado,
 } from "@/lib/strava";
 
-// única página que pode receber o redirect de volta, evitando open-redirect
-const DESTINOS_PERMITIDOS = ["/treinos?tab=corrida", "/configuracoes"];
+// únicas páginas que podem receber o redirect de volta, evitando open-redirect.
+// Natação fica de fora porque a aba não oferece conexão com o Strava.
+const DESTINOS_PERMITIDOS = [
+  "/treinos?tab=corrida",
+  "/treinos?tab=ciclismo",
+  "/configuracoes",
+];
 
 export async function GET(request: NextRequest) {
   await getCurrentUser();

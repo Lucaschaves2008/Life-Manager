@@ -15,11 +15,15 @@ import { contarOcorrenciasEmLote } from "@/lib/data/variaveis";
 import {
   METRICAS,
   PERIODOS,
+  REGISTROS_VAZIOS,
   calcularMetrica,
+  contarCardio,
   type MetaMetrica,
   type MetaOrigem,
   type MetaPeriodo,
+  type RegistrosDoPeriodo,
 } from "@/lib/data/metas-quantitativas-constantes";
+import type { ModalidadeCardio } from "@/lib/data/treinos-format";
 
 /**
  * Metas quantitativas: alvo numérico com progresso calculado automaticamente
@@ -72,10 +76,44 @@ function periodoLabelDe(periodo: MetaPeriodo, chave: string): string {
   return chave;
 }
 
+/** Qual modalidade de cardio cada métrica de cardio observa. */
+const MODALIDADE_DA_METRICA = {
+  corridas_completas: "corrida",
+  km_corridos: "corrida",
+  natacoes_completas: "natacao",
+  metros_nadados: "natacao",
+  pedaladas_completas: "ciclismo",
+  km_pedalados: "ciclismo",
+} as const satisfies Partial<Record<MetaMetrica, ModalidadeCardio>>;
+
+/** Contagem de sessões numa modalidade, no campo que calcularMetrica espera. */
+function contagemDe(
+  modalidade: ModalidadeCardio,
+  sessoes: number
+): Pick<RegistrosDoPeriodo, "corridas" | "natacoes" | "pedaladas"> {
+  return {
+    corridas: modalidade === "corrida" ? sessoes : 0,
+    natacoes: modalidade === "natacao" ? sessoes : 0,
+    pedaladas: modalidade === "ciclismo" ? sessoes : 0,
+  };
+}
+
+/** Distância (km) numa modalidade, no campo que calcularMetrica espera. */
+function distanciaDe(
+  modalidade: ModalidadeCardio,
+  km: number
+): Pick<RegistrosDoPeriodo, "km" | "kmNatacao" | "kmCiclismo"> {
+  return {
+    km: modalidade === "corrida" ? km : 0,
+    kmNatacao: modalidade === "natacao" ? km : 0,
+    kmCiclismo: modalidade === "ciclismo" ? km : 0,
+  };
+}
+
 /**
  * Progresso atual de uma métrica automática no período.
  *
- * Só busca o que a métrica pedida precisa (não carrega as 6 fontes à toa) e
+ * Só busca o que a métrica pedida precisa (não carrega todas as fontes à toa) e
  * delega a fórmula para calcularMetrica() — a mesma usada por Desafios
  * (lib/data/desafios.ts), para os dois caminhos nunca divergirem.
  */
@@ -85,35 +123,44 @@ export async function calcularAtual(
   inicio: Date,
   fim: Date
 ): Promise<number> {
-  const vazio = {
-    treinos: 0,
-    corridas: 0,
-    km: 0,
-    refeicoesCumpridas: 0,
-    segundosEstudo: 0,
-    dinheiroCentavos: 0,
-  };
+  const vazio = REGISTROS_VAZIOS;
 
   switch (metrica) {
     case "treinos": {
-      const [treinos, corridas] = await Promise.all([
+      const [treinos, cardio] = await Promise.all([
         db.workoutSession.count({ where: { userId, data: { gte: inicio, lte: fim } } }),
-        db.run.count({ where: { userId, data: { gte: inicio, lte: fim } } }),
+        db.run.findMany({
+          where: { userId, data: { gte: inicio, lte: fim } },
+          select: { modalidade: true },
+        }),
       ]);
-      return calcularMetrica(metrica, { ...vazio, treinos, corridas });
-    }
-    case "corridas_completas": {
-      const corridas = await db.run.count({
-        where: { userId, data: { gte: inicio, lte: fim } },
+      return calcularMetrica(metrica, {
+        ...vazio,
+        treinos,
+        ...contarCardio(cardio),
       });
-      return calcularMetrica(metrica, { ...vazio, corridas });
     }
-    case "km_corridos": {
+    case "corridas_completas":
+    case "natacoes_completas":
+    case "pedaladas_completas": {
+      const modalidade = MODALIDADE_DA_METRICA[metrica];
+      const sessoes = await db.run.count({
+        where: { userId, modalidade, data: { gte: inicio, lte: fim } },
+      });
+      return calcularMetrica(metrica, { ...vazio, ...contagemDe(modalidade, sessoes) });
+    }
+    case "km_corridos":
+    case "metros_nadados":
+    case "km_pedalados": {
+      const modalidade = MODALIDADE_DA_METRICA[metrica];
       const agg = await db.run.aggregate({
-        where: { userId, data: { gte: inicio, lte: fim } },
+        where: { userId, modalidade, data: { gte: inicio, lte: fim } },
         _sum: { km: true },
       });
-      return calcularMetrica(metrica, { ...vazio, km: agg._sum.km ?? 0 });
+      return calcularMetrica(metrica, {
+        ...vazio,
+        ...distanciaDe(modalidade, agg._sum.km ?? 0),
+      });
     }
     case "refeicoes_cumpridas": {
       const logs = await db.dietDayLog.findMany({
@@ -158,14 +205,7 @@ async function calcularAtualEmLote(
   const fimTotal = new Date(Math.max(...metas.map((m) => m.fim.getTime())));
   const dentro = (d: Date, inicio: Date, fim: Date) => d >= inicio && d <= fim;
 
-  const vazio = {
-    treinos: 0,
-    corridas: 0,
-    km: 0,
-    refeicoesCumpridas: 0,
-    segundosEstudo: 0,
-    dinheiroCentavos: 0,
-  };
+  const vazio = REGISTROS_VAZIOS;
 
   switch (metrica) {
     case "treinos": {
@@ -176,38 +216,47 @@ async function calcularAtualEmLote(
         }),
         db.run.findMany({
           where: { userId, data: { gte: inicioTotal, lte: fimTotal } },
-          select: { data: true },
+          select: { data: true, modalidade: true },
         }),
       ]);
       return metas.map(({ inicio, fim }) =>
         calcularMetrica(metrica, {
           ...vazio,
           treinos: sessoes.filter((s) => dentro(s.data, inicio, fim)).length,
-          corridas: runs.filter((r) => dentro(r.data, inicio, fim)).length,
+          ...contarCardio(runs.filter((r) => dentro(r.data, inicio, fim))),
         })
       );
     }
-    case "corridas_completas": {
+    case "corridas_completas":
+    case "natacoes_completas":
+    case "pedaladas_completas": {
+      const modalidade = MODALIDADE_DA_METRICA[metrica];
       const runs = await db.run.findMany({
-        where: { userId, data: { gte: inicioTotal, lte: fimTotal } },
+        where: { userId, modalidade, data: { gte: inicioTotal, lte: fimTotal } },
         select: { data: true },
       });
       return metas.map(({ inicio, fim }) =>
         calcularMetrica(metrica, {
           ...vazio,
-          corridas: runs.filter((r) => dentro(r.data, inicio, fim)).length,
+          ...contagemDe(modalidade, runs.filter((r) => dentro(r.data, inicio, fim)).length),
         })
       );
     }
-    case "km_corridos": {
+    case "km_corridos":
+    case "metros_nadados":
+    case "km_pedalados": {
+      const modalidade = MODALIDADE_DA_METRICA[metrica];
       const runs = await db.run.findMany({
-        where: { userId, data: { gte: inicioTotal, lte: fimTotal } },
+        where: { userId, modalidade, data: { gte: inicioTotal, lte: fimTotal } },
         select: { data: true, km: true },
       });
       return metas.map(({ inicio, fim }) =>
         calcularMetrica(metrica, {
           ...vazio,
-          km: runs.filter((r) => dentro(r.data, inicio, fim)).reduce((s, r) => s + r.km, 0),
+          ...distanciaDe(
+            modalidade,
+            runs.filter((r) => dentro(r.data, inicio, fim)).reduce((s, r) => s + r.km, 0)
+          ),
         })
       );
     }

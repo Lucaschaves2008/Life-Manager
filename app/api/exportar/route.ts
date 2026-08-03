@@ -143,9 +143,10 @@ async function carregarConjunto(userId: string, conjunto: Conjunto): Promise<Res
     case "corridas": {
       const rows = await db.run.findMany({ where: { userId }, orderBy: { data: "desc" } });
       return {
-        colunas: ["data", "km", "segundos", "tipo", "sensacao", "notas"],
+        colunas: ["data", "modalidade", "km", "segundos", "tipo", "sensacao", "notas"],
         linhas: rows.map((r) => ({
           data: dayKeySP(r.data),
+          modalidade: r.modalidade,
           km: r.km,
           segundos: r.segundos,
           tipo: r.tipo,

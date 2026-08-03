@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { useAcao } from "@/lib/acao-cliente";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Download, ExternalLink, Footprints, Pencil, Plus, Trash2 } from "lucide-react";
+import { Download, ExternalLink, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Textarea } from "@/components/ui/input";
@@ -26,13 +26,24 @@ import {
   type CorridaInput,
 } from "@/app/actions/treinos";
 import { buscarCorridaStrava } from "@/app/actions/strava";
-import { formatDuracao, formatPace } from "@/lib/data/treinos-format";
+import {
+  MODALIDADE,
+  campoDistancia,
+  formatDistanciaMod,
+  formatDuracao,
+  formatRitmo,
+  numeroDigitado,
+  paraKm,
+  type ModalidadeCardio,
+} from "@/lib/data/treinos-format";
+import { ICONE_MODALIDADE } from "@/components/treinos/plano-cardio-client";
 import { cn } from "@/lib/utils";
 
 export type CorridaView = {
   id: string;
   data: string;
   dataLabel: string;
+  /** Sempre em km — a exibição converte para a unidade da modalidade. */
   km: number;
   segundos: number;
   tipo: string;
@@ -41,15 +52,25 @@ export type CorridaView = {
   stravaLink: string | null;
 };
 
-const tipos = ["Leve", "Moderado", "Intervalado", "Longão"];
-
-export function CorridaClient({
+/**
+ * Registro manual de sessões de cardio. Um componente para as três
+ * modalidades: `modalidade` decide unidade, ritmo, tipos e rótulos. O Strava
+ * só aparece onde há importação (corrida e ciclismo; natação de piscina não
+ * tem GPS e o Strava não devolve distância confiável).
+ */
+export function CardioClient({
   corridas,
   hoje,
+  modalidade,
 }: {
   corridas: CorridaView[];
   hoje: string;
+  modalidade: ModalidadeCardio;
 }) {
+  const cfg = MODALIDADE[modalidade];
+  const Icone = ICONE_MODALIDADE[modalidade];
+  const temStrava = modalidade !== "natacao";
+
   const router = useRouter();
   const params = useSearchParams();
   const [, executar] = useAcao();
@@ -59,34 +80,36 @@ export function CorridaClient({
   const [editandoId, setEditandoId] = useState<string | null>(null);
 
   const [data, setData] = useState(hoje);
-  const [km, setKm] = useState("");
+  const [distancia, setDistancia] = useState("");
   const [h, setH] = useState("0");
   const [min, setMin] = useState("");
   const [seg, setSeg] = useState("");
-  const [tipo, setTipo] = useState("Leve");
+  const [tipo, setTipo] = useState(cfg.tipos[0]);
   const [sensacao, setSensacao] = useState(3);
   const [notas, setNotas] = useState("");
   const [stravaLink, setStravaLink] = useState("");
   const [stravaActivityId, setStravaActivityId] = useState<string | null>(null);
 
-  const abrirNovo = params.get("novo") === "1";
+  // O deep-link "+ Novo" só deve abrir o formulário da aba que o usuário está
+  // vendo — sem o guard, as três abas abririam o sheet ao mesmo tempo.
+  const abrirNovo = params.get("novo") === "1" && (params.get("tab") ?? "corrida") === modalidade;
   useEffect(() => {
     if (abrirNovo) setAberto(true);
   }, [abrirNovo]);
 
   const segundos =
     (Number(h) || 0) * 3600 + (Number(min) || 0) * 60 + (Number(seg) || 0);
-  const kmNum = Number(km.replace(",", ".")) || 0;
-  const pace = kmNum > 0 && segundos > 0 ? segundos / kmNum : 0;
+  const kmNum = paraKm(numeroDigitado(distancia), modalidade);
+  const ritmo = formatRitmo(segundos, kmNum, modalidade);
 
   function abrir(corrida: CorridaView | null) {
     setEditandoId(corrida?.id ?? null);
     setData(corrida?.data ?? hoje);
-    setKm(corrida ? String(corrida.km) : "");
+    setDistancia(corrida ? campoDistancia(corrida.km, modalidade) : "");
     setH(corrida ? String(Math.floor(corrida.segundos / 3600)) : "0");
     setMin(corrida ? String(Math.floor((corrida.segundos % 3600) / 60)) : "");
     setSeg(corrida ? String(corrida.segundos % 60) : "");
-    setTipo(corrida?.tipo ?? "Leve");
+    setTipo(corrida?.tipo ?? cfg.tipos[0]);
     setSensacao(corrida?.sensacao ?? 3);
     setNotas(corrida?.notas ?? "");
     setStravaLink(corrida?.stravaLink ?? "");
@@ -101,7 +124,7 @@ export function CorridaClient({
       try {
         const importada = await buscarCorridaStrava(link);
         setData(importada.data);
-        setKm(String(importada.km));
+        setDistancia(campoDistancia(importada.km, modalidade));
         const seg = importada.segundos;
         setH(String(Math.floor(seg / 3600)));
         setMin(String(Math.floor((seg % 3600) / 60)));
@@ -111,7 +134,7 @@ export function CorridaClient({
         setStravaActivityId(importada.activityId);
         toast.success("Métricas importadas do Strava");
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Não foi possível importar essa corrida.");
+        toast.error(e instanceof Error ? e.message : "Não foi possível importar essa atividade.");
       }
     });
   }
@@ -131,6 +154,7 @@ export function CorridaClient({
       km: kmNum,
       segundos,
       tipo,
+      modalidade,
       sensacao,
       notas,
       stravaLink: stravaLink.trim() || null,
@@ -140,14 +164,14 @@ export function CorridaClient({
       try {
         if (editandoId) {
           await updateRun(editandoId, payload);
-          toast.success("Corrida atualizada");
+          toast.success("Registro atualizado");
         } else {
           await createRun(payload);
-          toast.success(`Corrida registrada · ${formatPace(pace)}`);
+          toast.success(`${maiuscula(cfg.atividade)} registrada · ${ritmo}`);
         }
         fechar(false);
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Não foi possível salvar a corrida.");
+        toast.error(e instanceof Error ? e.message : "Não foi possível salvar o registro.");
       }
     });
   }
@@ -155,19 +179,19 @@ export function CorridaClient({
   return (
     <>
       <div className="flex items-center justify-between gap-3">
-        <p className="microlabel">Corridas registradas</p>
+        <p className="microlabel">{maiuscula(cfg.atividadePlural)} registradas</p>
         <Button variant="primary" size="sm" onClick={() => abrir(null)}>
           <Plus className="h-4 w-4" strokeWidth={2} />
-          Registrar corrida
+          Registrar {cfg.atividade}
         </Button>
       </div>
 
       <div className="mt-4">
         {corridas.length === 0 ? (
           <EmptyState
-            icon={Footprints}
-            title="Nenhuma corrida registrada ainda"
-            description="Registre sua primeira corrida para acompanhar pace, volume e recordes."
+            icon={Icone}
+            title={`Nenhuma ${cfg.atividade} registrada ainda`}
+            description={`Registre sua primeira ${cfg.atividade} para acompanhar ${cfg.ritmoLabel.toLowerCase()}, volume e recordes.`}
             className="py-14"
           />
         ) : (
@@ -176,7 +200,7 @@ export function CorridaClient({
               <Th>Data</Th>
               <Th right>Distância</Th>
               <Th right>Tempo</Th>
-              <Th right>Pace</Th>
+              <Th right>{cfg.ritmoLabel}</Th>
               <Th>Tipo</Th>
               <Th>Sensação</Th>
               <Th right> </Th>
@@ -201,17 +225,11 @@ export function CorridaClient({
                       )}
                     </span>
                   </Td>
-                  <Td right>
-                    {c.km.toLocaleString("pt-BR", {
-                      minimumFractionDigits: 1,
-                      maximumFractionDigits: 2,
-                    })}{" "}
-                    km
-                  </Td>
+                  <Td right>{formatDistanciaMod(c.km, modalidade)}</Td>
                   <Td right className="text-mist">
                     {formatDuracao(c.segundos)}
                   </Td>
-                  <Td right>{formatPace(c.segundos / c.km)}</Td>
+                  <Td right>{formatRitmo(c.segundos, c.km, modalidade)}</Td>
                   <Td>
                     <span className="rounded-full bg-surface-2 px-2.5 py-1 text-[11.5px] text-mist">
                       {c.tipo}
@@ -242,7 +260,7 @@ export function CorridaClient({
                             executar(async () => {
                               const removida = await deleteRun(c.id);
                               if (!removida) return;
-                              toast("Corrida excluída", {
+                              toast(`${maiuscula(cfg.atividade)} excluída`, {
                                 action: {
                                   label: "Desfazer",
                                   onClick: () =>
@@ -251,6 +269,7 @@ export function CorridaClient({
                                       km: removida.km,
                                       segundos: removida.segundos,
                                       tipo: removida.tipo,
+                                      modalidade: removida.modalidade,
                                       sensacao: removida.sensacao,
                                       notas: removida.notas,
                                       stravaLink: removida.stravaLink,
@@ -272,7 +291,9 @@ export function CorridaClient({
 
       <Sheet open={aberto} onOpenChange={fechar}>
         <SheetContent aria-describedby={undefined}>
-          <SheetTitle>{editandoId ? "Editar corrida" : "Nova corrida"}</SheetTitle>
+          <SheetTitle>
+            {editandoId ? `Editar ${cfg.atividade}` : `Nova ${cfg.atividade}`}
+          </SheetTitle>
           <div className="mt-6 flex flex-col gap-5">
             <div>
               <Label htmlFor="run-data">Data</Label>
@@ -286,13 +307,13 @@ export function CorridaClient({
             </div>
 
             <div>
-              <Label htmlFor="run-km">Distância (km)</Label>
+              <Label htmlFor="run-km">Distância ({cfg.unidade})</Label>
               <Input
                 id="run-km"
                 inputMode="decimal"
-                value={km}
-                onChange={(e) => setKm(e.target.value)}
-                placeholder="8,2"
+                value={distancia}
+                onChange={(e) => setDistancia(e.target.value)}
+                placeholder={cfg.placeholderDistancia}
                 className="tabular"
               />
             </div>
@@ -316,9 +337,9 @@ export function CorridaClient({
                   />
                 ))}
               </div>
-              {pace > 0 && (
+              {ritmo !== "—" && (
                 <p className="tabular mt-2 text-[12.5px] text-mint">
-                  Pace {formatPace(pace)}
+                  {cfg.ritmoLabel} {ritmo}
                 </p>
               )}
             </div>
@@ -330,7 +351,7 @@ export function CorridaClient({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {tipos.map((t) => (
+                  {cfg.tipos.map((t) => (
                     <SelectItem key={t} value={t}>
                       {t}
                     </SelectItem>
@@ -369,35 +390,40 @@ export function CorridaClient({
               />
             </div>
 
-            <div>
-              <Label htmlFor="run-strava">Link do Strava</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="run-strava"
-                  value={stravaLink}
-                  onChange={(e) => {
-                    setStravaLink(e.target.value);
-                    setStravaActivityId(null);
-                  }}
-                  placeholder="https://www.strava.com/activities/…"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={!stravaLink.trim() || buscando}
-                  onClick={buscarDoStrava}
-                >
-                  <Download className={cn("h-4 w-4", buscando && "animate-pulse")} strokeWidth={1.5} />
-                  {buscando ? "Buscando…" : "Buscar"}
-                </Button>
+            {temStrava && (
+              <div>
+                <Label htmlFor="run-strava">Link do Strava</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="run-strava"
+                    value={stravaLink}
+                    onChange={(e) => {
+                      setStravaLink(e.target.value);
+                      setStravaActivityId(null);
+                    }}
+                    placeholder="https://www.strava.com/activities/…"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!stravaLink.trim() || buscando}
+                    onClick={buscarDoStrava}
+                  >
+                    <Download
+                      className={cn("h-4 w-4", buscando && "animate-pulse")}
+                      strokeWidth={1.5}
+                    />
+                    {buscando ? "Buscando…" : "Buscar"}
+                  </Button>
+                </div>
+                {stravaActivityId && (
+                  <p className="mt-1.5 text-[12px] text-mint">
+                    Métricas importadas do Strava — confira antes de salvar.
+                  </p>
+                )}
               </div>
-              {stravaActivityId && (
-                <p className="mt-1.5 text-[12px] text-mint">
-                  Métricas importadas do Strava — confira antes de salvar.
-                </p>
-              )}
-            </div>
+            )}
 
             <div className="flex items-center gap-3">
               <Button
@@ -416,4 +442,9 @@ export function CorridaClient({
       </Sheet>
     </>
   );
+}
+
+/** "corrida" → "Corrida" — os rótulos de MODALIDADE vivem em minúscula. */
+function maiuscula(texto: string): string {
+  return texto.charAt(0).toUpperCase() + texto.slice(1);
 }

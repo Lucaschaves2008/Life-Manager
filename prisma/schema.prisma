@@ -20,14 +20,14 @@ model ContaFinanceira {
   padrao   Boolean  @default(false)
   criadoEm DateTime @default(now())
 
-  accounts            Account[]
-  categories          Category[]
-  cards               Card[]
-  transactions        Transaction[]
-  subscriptions       Subscription[]
-  assets              Asset[]
-  assetMovements      AssetMovement[]
-  metasPoupanca       MetaPoupanca[]
+  accounts       Account[]
+  categories     Category[]
+  cards          Card[]
+  transactions   Transaction[]
+  subscriptions  Subscription[]
+  assets         Asset[]
+  assetMovements AssetMovement[]
+  metasPoupanca  MetaPoupanca[]
 
   @@index([userId])
 }
@@ -151,17 +151,17 @@ model Subscription {
 }
 
 model MetaPoupanca {
-  id                String                    @id @default(cuid())
+  id                String                     @id @default(cuid())
   userId            String
   contaFinanceiraId String
   nome              String
   emoji             String
   descricao         String?
   valorAlvo         Int
-  valorAtual        Int                       @default(0)
-  concluida         Boolean                   @default(false)
-  criadoEm          DateTime                  @default(now())
-  contaFinanceira   ContaFinanceira           @relation(fields: [contaFinanceiraId], references: [id], onDelete: Cascade)
+  valorAtual        Int                        @default(0)
+  concluida         Boolean                    @default(false)
+  criadoEm          DateTime                   @default(now())
+  contaFinanceira   ContaFinanceira            @relation(fields: [contaFinanceiraId], references: [id], onDelete: Cascade)
   contribuicoes     MetaPoupancaContribuicao[]
 
   @@index([userId])
@@ -170,17 +170,17 @@ model MetaPoupanca {
 }
 
 model MetaPoupancaContribuicao {
-  id              String         @id @default(cuid())
+  id              String       @id @default(cuid())
   userId          String
   metaPoupancaId  String
   valor           Int
-  fonte           String         // "receita" | "investimento" | "cartao" | "conta" | "manual"
-  fonteId         String?        // id do investimento/cartao/conta/categoria, quando aplicável
+  fonte           String // "receita" | "investimento" | "cartao" | "conta" | "manual"
+  fonteId         String? // id do investimento/cartao/conta/categoria, quando aplicável
   descricao       String?
-  transactionId   String?        // transaction criada quando fonte="cartao" ou "conta"
-  assetMovementId String?        // assetMovement criado quando fonte="investimento"
-  criadoEm        DateTime       @default(now())
-  metaPoupanca    MetaPoupanca   @relation(fields: [metaPoupancaId], references: [id], onDelete: Cascade)
+  transactionId   String? // transaction criada quando fonte="cartao" ou "conta"
+  assetMovementId String? // assetMovement criado quando fonte="investimento"
+  criadoEm        DateTime     @default(now())
+  metaPoupanca    MetaPoupanca @relation(fields: [metaPoupancaId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([metaPoupancaId])
@@ -325,20 +325,20 @@ model DietDayLog {
 }
 
 model WeightLog {
-  id                 String   @id @default(cuid())
-  userId             String
-  data               DateTime
-  pesoKg             Float
-  cintura            Float?
-  braco              Float?
+  id                String   @id @default(cuid())
+  userId            String
+  data              DateTime
+  pesoKg            Float
+  cintura           Float?
+  braco             Float?
   // Principais (bioimpedância básica)
-  percentualGordura  Float?
-  massaMuscular      Float?
+  percentualGordura Float?
+  massaMuscular     Float?
   // Opcionais (bioimpedância completa) — a maioria não faz exame com esses dados
-  aguaCorporal       Float?
-  massaOssea         Float?
-  gorduraVisceral    Float?
-  tmb                Int?
+  aguaCorporal      Float?
+  massaOssea        Float?
+  gorduraVisceral   Float?
+  tmb               Int?
 
   @@index([userId, data])
 }
@@ -432,6 +432,11 @@ model SetLog {
   @@index([sessionId])
 }
 
+// Sessão de cardio realizada. Apesar do nome (histórico: só existia corrida),
+// cobre as três modalidades via `modalidade` — a lógica de plano, periodização,
+// auto-check no checklist e métricas é a MESMA para as três; só muda a unidade
+// de exibição (ver MODALIDADE em lib/data/treinos-format.ts). `km` continua
+// sendo a unidade de ARMAZENAMENTO em todas: natação exibe km*1000 em metros.
 model Run {
   id               String      @id @default(cuid())
   userId           String
@@ -439,6 +444,7 @@ model Run {
   km               Float
   segundos         Int
   tipo             String
+  modalidade       String      @default("corrida") // "corrida" | "natacao" | "ciclismo"
   sensacao         Int         @default(3)
   notas            String?
   // planId: vínculo LEGADO ao antigo RunPlan (removido). Mantido só como coluna
@@ -451,26 +457,32 @@ model Run {
 
   @@unique([userId, stravaActivityId])
   @@index([userId, data])
+  @@index([userId, modalidade, data])
   @@index([runSessionId])
 }
 
-// Plano nomeado de corrida (espelha Routine): "Base 5k", com dias da semana e
-// sessões dentro. Substitui o antigo RunPlan (linhas soltas por dia).
+// Plano nomeado de cardio (espelha Routine): "Base 5k", com dias da semana e
+// sessões dentro. Substitui o antigo RunPlan (linhas soltas por dia). A
+// modalidade do plano vale para todas as suas sessões — não há plano misto,
+// porque a aba de cada modalidade lista só os planos dela.
 model RunRoutine {
   id         String       @id @default(cuid())
   userId     String
   nome       String
   foco       String?
+  modalidade String       @default("corrida") // "corrida" | "natacao" | "ciclismo"
   diasSemana String       @default("[]") // ["2","4","6"] (0=dom..6=sáb)
   ordem      Int          @default(0)
   criadoEm   DateTime     @default(now())
   sessions   RunSession[]
 
   @@index([userId])
+  @@index([userId, modalidade])
 }
 
-// Sessão de um plano de corrida (espelha RoutineExercise): "Longão de domingo",
+// Sessão de um plano de cardio (espelha RoutineExercise): "Longão de domingo",
 // tipo + km-alvo da SEMANA-BASE. Semanas seguintes herdam via RunSessionWeek.
+// A modalidade vem do plano (RunRoutine.modalidade) — nunca duplicada aqui.
 model RunSession {
   id              String           @id @default(cuid())
   userId          String
@@ -581,31 +593,31 @@ model StudyMark {
 }
 
 model Calendar {
-  id       String  @id @default(cuid())
-  userId   String
-  nome     String
-  cor      String
-  readonly Boolean @default(false)
-  visivel  Boolean @default(true)
-  ordem    Int     @default(0)
+  id           String  @id @default(cuid())
+  userId       String
+  nome         String
+  cor          String
+  readonly     Boolean @default(false)
+  visivel      Boolean @default(true)
+  ordem        Int     @default(0)
   // Google Calendar integration
-  googleId String? // ID do calendário no Google (ex: "primary" ou email)
+  googleId     String? // ID do calendário no Google (ex: "primary" ou email)
   sincronizado Boolean @default(false)
-  events   Event[]
+  events       Event[]
 
   @@index([userId])
   @@index([googleId])
 }
 
 model GoogleIntegration {
-  id           String  @id @default(cuid())
-  userId       String  @unique
+  id           String    @id @default(cuid())
+  userId       String    @unique
   accessToken  String
   refreshToken String?
   expiresAt    DateTime?
-  escopo       String  @default("calendar")
-  criadoEm     DateTime @default(now())
-  atualizadoEm DateTime @updatedAt
+  escopo       String    @default("calendar")
+  criadoEm     DateTime  @default(now())
+  atualizadoEm DateTime  @updatedAt
 
   @@index([userId])
 }
@@ -764,10 +776,12 @@ model Desafio {
   ativo              Boolean  @default(true)
   criadoEm           DateTime @default(now())
 
-  membros   DesafioMembro[]
-  metas     DesafioMeta[]
-  mensagens DesafioMensagem[]
-  documento DesafioDocumento?
+  membros      DesafioMembro[]
+  metas        DesafioMeta[]
+  mensagens    DesafioMensagem[]
+  documento    DesafioDocumento?
+  solicitacoes DesafioSolicitacao[]
+  ajustes      DesafioAjuste[]
 
   @@index([criadorId])
 }
@@ -817,6 +831,74 @@ model DesafioMeta {
   @@index([desafioId])
   @@index([userId])
   @@index([metaPaiId])
+}
+
+// Pedido de mudança nas metas de um desafio com mais de um membro. Toda
+// criação/edição/exclusão de meta e todo ajuste retroativo de progresso passa
+// por aqui: a mudança só é aplicada quando TODOS os membros aprovam
+// (unanimidade). Uma única recusa mata o pedido. Em desafio de um membro só,
+// as actions aplicam direto e nem chegam a criar solicitação.
+// payload guarda o DesafioMetaInput (ou o ajuste) em JSON; resumo é o texto já
+// pronto para a UI ("Alvo: 10 → 12"), congelado no momento do pedido para o
+// histórico não mudar de sentido quando a meta mudar depois.
+model DesafioSolicitacao {
+  id            String    @id @default(cuid())
+  desafioId     String
+  autorId       String
+  tipo          String // "criar_meta" | "editar_meta" | "excluir_meta" | "ajuste_progresso"
+  // Meta alvo — null em "criar_meta" (a meta ainda não existe). Vínculo fraco,
+  // mesmo padrão do resto do schema: meta excluída não quebra o histórico.
+  metaId        String?
+  metaTitulo    String
+  payload       String    @default("{}")
+  resumo        String
+  justificativa String?
+  status        String    @default("pendente") // "pendente" | "aprovada" | "recusada" | "cancelada"
+  criadoEm      DateTime  @default(now())
+  resolvidoEm   DateTime?
+
+  desafio Desafio                  @relation(fields: [desafioId], references: [id], onDelete: Cascade)
+  votos   DesafioSolicitacaoVoto[]
+
+  @@index([desafioId, status])
+  @@index([autorId])
+}
+
+// Voto de um membro numa solicitação. O autor entra com voto de aprovação
+// automático na criação — ele já concorda com o próprio pedido.
+model DesafioSolicitacaoVoto {
+  id            String   @id @default(cuid())
+  solicitacaoId String
+  userId        String
+  aprovado      Boolean
+  criadoEm      DateTime @default(now())
+
+  solicitacao DesafioSolicitacao @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
+
+  @@unique([solicitacaoId, userId])
+  @@index([userId])
+}
+
+// Ajuste retroativo de progresso APROVADO — ex.: "fiz o treino do dia 02/08 e
+// esqueci de registrar". Entra na soma de lib/data/desafios.ts como se fosse
+// um registro real naquela data, mas só existe dentro do desafio (não mexe em
+// WorkoutSession, checklist ou variável do usuário).
+model DesafioAjuste {
+  id            String   @id @default(cuid())
+  desafioId     String
+  metaId        String
+  userId        String
+  quantidade    Float
+  data          DateTime
+  motivo        String
+  solicitacaoId String?
+  criadoEm      DateTime @default(now())
+
+  desafio Desafio @relation(fields: [desafioId], references: [id], onDelete: Cascade)
+
+  @@index([desafioId])
+  @@index([metaId])
+  @@index([userId, data])
 }
 
 // Mensagem no chat de um desafio — visível a qualquer membro, sem edição/exclusão
@@ -1052,6 +1134,6 @@ model Profile {
   // Asset.revisarACada/proximaRevisao (lib/data/investimentos.ts): intervalo em
   // dias configurado pelo usuário + próxima data calculada e persistida,
   // reagendada automaticamente a cada novo WeightLog.
-  revisarPesoACada    Int?
-  proximaRevisaoPeso  DateTime?
+  revisarPesoACada   Int?
+  proximaRevisaoPeso DateTime?
 }

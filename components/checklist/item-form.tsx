@@ -22,12 +22,19 @@ import {
 } from "@/app/actions/rotinas";
 import { atualizarVariavel, criarVariavel } from "@/app/actions/variaveis";
 import type {
-  LocalItem,
   RotinaOpcao,
   RotinaPlanoView,
   RotinaTemplateView,
-  TipoRotina,
 } from "@/lib/data/rotinas";
+// Valores vêm do módulo puro: rotinas.ts é server-only ("use cache"/cache-tags)
+// e importá-lo aqui arrastaria o grafo server para o bundle do cliente.
+import {
+  TIPO_CARDIO,
+  ehTipoCardio,
+  type LocalItem,
+  type TipoCardio,
+  type TipoRotina,
+} from "@/lib/data/rotinas-constantes";
 import type { VariavelChecklistItem } from "@/lib/data/variaveis";
 import type { CategoriaView } from "@/lib/data/estudos";
 import type { SessaoCorridaOpcao } from "@/lib/data/treinos-format";
@@ -48,6 +55,8 @@ export const TIPO_META: Record<TipoRotina, { label: string; emoji: string }> = {
   estudo: { label: "Estudo", emoji: "📚" },
   treino: { label: "Treino", emoji: "💪" },
   corrida: { label: "Corrida", emoji: "🏃" },
+  natacao: { label: "Natação", emoji: "🏊" },
+  ciclismo: { label: "Ciclismo", emoji: "🚴" },
   refeicao: { label: "Refeição", emoji: "🍽️" },
 };
 
@@ -280,9 +289,10 @@ export function ItemFormSheet({
       tipo: form.tipo,
       studyCategoryId: form.tipo === "estudo" ? form.studyCategoryId || null : null,
       routineId: form.tipo === "treino" ? form.routineId || null : null,
-      runSessionId: form.tipo === "corrida" ? form.runSessionId || null : null,
+      runSessionId: ehTipoCardio(form.tipo) ? form.runSessionId || null : null,
       mealId: form.tipo === "refeicao" ? form.mealId || null : null,
-      metaMinutos: form.tipo === "estudo" || form.tipo === "corrida" ? form.metaMinutos : null,
+      metaMinutos:
+        form.tipo === "estudo" || ehTipoCardio(form.tipo) ? form.metaMinutos : null,
       planoId: emHabitos ? null : form.planoId || null,
       opcoes: form.tipo === "refeicao" ? [] : form.opcoes,
     };
@@ -311,6 +321,10 @@ export function ItemFormSheet({
   // Na edição, então, só se troca de tipo dentro do próprio grupo.
   const podeTrocarTipo = !form?.id;
   const aceitaOpcoes = form && form.tipo !== "variavel" && form.tipo !== "refeicao";
+  // Narrowing feito uma vez aqui: dentro de callbacks do JSX o TypeScript perde
+  // o estreitamento de `form.tipo` (acesso a propriedade em closure).
+  const tipoCardio: TipoCardio | null =
+    form && ehTipoCardio(form.tipo) ? form.tipo : null;
 
   return (
     <Sheet open={form !== null} onOpenChange={(v) => !v && setForm(null)}>
@@ -478,17 +492,23 @@ export function ItemFormSheet({
                   />
                 )}
 
-                {form.tipo === "corrida" && (
+                {/* Cardio: só as sessões da MODALIDADE escolhida entram no
+                    seletor — vincular um item de natação a um longão de corrida
+                    faria o auto-check disparar no dia errado. */}
+                {tipoCardio && (
                   <SeletorVinculo
-                    label="Sessão de corrida"
-                    vazio="Crie um plano de corrida em Treinos para vincular uma sessão."
+                    label={`Sessão de ${TIPO_META[tipoCardio].label.toLowerCase()}`}
+                    vazio={`Crie um plano de ${TIPO_META[tipoCardio].label.toLowerCase()} em Treinos para vincular uma sessão.`}
                     placeholder="Escolha a sessão"
                     valor={form.runSessionId}
                     onChange={(v) => atualizar({ runSessionId: v })}
-                    opcoes={sessoesCorrida.map((s) => ({
-                      id: s.id,
-                      nome: `${s.nome} · ${s.tipo} (${s.planoNome})`,
-                    }))}
+                    opcoes={sessoesCorrida
+                      .filter((s) => s.modalidade === TIPO_CARDIO[tipoCardio])
+                      .map((s) => ({
+                        id: s.id,
+                        nome: `${s.nome} · ${s.tipo} (${s.planoNome})`,
+                      }))}
+                    ajuda="Ao registrar essa sessão em Treinos, o item marca sozinho no dia."
                   />
                 )}
 
@@ -513,7 +533,7 @@ export function ItemFormSheet({
                   />
                 )}
 
-                {(form.tipo === "estudo" || form.tipo === "corrida") && (
+                {(form.tipo === "estudo" || ehTipoCardio(form.tipo)) && (
                   <div>
                     <Label>Meta de tempo</Label>
                     <div className="flex flex-wrap gap-2">

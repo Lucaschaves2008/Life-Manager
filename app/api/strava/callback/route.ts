@@ -7,7 +7,13 @@ import {
   trocarCodePorTokens,
 } from "@/lib/strava";
 
-const DESTINOS_PERMITIDOS = ["/treinos?tab=corrida", "/configuracoes"];
+// Precisa espelhar a lista de connect/route.ts — o destino é lido do cookie
+// gravado lá, e um valor fora desta lista cai no padrão (anti open-redirect).
+const DESTINOS_PERMITIDOS = [
+  "/treinos?tab=corrida",
+  "/treinos?tab=ciclismo",
+  "/configuracoes",
+];
 
 export async function GET(request: NextRequest) {
   const user = await getCurrentUser();

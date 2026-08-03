@@ -218,6 +218,8 @@ const COR_TIPO: Record<string, string> = {
   estudo: "var(--cal-blue)",
   treino: "var(--color-mint)",
   corrida: "var(--cal-teal)",
+  natacao: "var(--cal-blue)",
+  ciclismo: "var(--cal-amber)",
   livre: "var(--color-steel)",
 };
 

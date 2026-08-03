@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useAcao } from "@/lib/acao-cliente";
 import {
+  Bike,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -14,6 +15,7 @@ import {
   Plus,
   RotateCcw,
   Trash2,
+  Waves,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -45,21 +47,52 @@ import {
   updateRunSessionMeta,
   type RunSessionInput,
 } from "@/app/actions/treinos";
-import type { PlanoCorridaView, SessaoCorridaView } from "@/lib/data/treinos-format";
-import { DIAS_SEMANA_LABEL, formatDiasSemana, formatDistancia } from "@/lib/data/treinos-format";
+import type {
+  ModalidadeCardio,
+  PlanoCorridaView,
+  SessaoCorridaView,
+} from "@/lib/data/treinos-format";
+import {
+  DIAS_SEMANA_LABEL,
+  MODALIDADE,
+  campoDistancia,
+  formatDiasSemana,
+  formatDistanciaMod,
+  numeroDigitado,
+  paraKm,
+} from "@/lib/data/treinos-format";
 import { cn } from "@/lib/utils";
 
-const tipos = ["Leve", "Moderado", "Intervalado", "Longão"];
+/** Ícone da modalidade — o mesmo par usado na aba e no card de treino de hoje. */
+export const ICONE_MODALIDADE = {
+  corrida: Footprints,
+  natacao: Waves,
+  ciclismo: Bike,
+} as const;
 
-const sessaoVazia: RunSessionInput = { nome: "", tipo: "Leve", kmAlvo: 5 };
-
-export function PlanoCorridaClient({
+/**
+ * Planos de cardio (corrida, natação ou ciclismo). O componente é um só: a
+ * modalidade entra por prop e decide rótulos, unidade e tipos de sessão. A
+ * distância trafega em km no servidor e é convertida para a unidade da
+ * modalidade só na borda do formulário (natação digita metros).
+ */
+export function PlanoCardioClient({
   planos,
   semana,
+  modalidade,
 }: {
   planos: PlanoCorridaView[];
   semana: number;
+  modalidade: ModalidadeCardio;
 }) {
+  const cfg = MODALIDADE[modalidade];
+  const Icone = ICONE_MODALIDADE[modalidade];
+  const sessaoVazia: RunSessionInput = {
+    nome: "",
+    tipo: cfg.tipos[0],
+    kmAlvo: paraKm(modalidade === "natacao" ? 1000 : 5, modalidade),
+  };
+
   const [, executar] = useAcao();
   const [pending, startSalvar] = useTransition();
 
@@ -78,6 +111,10 @@ export function PlanoCorridaClient({
     origem: number;
   } | null>(null);
   const [formSessao, setFormSessao] = useState<RunSessionInput>(sessaoVazia);
+  // Campo de distância como texto: o usuário digita "1500" (m) ou "8,2" (km),
+  // e só na hora de salvar isso vira km. Guardar o número já convertido faria
+  // "1,5" reaparecer no lugar de "1500" a cada re-render da natação.
+  const [distancia, setDistancia] = useState("");
 
   function abrirPlano(p: PlanoCorridaView | null) {
     setPlanoEditandoId(p?.id ?? null);
@@ -92,7 +129,7 @@ export function PlanoCorridaClient({
         await setRunRoutineDias(planoEditandoId, formPlano.dias);
         toast.success("Plano atualizado");
       } else {
-        const novoId = await createRunRoutine(formPlano.nome, formPlano.foco);
+        const novoId = await createRunRoutine(formPlano.nome, formPlano.foco, modalidade);
         if (formPlano.dias.length > 0) await setRunRoutineDias(novoId, formPlano.dias);
         toast.success("Plano criado");
       }
@@ -107,32 +144,33 @@ export function PlanoCorridaClient({
       herdado: s?.herdado ?? false,
       origem: s?.origemSemana ?? 1,
     });
-    setFormSessao(
-      s
-        ? { nome: s.nome, tipo: s.tipo, kmAlvo: s.kmAlvoSemana }
-        : sessaoVazia
-    );
+    const base = s ? { nome: s.nome, tipo: s.tipo, kmAlvo: s.kmAlvoSemana } : sessaoVazia;
+    setFormSessao(base);
+    setDistancia(campoDistancia(base.kmAlvo, modalidade));
   }
 
-  // Da semana 2 em diante o km-alvo vira override daquela semana (setRunSessionWeek)
-  // e nome/tipo (que não variam) vão por updateRunSessionMeta — sem tocar a base.
+  // Da semana 2 em diante a distância-alvo vira override daquela semana
+  // (setRunSessionWeek) e nome/tipo (que não variam) vão por
+  // updateRunSessionMeta — sem tocar a base.
   function salvarSessao() {
     if (!sheetSessao) return;
+    const kmAlvo = paraKm(numeroDigitado(distancia), modalidade);
+    const payload: RunSessionInput = { ...formSessao, kmAlvo };
     startSalvar(async () => {
       if (sheetSessao.id) {
         if (semana > 1) {
-          await setRunSessionWeek(sheetSessao.id, semana, formSessao.kmAlvo);
+          await setRunSessionWeek(sheetSessao.id, semana, kmAlvo);
           await updateRunSessionMeta(sheetSessao.id, {
-            nome: formSessao.nome,
-            tipo: formSessao.tipo,
+            nome: payload.nome,
+            tipo: payload.tipo,
           });
           toast.success(`Semana ${semana} atualizada`);
         } else {
-          await updateRunSession(sheetSessao.id, formSessao);
+          await updateRunSession(sheetSessao.id, payload);
           toast.success("Sessão atualizada");
         }
       } else {
-        await createRunSession(sheetSessao.routineId, formSessao);
+        await createRunSession(sheetSessao.routineId, payload);
         toast.success("Sessão adicionada");
       }
       setSheetSessao(null);
@@ -158,9 +196,9 @@ export function PlanoCorridaClient({
     return (
       <>
         <EmptyState
-          icon={Footprints}
-          title="Nenhum plano de corrida ainda"
-          description="Crie um plano com sessões e progressão de km por semana."
+          icon={Icone}
+          title={`Nenhum plano de ${cfg.label.toLowerCase()} ainda`}
+          description={`Crie um plano com sessões e progressão de ${cfg.unidade === "m" ? "metros" : "km"} por semana.`}
           className="py-12"
           action={
             <Button variant="dashed" size="sm" onClick={() => abrirPlano(null)}>
@@ -173,6 +211,7 @@ export function PlanoCorridaClient({
           aberto={sheetPlano}
           onOpenChange={setSheetPlano}
           editando={!!planoEditandoId}
+          modalidade={modalidade}
           form={formPlano}
           setForm={setFormPlano}
           onSalvar={salvarPlano}
@@ -184,7 +223,7 @@ export function PlanoCorridaClient({
 
   return (
     <>
-      <SeletorSemana semana={semana} onMudar={mudarSemana} />
+      <SeletorSemana semana={semana} modalidade={modalidade} onMudar={mudarSemana} />
 
       <div className="mt-4 flex flex-col gap-4">
         {planos.map((plano) => (
@@ -252,8 +291,9 @@ export function PlanoCorridaClient({
                         )}
                       </div>
                       <p className="tabular text-[11.5px] text-steel">
-                        alvo {formatDistancia(s.kmAlvoSemana)}
-                        {s.cumprida && ` · feito ${formatDistancia(s.cumprida.km)}`}
+                        alvo {formatDistanciaMod(s.kmAlvoSemana, modalidade)}
+                        {s.cumprida &&
+                          ` · feito ${formatDistanciaMod(s.cumprida.km, modalidade)}`}
                       </p>
                     </div>
                     <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
@@ -322,6 +362,7 @@ export function PlanoCorridaClient({
         aberto={sheetPlano}
         onOpenChange={setSheetPlano}
         editando={!!planoEditandoId}
+        modalidade={modalidade}
         form={formPlano}
         setForm={setFormPlano}
         onSalvar={salvarPlano}
@@ -341,7 +382,7 @@ export function PlanoCorridaClient({
             <div className="mt-4 rounded-[12px] border border-stroke bg-surface-2 px-3.5 py-3">
               <p className="text-[12px] text-mist">
                 {sheetSessao.herdado
-                  ? `O km-alvo está herdando da semana ${sheetSessao.origem}. Editar cria uma versão própria para a semana ${semana} (e as seguintes até você mudar de novo).`
+                  ? `A distância-alvo está herdando da semana ${sheetSessao.origem}. Editar cria uma versão própria para a semana ${semana} (e as seguintes até você mudar de novo).`
                   : `Você está editando a versão da semana ${semana}. Nome e tipo valem para todas as semanas.`}
               </p>
               {!sheetSessao.herdado && (
@@ -362,7 +403,7 @@ export function PlanoCorridaClient({
                 id="sess-nome"
                 value={formSessao.nome}
                 onChange={(e) => setFormSessao({ ...formSessao, nome: e.target.value })}
-                placeholder="Longão de domingo, Tiros na pista…"
+                placeholder={PLACEHOLDER_SESSAO[modalidade]}
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -376,7 +417,7 @@ export function PlanoCorridaClient({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {tipos.map((t) => (
+                    {cfg.tipos.map((t) => (
                       <SelectItem key={t} value={t}>
                         {t}
                       </SelectItem>
@@ -386,20 +427,15 @@ export function PlanoCorridaClient({
               </div>
               <div>
                 <Label htmlFor="sess-km">
-                  Km alvo{semana > 1 ? ` · sem. ${semana}` : ""}
+                  Alvo ({cfg.unidade}){semana > 1 ? ` · sem. ${semana}` : ""}
                 </Label>
                 <Input
                   id="sess-km"
                   inputMode="decimal"
-                  value={String(formSessao.kmAlvo)}
-                  onChange={(e) =>
-                    setFormSessao({
-                      ...formSessao,
-                      kmAlvo: Number(e.target.value.replace(",", ".")) || 0,
-                    })
-                  }
+                  value={distancia}
+                  onChange={(e) => setDistancia(e.target.value)}
                   className="tabular"
-                  placeholder="8"
+                  placeholder={cfg.placeholderDistancia}
                 />
               </div>
             </div>
@@ -407,7 +443,7 @@ export function PlanoCorridaClient({
               <Button
                 variant="primary"
                 onClick={salvarSessao}
-                disabled={!formSessao.nome.trim() || pending}
+                disabled={!formSessao.nome.trim() || numeroDigitado(distancia) <= 0 || pending}
               >
                 {pending ? "Salvando…" : "Salvar"}
               </Button>
@@ -422,10 +458,23 @@ export function PlanoCorridaClient({
   );
 }
 
+const PLACEHOLDER_SESSAO: Record<ModalidadeCardio, string> = {
+  corrida: "Longão de domingo, Tiros na pista…",
+  natacao: "Série de 10×100, Técnica de crawl…",
+  ciclismo: "Pedal longo de sábado, Subidas…",
+};
+
+const PLACEHOLDER_PLANO: Record<ModalidadeCardio, { nome: string; foco: string }> = {
+  corrida: { nome: "Base 5k", foco: "Resistência aeróbica" },
+  natacao: { nome: "Base 1.500 m", foco: "Técnica e fôlego" },
+  ciclismo: { nome: "Base 100 km", foco: "Resistência e cadência" },
+};
+
 function SheetPlano({
   aberto,
   onOpenChange,
   editando,
+  modalidade,
   form,
   setForm,
   onSalvar,
@@ -434,11 +483,13 @@ function SheetPlano({
   aberto: boolean;
   onOpenChange: (v: boolean) => void;
   editando: boolean;
+  modalidade: ModalidadeCardio;
   form: { nome: string; foco: string; dias: number[] };
   setForm: (v: { nome: string; foco: string; dias: number[] }) => void;
   onSalvar: () => void;
   pending: boolean;
 }) {
+  const ph = PLACEHOLDER_PLANO[modalidade];
   function toggleDia(d: number) {
     setForm({
       ...form,
@@ -448,7 +499,11 @@ function SheetPlano({
   return (
     <Sheet open={aberto} onOpenChange={onOpenChange}>
       <SheetContent aria-describedby={undefined}>
-        <SheetTitle>{editando ? "Editar plano" : "Novo plano de corrida"}</SheetTitle>
+        <SheetTitle>
+          {editando
+            ? "Editar plano"
+            : `Novo plano de ${MODALIDADE[modalidade].label.toLowerCase()}`}
+        </SheetTitle>
         <div className="mt-6 flex flex-col gap-5">
           <div>
             <Label htmlFor="plano-nome">Nome</Label>
@@ -456,7 +511,7 @@ function SheetPlano({
               id="plano-nome"
               value={form.nome}
               onChange={(e) => setForm({ ...form, nome: e.target.value })}
-              placeholder="Base 5k"
+              placeholder={ph.nome}
             />
           </div>
           <div>
@@ -465,7 +520,7 @@ function SheetPlano({
               id="plano-foco"
               value={form.foco}
               onChange={(e) => setForm({ ...form, foco: e.target.value })}
-              placeholder="Resistência aeróbica"
+              placeholder={ph.foco}
             />
           </div>
           <div>
@@ -511,15 +566,19 @@ function SheetPlano({
 
 function SeletorSemana({
   semana,
+  modalidade,
   onMudar,
 }: {
   semana: number;
+  modalidade: ModalidadeCardio;
   onMudar: (delta: number) => void;
 }) {
   return (
     <div className="flex items-center justify-between rounded-[14px] border border-stroke bg-surface-2 px-3 py-2.5">
       <div>
-        <CardLabel>Periodização · corrida</CardLabel>
+        <CardLabel>
+          Periodização · {MODALIDADE[modalidade].label.toLowerCase()}
+        </CardLabel>
         <p className="mt-0.5 text-[14px] text-paper">Semana {semana}</p>
       </div>
       <div className="flex items-center gap-1">

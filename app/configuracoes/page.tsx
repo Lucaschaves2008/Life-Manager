@@ -50,6 +50,18 @@ const metas: SettingField[] = [
   { key: "meta_treinos_mes", label: "Treinos por mês", sufixo: "treinos" },
   { key: "meta_km_mes", label: "Quilometragem no mês", sufixo: "km" },
   {
+    key: "meta_metros_mes_natacao",
+    label: "Metros nadados no mês",
+    sufixo: "m",
+    ajuda: "Meta da aba Natação em Treinos.",
+  },
+  {
+    key: "meta_km_mes_ciclismo",
+    label: "Quilometragem pedalada no mês",
+    sufixo: "km",
+    ajuda: "Meta da aba Ciclismo em Treinos.",
+  },
+  {
     key: "corrida_pace_base_seg",
     label: "Pace base da corrida",
     sufixo: "seg/km",

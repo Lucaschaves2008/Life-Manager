@@ -10,6 +10,7 @@ import {
 } from "@/lib/dates";
 import type { LinhaDetalhe } from "@/components/caverna/stat-card-detalhe";
 import { HOME_CARD_SLOTS } from "@/lib/home-card-slots";
+import { MODALIDADE, MODALIDADES_CARDIO, modalidadeDe } from "@/lib/data/treinos-format";
 
 export { HOME_CARD_SLOTS };
 
@@ -356,26 +357,39 @@ async function despesasCard(
 // ---------- Treinos / Corridas / Estudos ----------
 
 async function treinosCard(userId: string, inicio: Date, fim: Date, contexto: string): Promise<HomeCardData> {
-  const [sessoes, corridas] = await Promise.all([
+  const [sessoes, cardio] = await Promise.all([
     db.workoutSession.findMany({ where: { userId, data: { gte: inicio, lte: fim } }, select: { duracaoMin: true } }),
-    db.run.count({ where: { userId, data: { gte: inicio, lte: fim } } }),
+    db.run.findMany({
+      where: { userId, data: { gte: inicio, lte: fim } },
+      select: { modalidade: true },
+    }),
   ]);
   const totalMin = sessoes.reduce((s, w) => s + w.duracaoMin, 0);
-  const total = sessoes.length + corridas;
-  const max = Math.max(sessoes.length, corridas, 1);
+  // Cada modalidade de cardio vira uma linha própria; musculação abre a lista.
+  const porModalidade = MODALIDADES_CARDIO.map((m) => ({
+    modalidade: m,
+    total: cardio.filter((c) => modalidadeDe(c.modalidade) === m).length,
+  }));
+  const total = sessoes.length + cardio.length;
+  const max = Math.max(sessoes.length, ...porModalidade.map((p) => p.total), 1);
 
   return {
     label: "Treinos",
     value: `${total}`,
     contexto,
     acento: "var(--color-mint)",
-    descricao: "Musculação e corridas registradas no período selecionado.",
+    descricao: "Musculação, corrida, natação e ciclismo registrados no período selecionado.",
     grupos: [
       {
         titulo: "Por tipo",
         linhas: [
           { label: "Musculação", valor: `${sessoes.length}`, cor: "var(--color-mint)", share: pctOf(sessoes.length, max) },
-          { label: "Corridas", valor: `${corridas}`, cor: "var(--cal-teal)", share: pctOf(corridas, max) },
+          ...porModalidade.map((p) => ({
+            label: MODALIDADE[p.modalidade].label,
+            valor: `${p.total}`,
+            cor: MODALIDADE[p.modalidade].acento,
+            share: pctOf(p.total, max),
+          })),
         ],
       },
     ],
@@ -385,8 +399,11 @@ async function treinosCard(userId: string, inicio: Date, fim: Date, contexto: st
 }
 
 async function corridasCard(userId: string, inicio: Date, fim: Date, contexto: string): Promise<HomeCardData> {
+  // O card é de CORRIDA: misturar natação e ciclismo aqui tornaria o ritmo
+  // médio (min/km) sem sentido. As outras modalidades aparecem no card Treinos
+  // e têm cada uma sua aba própria com pace/velocidade corretos.
   const corridas = await db.run.findMany({
-    where: { userId, data: { gte: inicio, lte: fim } },
+    where: { userId, modalidade: "corrida", data: { gte: inicio, lte: fim } },
     select: { km: true, segundos: true, tipo: true, data: true },
     orderBy: { data: "desc" },
   });
@@ -406,7 +423,7 @@ async function corridasCard(userId: string, inicio: Date, fim: Date, contexto: s
     value: `${totalKm.toFixed(1)} km`,
     contexto,
     acento: "var(--cal-teal)",
-    descricao: "Distância percorrida e ritmo médio no período selecionado.",
+    descricao: "Distância corrida e ritmo médio no período selecionado.",
     grupos: [{ titulo: `${corridas.length} corrida${corridas.length === 1 ? "" : "s"}`, linhas }],
     total: {
       label: "Ritmo médio",

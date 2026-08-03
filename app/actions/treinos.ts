@@ -7,6 +7,7 @@ import { tagUsuario } from "@/lib/cache-tags";
 import { dayKeySP, spStartOfDay } from "@/lib/dates";
 import { marcarDiaAtivo } from "@/lib/streak";
 import { templateOcorreNoDia } from "@/lib/rotina-helpers";
+import { modalidadeDe, type ModalidadeCardio } from "@/lib/data/treinos-format";
 
 function revalidar(userId: string) {
   revalidatePath("/treinos");
@@ -19,7 +20,7 @@ function dataSP(dia: string): Date {
   return new Date(`${dia}T12:00:00-03:00`);
 }
 
-/** Garante que a sessão de corrida referenciada pertence ao usuário. */
+/** Garante que a sessão de cardio referenciada pertence ao usuário. */
 async function validarPosseDaSessao(userId: string, runSessionId?: string | null) {
   if (!runSessionId) return;
   const sessao = await db.runSession.findFirst({
@@ -27,6 +28,26 @@ async function validarPosseDaSessao(userId: string, runSessionId?: string | null
     select: { id: true },
   });
   if (!sessao) throw new Error("Recurso não encontrado.");
+}
+
+/**
+ * Modalidade efetiva de um registro: a da sessão do plano, quando há vínculo.
+ * Uma pedalada não pode ser gravada como "corrida" só porque o formulário veio
+ * de outra aba — o plano manda, e é ele que decide onde o registro aparece.
+ */
+async function modalidadeDoRegistro(
+  userId: string,
+  runSessionId: string | null | undefined,
+  informada: string | undefined
+): Promise<ModalidadeCardio> {
+  if (runSessionId) {
+    const sessao = await db.runSession.findFirst({
+      where: { id: runSessionId, userId },
+      select: { routine: { select: { modalidade: true } } },
+    });
+    if (sessao) return modalidadeDe(sessao.routine.modalidade);
+  }
+  return modalidadeDe(informada);
 }
 
 /**
@@ -401,13 +422,18 @@ export async function deleteSession(id: string) {
   revalidar(userId);
 }
 
-// ---------- Corridas ----------
+// ---------- Sessões de cardio (corrida / natação / ciclismo) ----------
+// Um único conjunto de actions serve as três modalidades: `modalidade` só
+// decide em qual aba o registro aparece e com que unidade é exibido. `km` é
+// sempre a unidade de armazenamento — a UI converte metros ↔ km na natação.
 
 export type CorridaInput = {
   data: string; // yyyy-MM-dd
   km: number;
   segundos: number;
   tipo: string;
+  /** "corrida" (padrão) | "natacao" | "ciclismo" */
+  modalidade?: ModalidadeCardio;
   sensacao: number;
   notas?: string | null;
   runSessionId?: string | null;
@@ -418,13 +444,18 @@ export type CorridaInput = {
 export async function createRun(input: CorridaInput) {
   const { id: userId } = await requireUser();
   await validarPosseDaSessao(userId, input.runSessionId);
+  const modalidade = await modalidadeDoRegistro(
+    userId,
+    input.runSessionId,
+    input.modalidade
+  );
 
   if (input.stravaActivityId) {
     const jaExiste = await db.run.findFirst({
       where: { userId, stravaActivityId: input.stravaActivityId },
       select: { id: true },
     });
-    if (jaExiste) throw new Error("Esta corrida do Strava já foi importada.");
+    if (jaExiste) throw new Error("Esta atividade do Strava já foi importada.");
   }
 
   const data = dataSP(input.data);
@@ -434,6 +465,7 @@ export async function createRun(input: CorridaInput) {
       km: input.km,
       segundos: input.segundos,
       tipo: input.tipo,
+      modalidade,
       sensacao: input.sensacao,
       notas: input.notas?.trim() || null,
       runSessionId: input.runSessionId ?? null,
@@ -442,7 +474,7 @@ export async function createRun(input: CorridaInput) {
       userId,
     },
   });
-  // auto-check: item de corrida do dia vinculado a esta sessão marca sozinho
+  // auto-check: item do dia vinculado a esta sessão marca sozinho
   if (input.runSessionId) {
     await autoCheckPlano(userId, "runSessionId", input.runSessionId, data);
   }
@@ -453,13 +485,18 @@ export async function createRun(input: CorridaInput) {
 export async function updateRun(id: string, input: CorridaInput) {
   const { id: userId } = await requireUser();
   await validarPosseDaSessao(userId, input.runSessionId);
+  const modalidade = await modalidadeDoRegistro(
+    userId,
+    input.runSessionId,
+    input.modalidade
+  );
 
   if (input.stravaActivityId) {
     const jaExiste = await db.run.findFirst({
       where: { userId, stravaActivityId: input.stravaActivityId, NOT: { id } },
       select: { id: true },
     });
-    if (jaExiste) throw new Error("Esta corrida do Strava já foi importada.");
+    if (jaExiste) throw new Error("Esta atividade do Strava já foi importada.");
   }
 
   await db.run.update({
@@ -469,6 +506,7 @@ export async function updateRun(id: string, input: CorridaInput) {
       km: input.km,
       segundos: input.segundos,
       tipo: input.tipo,
+      modalidade,
       sensacao: input.sensacao,
       notas: input.notas?.trim() || null,
       runSessionId: input.runSessionId ?? null,
@@ -492,6 +530,7 @@ export async function restoreRun(dados: {
   km: number;
   segundos: number;
   tipo: string;
+  modalidade?: string | null;
   sensacao: number;
   notas: string | null;
   stravaLink?: string | null;
@@ -512,6 +551,7 @@ export async function restoreRun(dados: {
       km: dados.km,
       segundos: dados.segundos,
       tipo: dados.tipo,
+      modalidade: modalidadeDe(dados.modalidade),
       sensacao: dados.sensacao,
       notas: dados.notas,
       stravaLink: dados.stravaLink ?? null,
@@ -522,13 +562,25 @@ export async function restoreRun(dados: {
   revalidar(userId);
 }
 
-// ---------- Planos de corrida (nomeados) — espelham as fichas de musculação ----------
+// ---------- Planos de cardio (nomeados) — espelham as fichas de musculação ----------
+// A modalidade é escolhida na criação e nunca muda: trocá-la depois moveria o
+// plano de aba deixando para trás as sessões já registradas na antiga.
 
-export async function createRunRoutine(nome: string, foco: string) {
+export async function createRunRoutine(
+  nome: string,
+  foco: string,
+  modalidade: ModalidadeCardio = "corrida"
+) {
   const { id: userId } = await requireUser();
   const total = await db.runRoutine.count({ where: { userId } });
   const plano = await db.runRoutine.create({
-    data: { nome, foco: foco || null, ordem: total, userId },
+    data: {
+      nome,
+      foco: foco || null,
+      modalidade: modalidadeDe(modalidade),
+      ordem: total,
+      userId,
+    },
   });
   revalidar(userId);
   return plano.id;
@@ -566,6 +618,7 @@ export async function duplicateRunRoutine(id: string) {
       userId,
       nome: `${plano.nome} (cópia)`,
       foco: plano.foco,
+      modalidade: plano.modalidade,
       ordem: plano.ordem + 1,
       diasSemana: plano.diasSemana,
       sessions: {

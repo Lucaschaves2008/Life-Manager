@@ -9,6 +9,10 @@ export type MetaMetrica =
   | "treinos"
   | "corridas_completas"
   | "km_corridos"
+  | "natacoes_completas"
+  | "metros_nadados"
+  | "pedaladas_completas"
+  | "km_pedalados"
   | "refeicoes_cumpridas"
   | "horas_estudo"
   | "dinheiro";
@@ -31,6 +35,20 @@ export const METRICAS: {
     placeholder: "Ex.: 20",
   },
   { value: "km_corridos", label: "Km corridos", unidade: "km", placeholder: "Ex.: 150" },
+  {
+    value: "natacoes_completas",
+    label: "Natações completas",
+    unidade: "natações",
+    placeholder: "Ex.: 12",
+  },
+  { value: "metros_nadados", label: "Metros nadados", unidade: "m", placeholder: "Ex.: 20000" },
+  {
+    value: "pedaladas_completas",
+    label: "Pedaladas completas",
+    unidade: "pedaladas",
+    placeholder: "Ex.: 10",
+  },
+  { value: "km_pedalados", label: "Km pedalados", unidade: "km", placeholder: "Ex.: 300" },
   {
     value: "refeicoes_cumpridas",
     label: "Refeições cumpridas",
@@ -61,13 +79,50 @@ export const PERIODOS: { value: MetaPeriodo; label: string }[] = [
  */
 export type RegistrosDoPeriodo = {
   treinos: number;
+  /** sessões de cardio no período, por modalidade */
   corridas: number;
+  natacoes: number;
+  pedaladas: number;
+  /** distância no período em KM (a natação vira metros na fórmula) */
   km: number;
+  kmNatacao: number;
+  kmCiclismo: number;
   refeicoesCumpridas: number;
   segundosEstudo: number;
   /** soma dos lançamentos em CENTAVOS — convertida para reais aqui dentro */
   dinheiroCentavos: number;
 };
+
+/** Registros zerados — base para preencher só o que a métrica pedida usa. */
+export const REGISTROS_VAZIOS: RegistrosDoPeriodo = {
+  treinos: 0,
+  corridas: 0,
+  natacoes: 0,
+  pedaladas: 0,
+  km: 0,
+  kmNatacao: 0,
+  kmCiclismo: 0,
+  refeicoesCumpridas: 0,
+  segundosEstudo: 0,
+  dinheiroCentavos: 0,
+};
+
+/**
+ * Bucketiza uma lista de sessões de cardio por modalidade, numa passada. Puro —
+ * quem chama já filtrou pelo período. Fica aqui (e não no módulo com I/O) para
+ * metas e desafios contarem exatamente do mesmo jeito.
+ */
+export function contarCardio(
+  sessoes: { modalidade: string }[]
+): Pick<RegistrosDoPeriodo, "corridas" | "natacoes" | "pedaladas"> {
+  const conta = { corridas: 0, natacoes: 0, pedaladas: 0 };
+  for (const s of sessoes) {
+    if (s.modalidade === "natacao") conta.natacoes++;
+    else if (s.modalidade === "ciclismo") conta.pedaladas++;
+    else conta.corridas++; // default histórico: linha sem modalidade é corrida
+  }
+  return conta;
+}
 
 export function calcularMetrica(
   metrica: MetaMetrica,
@@ -75,11 +130,23 @@ export function calcularMetrica(
 ): number {
   switch (metrica) {
     case "treinos":
-      return registros.treinos + registros.corridas;
+      // Qualquer treino conta: musculação + as três modalidades de cardio.
+      return (
+        registros.treinos + registros.corridas + registros.natacoes + registros.pedaladas
+      );
     case "corridas_completas":
       return registros.corridas;
     case "km_corridos":
       return registros.km;
+    case "natacoes_completas":
+      return registros.natacoes;
+    case "metros_nadados":
+      // Natação é armazenada em km, como as outras; a meta fala em metros.
+      return registros.kmNatacao * 1000;
+    case "pedaladas_completas":
+      return registros.pedaladas;
+    case "km_pedalados":
+      return registros.kmCiclismo;
     case "refeicoes_cumpridas":
       return registros.refeicoesCumpridas;
     case "horas_estudo":

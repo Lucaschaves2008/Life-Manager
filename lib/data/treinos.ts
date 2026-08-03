@@ -13,9 +13,14 @@ import {
 import { db } from "@/lib/db";
 import { tagUsuario } from "@/lib/cache-tags";
 import {
+  MODALIDADE,
+  MODALIDADES_CARDIO,
   kmDaSemana,
+  modalidadeDe,
+  paraKm,
   somarKmNoPeriodo,
   weekConfig,
+  type ModalidadeCardio,
   type PlanoCorridaView,
   type SessaoCorridaOpcao,
 } from "./treinos-format";
@@ -44,9 +49,14 @@ export {
   formatPace,
   formatTonelagem,
   formatDiasSemana,
+  formatDistanciaMod,
+  formatRitmo,
   weekConfig,
+  MODALIDADE,
+  MODALIDADES_CARDIO,
 } from "./treinos-format";
 export type {
+  ModalidadeCardio,
   PlanoCorridaView,
   SessaoCorridaView,
   SessaoCorridaOpcao,
@@ -116,13 +126,19 @@ async function frequenciaDoDia(
   });
 }
 
+/** Volume da semana numa modalidade: km brutos + nº de sessões registradas. */
+export type VolumeModalidade = { km: number; sessoes: number };
+
 export type ResumoTreinos = {
   treinosMes: number;
   metaMes: number;
   pctMeta: number;
   streak: number;
   tonelagemSemana: number;
+  /** Km corridos na semana (só modalidade "corrida" — mantido p/ compatibilidade). */
   kmSemana: number;
+  /** Volume da semana por modalidade de cardio, em km brutos. */
+  porModalidade: Record<ModalidadeCardio, VolumeModalidade>;
   porGrupo: { grupo: string; series: number }[];
 };
 
@@ -171,7 +187,14 @@ async function resumoTreinosDoDia(
     (s, sessao) => s + sessao.setLogs.reduce((t, log) => t + log.reps * log.cargaKg, 0),
     0
   );
-  const kmSemana = somarKmNoPeriodo(corridasSemana, iniSemana, fimSemana);
+  // Uma passada só sobre as corridas da semana, bucketizada por modalidade —
+  // evita 3 queries (ou 3 reduces) para a mesma janela.
+  const porModalidade = Object.fromEntries(
+    MODALIDADES_CARDIO.map((m) => {
+      const doTipo = corridasSemana.filter((c) => modalidadeDe(c.modalidade) === m);
+      return [m, { km: somarKmNoPeriodo(doTipo, iniSemana, fimSemana), sessoes: doTipo.length }];
+    })
+  ) as Record<ModalidadeCardio, VolumeModalidade>;
 
   const grupos = new Map<string, number>();
   for (const log of setLogsMes) {
@@ -185,7 +208,8 @@ async function resumoTreinosDoDia(
     pctMeta: metaMes > 0 ? (treinosMes / metaMes) * 100 : 0,
     streak: await streakDeTreino(userId, ref),
     tonelagemSemana,
-    kmSemana,
+    kmSemana: porModalidade.corrida.km,
+    porModalidade,
     porGrupo: Array.from(grupos.entries())
       .map(([grupo, series]) => ({ grupo, series }))
       .sort((a, b) => b.series - a.series),
@@ -217,19 +241,21 @@ async function streakDeTreino(userId: string, ref: Date): Promise<number> {
 
 export type VolumeSemana = { label: string; km: number; atual: boolean };
 
-/** Km por semana nas últimas N semanas. */
+/** Km por semana nas últimas N semanas, numa modalidade. */
 export async function volumeSemanal(
   userId: string,
   semanas = 8,
-  ref: Date = new Date()
+  ref: Date = new Date(),
+  modalidade: ModalidadeCardio = "corrida"
 ): Promise<VolumeSemana[]> {
-  return volumeSemanalDoDia(userId, semanas, dayKeySP(ref));
+  return volumeSemanalDoDia(userId, semanas, dayKeySP(ref), modalidade);
 }
 
 async function volumeSemanalDoDia(
   userId: string,
   semanas: number,
-  dia: string
+  dia: string,
+  modalidade: ModalidadeCardio
 ): Promise<VolumeSemana[]> {
   "use cache";
   cacheTag(tagUsuario(userId, "treinos"));
@@ -238,7 +264,7 @@ async function volumeSemanalDoDia(
   const ref = refDoDiaSP(dia);
   const de = spStartOfWeek(subWeeks(toSP(ref), semanas - 1));
   const corridas = await db.run.findMany({
-    where: { userId, data: { gte: de, lte: spEndOfDay(ref) } },
+    where: { userId, modalidade, data: { gte: de, lte: spEndOfDay(ref) } },
   });
 
   const out: VolumeSemana[] = [];
@@ -253,25 +279,36 @@ async function volumeSemanalDoDia(
 
 export type Recorde = { distancia: string; tempo: number; data: Date } | null;
 
-/** Melhor tempo projetado em 5k e 10k a partir das corridas registradas. */
+/**
+ * Melhor tempo projetado nas duas distâncias-referência da modalidade
+ * (corrida 5/10 km, natação 400/1500 m, ciclismo 20/40 km). A projeção usa
+ * sessões cuja distância ficou entre o alvo e 30% acima dele — o mesmo critério
+ * de antes (5–6,5 km), agora derivado do alvo em vez de fixo.
+ */
 export async function recordes(
-  userId: string
-): Promise<{ cinco: Recorde; dez: Recorde }> {
+  userId: string,
+  modalidade: ModalidadeCardio = "corrida"
+): Promise<{ curta: Recorde; longa: Recorde }> {
   "use cache";
   cacheTag(tagUsuario(userId, "treinos"));
   cacheLife("usuario");
 
-  // só as faixas usadas nos cálculos de 5k e 10k
+  const meta = MODALIDADE[modalidade];
+  // alvos convertidos p/ km, que é como a distância é armazenada
+  const alvos = meta.recordes.map((d) => paraKm(d, modalidade)) as [number, number];
+  const teto = (alvo: number) => alvo * 1.3;
+
   const corridas = await db.run.findMany({
     where: {
       userId,
-      OR: [{ km: { gte: 5, lte: 6.5 } }, { km: { gte: 10, lte: 12.5 } }],
+      modalidade,
+      OR: alvos.map((alvo) => ({ km: { gte: alvo, lte: teto(alvo) } })),
     },
     select: { km: true, segundos: true, data: true },
   });
 
-  const melhor = (min: number, max: number, alvo: number): Recorde => {
-    const candidatas = corridas.filter((c) => c.km >= min && c.km <= max);
+  const melhor = (alvo: number, rotulo: number): Recorde => {
+    const candidatas = corridas.filter((c) => c.km >= alvo && c.km <= teto(alvo));
     if (candidatas.length === 0) return null;
     const projetadas = candidatas.map((c) => ({
       tempo: Math.round((c.segundos / c.km) * alvo),
@@ -279,13 +316,16 @@ export async function recordes(
     }));
     projetadas.sort((a, b) => a.tempo - b.tempo);
     return {
-      distancia: `${alvo} km`,
+      distancia: `${rotulo.toLocaleString("pt-BR")} ${meta.unidade}`,
       tempo: projetadas[0].tempo,
       data: projetadas[0].data,
     };
   };
 
-  return { cinco: melhor(5, 6.5, 5), dez: melhor(10, 12.5, 10) };
+  return {
+    curta: melhor(alvos[0], meta.recordes[0]),
+    longa: melhor(alvos[1], meta.recordes[1]),
+  };
 }
 
 export type ProgressaoPonto = {
@@ -362,24 +402,27 @@ async function diasDesdeUltimoTreinoDoDia(
   return differenceInCalendarDays(toSP(ref), toSP(ultima.data));
 }
 
-// ---------- Planos de corrida (nomeados, com progressão semanal) ----------
+// ---------- Planos de cardio (nomeados, com progressão semanal) ----------
 // Espelha a estrutura da musculação: plano → sessões → km efetivo da semana do
-// ciclo (kmDaSemana, mesma regra "repete até editar"). Cruza com as corridas da
-// semana para marcar o que já foi cumprido.
+// ciclo (kmDaSemana, mesma regra "repete até editar"). Cruza com as sessões da
+// semana para marcar o que já foi cumprido. Vale igual para corrida, natação e
+// ciclismo — só o filtro de modalidade muda.
 
-/** Planos de corrida do usuário, resolvidos para a semana do ciclo atual. */
+/** Planos de uma modalidade, resolvidos para a semana do ciclo atual. */
 export async function planosCorrida(
   userId: string,
-  ref: Date = new Date()
+  ref: Date = new Date(),
+  modalidade: ModalidadeCardio = "corrida"
 ): Promise<PlanoCorridaView[]> {
   const semana = await semanaCicloAtual(userId);
-  return planosCorridaDoDia(userId, semana, dayKeySP(ref));
+  return planosCorridaDoDia(userId, semana, dayKeySP(ref), modalidade);
 }
 
 async function planosCorridaDoDia(
   userId: string,
   semana: number,
-  dia: string
+  dia: string,
+  modalidade: ModalidadeCardio
 ): Promise<PlanoCorridaView[]> {
   "use cache";
   cacheTag(tagUsuario(userId, "treinos"));
@@ -391,7 +434,7 @@ async function planosCorridaDoDia(
 
   const [planos, runs] = await Promise.all([
     db.runRoutine.findMany({
-      where: { userId },
+      where: { userId, modalidade },
       orderBy: { ordem: "asc" },
       include: {
         sessions: {
@@ -401,7 +444,7 @@ async function planosCorridaDoDia(
       },
     }),
     db.run.findMany({
-      where: { userId, data: { gte: inicio, lte: fim } },
+      where: { userId, modalidade, data: { gte: inicio, lte: fim } },
       orderBy: { data: "asc" },
     }),
   ]);
@@ -418,6 +461,7 @@ async function planosCorridaDoDia(
     id: p.id,
     nome: p.nome,
     foco: p.foco,
+    modalidade: modalidadeDe(p.modalidade),
     diasSemana: parseDias(p.diasSemana),
     sessoes: p.sessions.map((s) => {
       const km = kmDaSemana(s.kmAlvo, s.weeks, semana);
@@ -470,7 +514,9 @@ export type FichaHojeView = {
 };
 
 export type SessaoCorridaHojeView = {
-  tipo: "corrida";
+  tipo: "cardio";
+  /** Qual modalidade — decide ícone, unidade e rótulos na UI. */
+  modalidade: ModalidadeCardio;
   id: string;
   planoId: string;
   planoNome: string;
@@ -483,7 +529,7 @@ export type SessaoCorridaHojeView = {
 
 export type TreinoHojeView = FichaHojeView | SessaoCorridaHojeView;
 
-/** Fichas de musculação e sessões de corrida agendadas para o dia da semana de hoje. */
+/** Fichas de musculação e sessões de cardio agendadas para o dia da semana de hoje. */
 export async function treinosDeHoje(
   userId: string,
   ref: Date = new Date()
@@ -567,13 +613,14 @@ async function treinosDeHojeDoDia(
       }),
     }));
 
-  const sessoesCorrida: SessaoCorridaHojeView[] = planos
+  const sessoesCardio: SessaoCorridaHojeView[] = planos
     .filter((p) => parseDias(p.diasSemana).includes(diaSemana))
     .flatMap((p) =>
       p.sessions.map((s) => {
         const km = kmDaSemana(s.kmAlvo, s.weeks, semana);
         return {
-          tipo: "corrida" as const,
+          tipo: "cardio" as const,
+          modalidade: modalidadeDe(p.modalidade),
           id: s.id,
           planoId: p.id,
           planoNome: p.nome,
@@ -586,10 +633,14 @@ async function treinosDeHojeDoDia(
       })
     );
 
-  return [...fichas, ...sessoesCorrida];
+  return [...fichas, ...sessoesCardio];
 }
 
-/** Sessões de corrida (achatadas) para o seletor de vínculo do checklist. */
+/**
+ * Sessões de cardio (achatadas) para o seletor de vínculo do checklist. Devolve
+ * as TRÊS modalidades numa lista só, com `modalidade` em cada linha — quem
+ * monta o seletor filtra pelo tipo de item escolhido (corrida/natação/ciclismo).
+ */
 export async function sessoesCorridaParaPlano(
   userId: string
 ): Promise<SessaoCorridaOpcao[]> {
@@ -607,6 +658,7 @@ export async function sessoesCorridaParaPlano(
       nome: s.nome,
       tipo: s.tipo,
       planoNome: p.nome,
+      modalidade: modalidadeDe(p.modalidade),
     }))
   );
 }
@@ -615,23 +667,34 @@ export type MediaPeriodo = {
   label: string;
   km: number;
   corridas: number;
+  /** Ritmo médio bruto do período — segundos/km (corrida), segundos/100m
+   *  (natação) ou km/h (ciclismo). Formate com formatRitmoBruto. */
   paceMedioSeg: number;
   atual: boolean;
 };
 
-/** Média de km/corridas/pace nos últimos N meses. */
+/** Ritmo médio bruto de um conjunto de sessões, conforme a modalidade. */
+function ritmoMedio(km: number, segundos: number, modalidade: ModalidadeCardio): number {
+  if (km <= 0 || segundos <= 0) return 0;
+  if (modalidade === "ciclismo") return km / (segundos / 3600);
+  return segundos / (modalidade === "natacao" ? km * 10 : km);
+}
+
+/** Média de distância/sessões/ritmo nos últimos N meses, numa modalidade. */
 export async function mediaMensal(
   userId: string,
   meses = 6,
-  ref: Date = new Date()
+  ref: Date = new Date(),
+  modalidade: ModalidadeCardio = "corrida"
 ): Promise<MediaPeriodo[]> {
-  return mediaMensalDoDia(userId, meses, dayKeySP(ref));
+  return mediaMensalDoDia(userId, meses, dayKeySP(ref), modalidade);
 }
 
 async function mediaMensalDoDia(
   userId: string,
   meses: number,
-  dia: string
+  dia: string,
+  modalidade: ModalidadeCardio
 ): Promise<MediaPeriodo[]> {
   "use cache";
   cacheTag(tagUsuario(userId, "treinos"));
@@ -640,7 +703,7 @@ async function mediaMensalDoDia(
   const ref = refDoDiaSP(dia);
   const de = spStartOfMonth(subMonths(toSP(ref), meses - 1));
   const corridas = await db.run.findMany({
-    where: { userId, data: { gte: de, lte: spEndOfDay(ref) } },
+    where: { userId, modalidade, data: { gte: de, lte: spEndOfDay(ref) } },
   });
 
   const inicioMesAtual = spStartOfMonth(ref);
@@ -654,25 +717,27 @@ async function mediaMensalDoDia(
       label: monthName(mes).slice(0, 3),
       km,
       corridas: doMes.length,
-      paceMedioSeg: km > 0 ? segundos / km : 0,
+      paceMedioSeg: ritmoMedio(km, segundos, modalidade),
       atual: inicio.getTime() === inicioMesAtual.getTime(),
     };
   });
 }
 
-/** Média de km/corridas/pace nos últimos N anos. */
+/** Média de distância/sessões/ritmo nos últimos N anos, numa modalidade. */
 export async function mediaAnual(
   userId: string,
   anos = 3,
-  ref: Date = new Date()
+  ref: Date = new Date(),
+  modalidade: ModalidadeCardio = "corrida"
 ): Promise<MediaPeriodo[]> {
-  return mediaAnualDoDia(userId, anos, dayKeySP(ref));
+  return mediaAnualDoDia(userId, anos, dayKeySP(ref), modalidade);
 }
 
 async function mediaAnualDoDia(
   userId: string,
   anos: number,
-  dia: string
+  dia: string,
+  modalidade: ModalidadeCardio
 ): Promise<MediaPeriodo[]> {
   "use cache";
   cacheTag(tagUsuario(userId, "treinos"));
@@ -682,7 +747,7 @@ async function mediaAnualDoDia(
   const anoAtual = toSP(ref).getFullYear();
   const de = spStartOfDay(new Date(anoAtual - (anos - 1), 0, 1));
   const corridas = await db.run.findMany({
-    where: { userId, data: { gte: de, lte: spEndOfDay(ref) } },
+    where: { userId, modalidade, data: { gte: de, lte: spEndOfDay(ref) } },
   });
 
   const out: MediaPeriodo[] = [];
@@ -695,11 +760,60 @@ async function mediaAnualDoDia(
       label: String(ano),
       km,
       corridas: doAno.length,
-      paceMedioSeg: km > 0 ? segundos / km : 0,
+      paceMedioSeg: ritmoMedio(km, segundos, modalidade),
       atual: ano === anoAtual,
     });
   }
   return out;
+}
+
+export type MetaDistanciaMes = {
+  /** Meta do mês na unidade EXIBIDA da modalidade (km, ou metros na natação). */
+  meta: number;
+  /** Distância já feita no mês, na mesma unidade. */
+  feito: number;
+  pct: number;
+};
+
+/**
+ * Meta mensal de distância da modalidade (Setting) cruzada com o já realizado.
+ * Cada modalidade tem sua própria chave e seu próprio padrão (ver MODALIDADE) —
+ * uma meta de 40 km de corrida não faz sentido para 12.000 m de natação.
+ */
+export async function metaDistanciaMes(
+  userId: string,
+  modalidade: ModalidadeCardio,
+  ref: Date = new Date()
+): Promise<MetaDistanciaMes> {
+  return metaDistanciaMesDoDia(userId, modalidade, dayKeySP(ref));
+}
+
+async function metaDistanciaMesDoDia(
+  userId: string,
+  modalidade: ModalidadeCardio,
+  dia: string
+): Promise<MetaDistanciaMes> {
+  "use cache";
+  cacheTag(tagUsuario(userId, "treinos"), tagUsuario(userId, "settings"));
+  cacheLife("usuario");
+
+  const cfg = MODALIDADE[modalidade];
+  const data = refDoDiaSP(dia);
+  const [setting, agg] = await Promise.all([
+    db.setting.findUnique({ where: { userId_key: { userId, key: cfg.metaKey } } }),
+    db.run.aggregate({
+      where: {
+        userId,
+        modalidade,
+        data: { gte: spStartOfMonth(data), lte: spEndOfMonth(data) },
+      },
+      _sum: { km: true },
+    }),
+  ]);
+
+  const meta = Number(setting?.value ?? cfg.metaPadrao) || cfg.metaPadrao;
+  const feito = (agg._sum.km ?? 0) * cfg.fator;
+  return { meta, feito, pct: meta > 0 ? (feito / meta) * 100 : 0 };
 }
 
 export type PerfilCorrida = {

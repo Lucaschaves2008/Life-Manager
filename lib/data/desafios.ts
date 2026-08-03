@@ -22,8 +22,10 @@ import {
 import {
   METRICAS,
   calcularMetrica,
+  contarCardio,
   type MetaMetrica,
 } from "@/lib/data/metas-quantitativas-constantes";
+import { modalidadeDe, type ModalidadeCardio } from "@/lib/data/treinos-format";
 import { gerarInsights, type InsightView } from "@/lib/data/desafios-insights";
 import { streakLC } from "@/lib/data/home";
 import { parseJSON } from "@/lib/utils";
@@ -97,12 +99,14 @@ type MetaRow = {
  */
 type DadosBrutosUsuario = {
   workoutSessions: { data: Date }[];
-  runs: { data: Date; km: number }[];
+  runs: { data: Date; km: number; modalidade: string }[];
   dietLogs: { data: Date; refeicoesCumpridas: string }[];
   studySessions: { startedAt: Date; netSeconds: number }[];
   rotinaChecks: Map<string, { data: Date }[]>; // por rotinaTemplateId
   variavelChecks: Map<string, { data: Date }[]>; // por variavelId
   dinheiroLancamentos: { data: Date; valor: number }[];
+  /** Ajustes retroativos aprovados pelo grupo, por metaId. */
+  ajustes: Map<string, { data: Date; quantidade: number }[]>;
 };
 
 function dentro(data: Date, inicio: Date, fim: Date): boolean {
@@ -137,6 +141,7 @@ async function carregarDadosBrutosMultiUsuario(
     rotinaChecksFlat,
     variavelChecksFlat,
     dinheiroLancamentosFlat,
+    ajustesFlat,
   ] = await Promise.all([
     db.workoutSession.findMany({
       where: { userId: { in: userIds }, data: { gte: inicioTotal, lte: fimTotal } },
@@ -144,7 +149,7 @@ async function carregarDadosBrutosMultiUsuario(
     }),
     db.run.findMany({
       where: { userId: { in: userIds }, data: { gte: inicioTotal, lte: fimTotal } },
-      select: { userId: true, data: true, km: true },
+      select: { userId: true, data: true, km: true, modalidade: true },
     }),
     db.dietDayLog.findMany({
       where: { userId: { in: userIds }, data: { gte: inicioTotal, lte: fimTotal } },
@@ -182,6 +187,12 @@ async function carregarDadosBrutosMultiUsuario(
       where: { userId: { in: userIds }, data: { gte: inicioTotal, lte: fimTotal } },
       select: { userId: true, data: true, valor: true },
     }),
+    // Ajustes de QUALQUER desafio do usuário: o balde é o metaId, que é único
+    // por meta, então não há mistura entre desafios diferentes.
+    db.desafioAjuste.findMany({
+      where: { userId: { in: userIds }, data: { gte: inicioTotal, lte: fimTotal } },
+      select: { userId: true, metaId: true, data: true, quantidade: true },
+    }),
   ]);
 
   const porUsuario = new Map<string, DadosBrutosUsuario>();
@@ -194,10 +205,12 @@ async function carregarDadosBrutosMultiUsuario(
       rotinaChecks: new Map(),
       variavelChecks: new Map(),
       dinheiroLancamentos: [],
+      ajustes: new Map(),
     });
   }
   for (const s of workoutSessions) porUsuario.get(s.userId)?.workoutSessions.push({ data: s.data });
-  for (const r of runs) porUsuario.get(r.userId)?.runs.push({ data: r.data, km: r.km });
+  for (const r of runs)
+    porUsuario.get(r.userId)?.runs.push({ data: r.data, km: r.km, modalidade: r.modalidade });
   for (const l of dietLogs)
     porUsuario
       .get(l.userId)
@@ -222,21 +235,49 @@ async function carregarDadosBrutosMultiUsuario(
   }
   for (const l of dinheiroLancamentosFlat)
     porUsuario.get(l.userId)?.dinheiroLancamentos.push({ data: l.data, valor: l.valor });
+  for (const a of ajustesFlat) {
+    const dados = porUsuario.get(a.userId);
+    if (!dados) continue;
+    const lista = dados.ajustes.get(a.metaId) ?? [];
+    lista.push({ data: a.data, quantidade: a.quantidade });
+    dados.ajustes.set(a.metaId, lista);
+  }
 
   return porUsuario;
 }
 
+/** Soma dos ajustes retroativos aprovados que caem no período. */
+function ajusteDaMeta(metaId: string, dados: DadosBrutosUsuario, inicio: Date, fim: Date): number {
+  const lista = dados.ajustes.get(metaId);
+  if (!lista) return 0;
+  return lista
+    .filter((a) => dentro(a.data, inicio, fim))
+    .reduce((s, a) => s + a.quantidade, 0);
+}
+
 /** Progresso (atual) de UMA meta folha num período específico, calculado em memória a partir de DadosBrutosUsuario. */
 function calcularAtualMeta(meta: MetaRow, dados: DadosBrutosUsuario, inicio: Date, fim: Date): number {
+  // Ajustes aprovados pelo grupo contam como registro real do período — é o
+  // que permite lançar depois o treino que a pessoa fez e esqueceu de marcar.
+  const ajuste = ajusteDaMeta(meta.id, dados, inicio, fim);
+
   if (meta.origem === "metrica" && meta.metrica) {
     // As fórmulas moram em metas-quantitativas-constantes.ts (fonte única,
     // compartilhada com metas-quantitativas.ts): aqui só recortamos o período.
+    // Cardio recortado por modalidade: cada métrica (corrida/natação/ciclismo)
+    // olha só as sessões dela, e "treinos" soma as três com a musculação.
+    const cardioNoPeriodo = dados.runs.filter((r) => dentro(r.data, inicio, fim));
+    const kmDe = (modalidade: ModalidadeCardio) =>
+      cardioNoPeriodo
+        .filter((r) => modalidadeDe(r.modalidade) === modalidade)
+        .reduce((s, r) => s + r.km, 0);
+
     return calcularMetrica(meta.metrica as MetaMetrica, {
       treinos: dados.workoutSessions.filter((s) => dentro(s.data, inicio, fim)).length,
-      corridas: dados.runs.filter((r) => dentro(r.data, inicio, fim)).length,
-      km: dados.runs
-        .filter((r) => dentro(r.data, inicio, fim))
-        .reduce((s, r) => s + r.km, 0),
+      ...contarCardio(cardioNoPeriodo),
+      km: kmDe("corrida"),
+      kmNatacao: kmDe("natacao"),
+      kmCiclismo: kmDe("ciclismo"),
       refeicoesCumpridas: dados.dietLogs
         .filter((l) => dentro(l.data, inicio, fim))
         .reduce((s, l) => s + parseJSON<string[]>(l.refeicoesCumpridas, []).length, 0),
@@ -246,17 +287,17 @@ function calcularAtualMeta(meta: MetaRow, dados: DadosBrutosUsuario, inicio: Dat
       dinheiroCentavos: dados.dinheiroLancamentos
         .filter((l) => dentro(l.data, inicio, fim))
         .reduce((s, l) => s + l.valor, 0),
-    });
+    }) + ajuste;
   }
   if (meta.origem === "checklist" && meta.rotinaTemplateId) {
     const checks = dados.rotinaChecks.get(meta.rotinaTemplateId) ?? [];
-    return checks.filter((c) => dentro(c.data, inicio, fim)).length;
+    return checks.filter((c) => dentro(c.data, inicio, fim)).length + ajuste;
   }
   if (meta.origem === "variavel" && meta.variavelId) {
     const checks = dados.variavelChecks.get(meta.variavelId) ?? [];
-    return checks.filter((c) => dentro(c.data, inicio, fim)).length;
+    return checks.filter((c) => dentro(c.data, inicio, fim)).length + ajuste;
   }
-  return 0;
+  return ajuste;
 }
 
 export type DesafioResumo = {

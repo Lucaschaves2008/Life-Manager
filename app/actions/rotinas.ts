@@ -8,7 +8,12 @@ import { marcarDiaAtivo } from "@/lib/streak";
 import { fmtSP, refDoDiaSP, spStartOfDay } from "@/lib/dates";
 import type { Rrule } from "@/lib/recurrence";
 import { diagnosticarTemplate, type ItemDiagnostico } from "@/lib/rotina-helpers";
-import { TIPOS_ROTINA, type TipoRotina } from "@/lib/data/rotinas";
+import {
+  TIPOS_ROTINA,
+  TIPO_CARDIO,
+  ehTipoCardio,
+  type TipoRotina,
+} from "@/lib/data/rotinas-constantes";
 
 function revalidar(userId: string) {
   revalidateTag(tagUsuario(userId, "checklist"));
@@ -111,9 +116,16 @@ async function resolverVinculos(userId: string, input: RotinaTemplateInput) {
     });
     routineId = rot?.id ?? null;
   }
-  if (tipo === "corrida" && input.runSessionId) {
+  // Cardio: os três tipos usam runSessionId, mas a sessão precisa ser da
+  // MODALIDADE do tipo — senão um item "Natação" ficaria vinculado a um longão
+  // de corrida e marcaria sozinho no dia errado.
+  if (ehTipoCardio(tipo) && input.runSessionId) {
     const sessao = await db.runSession.findFirst({
-      where: { id: input.runSessionId, userId },
+      where: {
+        id: input.runSessionId,
+        userId,
+        routine: { modalidade: TIPO_CARDIO[tipo] },
+      },
       select: { id: true },
     });
     runSessionId = sessao?.id ?? null;

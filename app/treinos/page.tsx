@@ -5,26 +5,32 @@ import { EmptyState } from "@/components/caverna/empty-state";
 import { Heatmap } from "@/components/caverna/heatmap";
 import { PillTabs } from "@/components/caverna/pill-tabs";
 import { StatCard } from "@/components/caverna/stat-card";
-import { CorridaClient, type CorridaView } from "@/components/treinos/corrida-client";
-import { PaceChart, VolumeChart } from "@/components/treinos/corrida-charts";
+import { CardioClient, type CorridaView } from "@/components/treinos/cardio-client";
+import { PaceChart, VolumeChart } from "@/components/treinos/cardio-charts";
 import { MusculacaoClient, type FichaView } from "@/components/treinos/musculacao-client";
 import { PeriodoChartClient } from "@/components/treinos/periodo-chart-client";
-import { PlanoCorridaClient } from "@/components/treinos/plano-corrida-client";
+import { PlanoCardioClient } from "@/components/treinos/plano-cardio-client";
 import { StravaWidget } from "@/components/treinos/strava-widget";
 import { StravaCallbackToast } from "@/components/treinos/strava-callback-toast";
 import {
+  MODALIDADE,
+  MODALIDADES_CARDIO,
+  formatDistanciaMod,
   formatDuracao,
   formatTonelagem,
   frequencia,
   mediaAnual,
   mediaMensal,
+  metaDistanciaMes,
   planosCorrida,
   recordes,
   resumoTreinos,
   semanaCicloAtual,
   volumeSemanal,
   weekConfig,
+  type ModalidadeCardio,
 } from "@/lib/data/treinos";
+import { ritmoBruto } from "@/lib/data/treinos-format";
 import { dayKeySP, mediumDate, nowSP, shortDate } from "@/lib/dates";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
@@ -33,11 +39,24 @@ import { stravaConectado, stravaConfigurado } from "@/lib/strava";
 
 export const dynamic = "force-dynamic";
 
+// Cada modalidade de cardio ganha a MESMA aba, montada pelo mesmo componente
+// (Cardio) — só o parâmetro muda. Adicionar uma quarta modalidade é adicionar
+// uma entrada em MODALIDADE e nada mais aqui.
 const tabs = [
   { label: "Visão geral", href: "/treinos", value: "visao" },
   { label: "Musculação", href: "/treinos?tab=musculacao", value: "musculacao" },
-  { label: "Corrida", href: "/treinos?tab=corrida", value: "corrida" },
+  ...MODALIDADES_CARDIO.map((m) => ({
+    label: MODALIDADE[m].label,
+    href: `/treinos?tab=${m}`,
+    value: m as string,
+  })),
 ];
+
+function modalidadeDaTab(tab: string): ModalidadeCardio | null {
+  return MODALIDADES_CARDIO.includes(tab as ModalidadeCardio)
+    ? (tab as ModalidadeCardio)
+    : null;
+}
 
 const coresGrupo = [
   "var(--color-mint)",
@@ -60,13 +79,14 @@ export default async function Page({
   // "+ Novo → Treino" cai direto na musculação, onde a execução acontece
   const tab = novo === "1" ? tabParam ?? "musculacao" : tabParam ?? "visao";
   const hoje = nowSP();
+  const modalidade = modalidadeDaTab(tab);
 
   return (
     <div className="flex flex-col gap-6">
       <PillTabs tabs={tabs} param="tab" />
       {tab === "visao" && <VisaoGeral userId={user.id} hoje={hoje} />}
       {tab === "musculacao" && <Musculacao userId={user.id} />}
-      {tab === "corrida" && <Corrida userId={user.id} hoje={hoje} />}
+      {modalidade && <Cardio userId={user.id} hoje={hoje} modalidade={modalidade} />}
     </div>
   );
 }
@@ -84,6 +104,10 @@ async function VisaoGeral({ userId, hoje }: { userId: string; hoje: Date }) {
   ]);
 
   const acimaDaMeta = resumo.pctMeta >= 100;
+  const sessoesCardio = MODALIDADES_CARDIO.reduce(
+    (s, m) => s + resumo.porModalidade[m].sessoes,
+    0
+  );
 
   return (
     <div className="stagger grid grid-cols-12 gap-6">
@@ -129,11 +153,14 @@ async function VisaoGeral({ userId, hoje }: { userId: string; hoje: Date }) {
       />
       <StatCard
         className="col-span-6 lg:col-span-3"
-        label="Km na semana"
-        value={`${resumo.kmSemana.toLocaleString("pt-BR", {
-          maximumFractionDigits: 1,
-        })} km`}
-        contexto="corridas registradas"
+        label="Cardio na semana"
+        value={`${sessoesCardio} ${sessoesCardio === 1 ? "sessão" : "sessões"}`}
+        contexto={
+          // só as modalidades com volume na semana — três zeros não dizem nada
+          MODALIDADES_CARDIO.filter((m) => resumo.porModalidade[m].km > 0)
+            .map((m) => formatDistanciaMod(resumo.porModalidade[m].km, m))
+            .join(" · ") || "corrida, natação e ciclismo"
+        }
       />
       <StatCard
         className="col-span-6 lg:col-span-3"
@@ -252,37 +279,56 @@ async function Musculacao({ userId }: { userId: string }) {
   return <MusculacaoClient fichas={fichas} semana={semana} />;
 }
 
-async function Corrida({ userId, hoje }: { userId: string; hoje: Date }) {
-  const [corridas, volume, prs, resumo, planosDeCorrida, semanaCorrida, meses, anos, conectado] =
+/**
+ * Aba de uma modalidade de cardio. É a MESMA tela para corrida, natação e
+ * ciclismo — plano com periodização, meta do mês, volume, ritmo, recordes e
+ * histórico —, parametrizada por `modalidade`.
+ */
+async function Cardio({
+  userId,
+  hoje,
+  modalidade,
+}: {
+  userId: string;
+  hoje: Date;
+  modalidade: ModalidadeCardio;
+}) {
+  const cfg = MODALIDADE[modalidade];
+  const [sessoes, volume, prs, resumo, planos, semanaCiclo, meses, anos, conectado, metaMes] =
     await Promise.all([
-      db.run.findMany({ where: { userId }, orderBy: { data: "desc" }, take: 60 }),
-      volumeSemanal(userId, 8, hoje),
-      recordes(userId),
+      db.run.findMany({
+        where: { userId, modalidade },
+        orderBy: { data: "desc" },
+        take: 60,
+      }),
+      volumeSemanal(userId, 8, hoje, modalidade),
+      recordes(userId, modalidade),
       resumoTreinos(userId, hoje),
-      planosCorrida(userId, hoje),
+      planosCorrida(userId, hoje, modalidade),
       semanaCicloAtual(userId),
-      mediaMensal(userId, 6, hoje),
-      mediaAnual(userId, 3, hoje),
+      mediaMensal(userId, 6, hoje, modalidade),
+      mediaAnual(userId, 3, hoje, modalidade),
       stravaConectado(userId),
+      metaDistanciaMes(userId, modalidade, hoje),
     ]);
 
+  // Natação não passa pelo Strava (piscina não tem GPS e a distância não vem
+  // confiável) — o widget de conexão só aparece onde a importação funciona.
+  const temStrava = modalidade !== "natacao";
   const configurado = stravaConfigurado();
   // A conexão passa pela rota /api/strava/connect, que gera o state CSRF
   // aleatório e grava o cookie antes de redirecionar para o Strava.
   const authorizeUrl = configurado
-    ? "/api/strava/connect?next=" + encodeURIComponent("/treinos?tab=corrida")
+    ? "/api/strava/connect?next=" + encodeURIComponent(`/treinos?tab=${modalidade}`)
     : null;
 
-  const metaKm = await db.setting.findUnique({
-    where: { userId_key: { userId, key: "meta_km_mes" } },
-  });
-  const meta = Number(metaKm?.value ?? 40) || 40;
-  const kmMes = corridas
-    .filter((c) => dayKeySP(c.data).slice(0, 7) === dayKeySP(hoje).slice(0, 7))
-    .reduce((s, c) => s + c.km, 0);
-  const pctMeta = meta > 0 ? (kmMes / meta) * 100 : 0;
+  const batida = metaMes.pct >= 100;
+  const faltam = Math.max(0, metaMes.meta - metaMes.feito);
+  const casasMeta = cfg.unidade === "m" ? 0 : 1;
+  const formatarMeta = (v: number) =>
+    v.toLocaleString("pt-BR", { maximumFractionDigits: casasMeta });
 
-  const view: CorridaView[] = corridas.map((c) => ({
+  const view: CorridaView[] = sessoes.map((c) => ({
     id: c.id,
     data: dayKeySP(c.data),
     dataLabel: shortDate(c.data),
@@ -294,68 +340,71 @@ async function Corrida({ userId, hoje }: { userId: string; hoje: Date }) {
     stravaLink: c.stravaLink,
   }));
 
-  const pacePontos = [...corridas]
+  const ritmoPontos = [...sessoes]
     .reverse()
     .filter((c) => c.km > 0)
-    .map((c) => ({ label: shortDate(c.data), pace: c.segundos / c.km }));
+    .map((c) => ({
+      label: shortDate(c.data),
+      pace: ritmoBruto(c.segundos, c.km, modalidade),
+    }));
 
   return (
     <div className="stagger grid grid-cols-12 gap-6">
-      <StravaCallbackToast />
+      {temStrava && <StravaCallbackToast />}
       <Card className="col-span-12">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <CardLabel>Corrida</CardLabel>
-          <StravaWidget
-            configurado={configurado}
-            conectado={conectado}
-            authorizeUrl={authorizeUrl}
-          />
+          <CardLabel>{cfg.label}</CardLabel>
+          {temStrava && (
+            <StravaWidget
+              configurado={configurado}
+              conectado={conectado}
+              authorizeUrl={authorizeUrl}
+            />
+          )}
         </div>
         <div className="mt-4">
-          <PlanoCorridaClient planos={planosDeCorrida} semana={semanaCorrida} />
+          <PlanoCardioClient planos={planos} semana={semanaCiclo} modalidade={modalidade} />
         </div>
       </Card>
 
-      <Card destaque={pctMeta >= 100} className="col-span-12 lg:col-span-4">
-        <CardLabel>Km no mês</CardLabel>
+      <Card destaque={batida} className="col-span-12 lg:col-span-4">
+        <CardLabel>{cfg.unidade === "m" ? "Metros" : "Km"} no mês</CardLabel>
         <div className="mt-5">
           <Donut
-            pct={pctMeta}
-            center={`${kmMes.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}`}
-            centerSub={`de ${meta} km`}
-            cor={pctMeta >= 100 ? "var(--color-mint)" : "var(--color-steel)"}
+            pct={metaMes.pct}
+            center={formatarMeta(metaMes.feito)}
+            centerSub={`de ${formatarMeta(metaMes.meta)} ${cfg.unidade}`}
+            cor={batida ? "var(--color-mint)" : "var(--color-steel)"}
           />
         </div>
         <p className="mt-4 text-[13px] text-mist">
-          {pctMeta >= 100
-            ? "Meta de quilometragem batida no mês."
-            : `Faltam ${(meta - kmMes).toLocaleString("pt-BR", {
-                maximumFractionDigits: 1,
-              })} km para a meta.`}
+          {batida
+            ? "Meta de distância batida no mês."
+            : `Faltam ${formatarMeta(faltam)} ${cfg.unidade} para a meta.`}
         </p>
       </Card>
 
       <Card className="col-span-12 lg:col-span-8">
         <CardLabel>Volume semanal · 8 semanas</CardLabel>
         <div className="mt-5">
-          <VolumeChart data={volume} />
+          <VolumeChart data={volume} modalidade={modalidade} />
         </div>
       </Card>
 
       <Card className="col-span-12">
-        <PeriodoChartClient meses={meses} anos={anos} />
+        <PeriodoChartClient meses={meses} anos={anos} modalidade={modalidade} />
       </Card>
 
       <Card className="col-span-12 lg:col-span-7">
-        <CardLabel>Evolução do pace</CardLabel>
+        <CardLabel>Evolução — {cfg.ritmoLabel.toLowerCase()}</CardLabel>
         <div className="mt-5">
-          {pacePontos.length < 2 ? (
+          {ritmoPontos.length < 2 ? (
             <EmptyState
               icon={Trophy}
-              title="Registre ao menos duas corridas para ver a evolução."
+              title={`Registre ao menos duas sessões de ${cfg.label.toLowerCase()} para ver a evolução.`}
             />
           ) : (
-            <PaceChart data={pacePontos} />
+            <PaceChart data={ritmoPontos} modalidade={modalidade} />
           )}
         </div>
       </Card>
@@ -363,16 +412,20 @@ async function Corrida({ userId, hoje }: { userId: string; hoje: Date }) {
       <Card className="col-span-12 lg:col-span-5">
         <CardLabel>Recordes</CardLabel>
         <div className="mt-4 flex flex-col gap-3">
-          {[prs.cinco, prs.dez].map((pr, i) => (
+          {[prs.curta, prs.longa].map((pr, i) => (
             <div
               key={i}
               className="flex items-center gap-3 rounded-[14px] border border-stroke bg-surface-2 px-4 py-3"
             >
               <Trophy className="h-4 w-4 text-amber" strokeWidth={1.5} />
               <div className="flex-1">
-                <p className="text-[13px] text-ice">{i === 0 ? "5 km" : "10 km"}</p>
+                <p className="text-[13px] text-ice">
+                  {cfg.recordes[i].toLocaleString("pt-BR")} {cfg.unidade}
+                </p>
                 <p className="text-[11.5px] text-steel">
-                  {pr ? `projetado de ${mediumDate(pr.data)}` : "sem corrida na distância"}
+                  {pr
+                    ? `projetado de ${mediumDate(pr.data)}`
+                    : `sem ${cfg.atividade} na distância`}
                 </p>
               </div>
               <span className="tabular text-[14px] text-paper">
@@ -381,16 +434,16 @@ async function Corrida({ userId, hoje }: { userId: string; hoje: Date }) {
             </div>
           ))}
           <p className="mt-1 text-[11.5px] text-steel">
-            Km na semana:{" "}
+            Distância na semana:{" "}
             <span className="tabular text-mist">
-              {resumo.kmSemana.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} km
+              {formatDistanciaMod(resumo.porModalidade[modalidade].km, modalidade)}
             </span>
           </p>
         </div>
       </Card>
 
       <Card className="col-span-12">
-        <CorridaClient corridas={view} hoje={dayKeySP(hoje)} />
+        <CardioClient corridas={view} hoje={dayKeySP(hoje)} modalidade={modalidade} />
       </Card>
     </div>
   );

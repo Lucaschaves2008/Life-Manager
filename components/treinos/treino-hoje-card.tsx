@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CalendarDays, Check, Dumbbell, Eye, Footprints, Layers, Play, Plus, X } from "lucide-react";
+import { CalendarDays, Check, Dumbbell, Eye, Layers, Play, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardLabel } from "@/components/caverna/card";
 import { EmptyState } from "@/components/caverna/empty-state";
@@ -13,7 +13,15 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { ExecucaoTreino, type ExercicioExec } from "@/components/treinos/execucao";
 import { FichaPlanilha } from "@/components/treinos/ficha-planilha";
 import { createRun } from "@/app/actions/treinos";
-import { formatDistancia, formatPace } from "@/lib/data/treinos-format";
+import { ICONE_MODALIDADE } from "@/components/treinos/plano-cardio-client";
+import {
+  MODALIDADE,
+  campoDistancia,
+  formatDistanciaMod,
+  formatRitmo,
+  numeroDigitado,
+  paraKm,
+} from "@/lib/data/treinos-format";
 import type { TreinoHojeView } from "@/lib/data/treinos";
 import { cn } from "@/lib/utils";
 
@@ -28,7 +36,7 @@ export function TreinoHojeCard({
 }) {
   const [treinando, setTreinando] = useState<TreinoHojeView | null>(null);
   const [fichaVisualizando, setFichaVisualizando] = useState<TreinoHojeView | null>(null);
-  const [corridaVisualizando, setCorridaVisualizando] = useState<TreinoHojeView | null>(null);
+  const [cardioVisualizando, setCardioVisualizando] = useState<TreinoHojeView | null>(null);
   const [registrando, setRegistrando] = useState<TreinoHojeView | null>(null);
 
   return (
@@ -59,7 +67,8 @@ export function TreinoHojeCard({
       ) : (
         <ul className="mt-4 flex flex-col">
           {treinos.map((t) => {
-            const feito = t.tipo === "corrida" && t.cumprida;
+            const feito = t.tipo === "cardio" && t.cumprida;
+            const IconeCardio = t.tipo === "cardio" ? ICONE_MODALIDADE[t.modalidade] : Dumbbell;
             return (
               <li
                 key={`${t.tipo}-${t.id}`}
@@ -75,11 +84,7 @@ export function TreinoHojeCard({
                     {!feito && (
                       <span className="absolute inset-0 rounded-full bg-mint/0 blur-[6px] transition-colors duration-300 group-hover:bg-mint/15" />
                     )}
-                    {t.tipo === "musculacao" ? (
-                      <Dumbbell className="relative h-4.5 w-4.5" strokeWidth={1.5} />
-                    ) : (
-                      <Footprints className="relative h-4.5 w-4.5" strokeWidth={1.5} />
-                    )}
+                    <IconeCardio className="relative h-4.5 w-4.5" strokeWidth={1.5} />
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
@@ -91,7 +96,7 @@ export function TreinoHojeCard({
                     <p className="tabular mt-0.5 text-[11.5px] text-steel">
                       {t.tipo === "musculacao"
                         ? `${t.foco ?? "Musculação"} · ${t.exercicios.length} exercícios`
-                        : `${t.tipoSessao} · alvo ${formatDistancia(t.kmAlvo)}`}
+                        : `${t.tipoSessao} · alvo ${formatDistanciaMod(t.kmAlvo, t.modalidade)}`}
                     </p>
                   </div>
                 </div>
@@ -119,7 +124,7 @@ export function TreinoHojeCard({
                       onClick={() =>
                         t.tipo === "musculacao"
                           ? setFichaVisualizando(t)
-                          : setCorridaVisualizando(t)
+                          : setCardioVisualizando(t)
                       }
                     >
                       <Eye className="h-3.5 w-3.5" strokeWidth={1.5} />
@@ -161,15 +166,15 @@ export function TreinoHojeCard({
         onOpenChange={(v) => !v && setFichaVisualizando(null)}
       />
 
-      {/* alvo da sessão de corrida — só consulta */}
-      <SessaoCorridaSheet
-        sessao={corridaVisualizando}
+      {/* alvo da sessão de cardio — só consulta */}
+      <SessaoCardioSheet
+        sessao={cardioVisualizando}
         hojeLabel={hojeLabel}
-        onOpenChange={(v) => !v && setCorridaVisualizando(null)}
+        onOpenChange={(v) => !v && setCardioVisualizando(null)}
       />
 
-      {/* registro rápido de corrida */}
-      <RegistrarCorridaSheet
+      {/* registro rápido de cardio */}
+      <RegistrarCardioSheet
         sessao={registrando}
         hoje={hoje}
         onOpenChange={(v) => !v && setRegistrando(null)}
@@ -178,7 +183,7 @@ export function TreinoHojeCard({
   );
 }
 
-function SessaoCorridaSheet({
+function SessaoCardioSheet({
   sessao,
   hojeLabel,
   onOpenChange,
@@ -187,7 +192,7 @@ function SessaoCorridaSheet({
   hojeLabel: string;
   onOpenChange: (v: boolean) => void;
 }) {
-  const treino = sessao?.tipo === "corrida" ? sessao : null;
+  const treino = sessao?.tipo === "cardio" ? sessao : null;
   return (
     <Sheet open={!!treino} onOpenChange={onOpenChange}>
       <SheetContent aria-describedby={undefined}>
@@ -218,9 +223,9 @@ function SessaoCorridaSheet({
               <p className="mt-0.5 text-[14px] text-paper">{treino.tipoSessao}</p>
             </div>
             <div className="rounded-[14px] border border-stroke bg-surface-2 px-4 py-3.5">
-              <p className="text-[13px] text-mist">Km alvo</p>
+              <p className="text-[13px] text-mist">Distância alvo</p>
               <p className="tabular mt-0.5 text-[14px] text-paper">
-                {formatDistancia(treino.kmAlvo)}
+                {formatDistanciaMod(treino.kmAlvo, treino.modalidade)}
               </p>
             </div>
           </div>
@@ -237,7 +242,7 @@ function SessaoCorridaSheet({
   );
 }
 
-function RegistrarCorridaSheet({
+function RegistrarCardioSheet({
   sessao,
   hoje,
   onOpenChange,
@@ -248,17 +253,22 @@ function RegistrarCorridaSheet({
 }) {
   const router = useRouter();
   const [pending, startSalvar] = useTransition();
-  const [km, setKm] = useState("");
+  const [distancia, setDistancia] = useState("");
   const [h, setH] = useState("0");
   const [min, setMin] = useState("");
   const [seg, setSeg] = useState("");
   const [sensacao, setSensacao] = useState(3);
 
+  const cardio = sessao?.tipo === "cardio" ? sessao : null;
+  // A modalidade da sessão manda: um item de natação registra metros, não km.
+  const modalidade = cardio?.modalidade ?? "corrida";
+  const cfg = MODALIDADE[modalidade];
+
   // reseta o form sempre que abre para uma sessão nova
   const [ultimoId, setUltimoId] = useState<string | null>(null);
-  if (sessao && sessao.tipo === "corrida" && sessao.id !== ultimoId) {
-    setUltimoId(sessao.id);
-    setKm(String(sessao.kmAlvo || ""));
+  if (cardio && cardio.id !== ultimoId) {
+    setUltimoId(cardio.id);
+    setDistancia(campoDistancia(cardio.kmAlvo, cardio.modalidade));
     setH("0");
     setMin("");
     setSeg("");
@@ -266,23 +276,24 @@ function RegistrarCorridaSheet({
   }
 
   const segundos = (Number(h) || 0) * 3600 + (Number(min) || 0) * 60 + (Number(seg) || 0);
-  const kmNum = Number(km.replace(",", ".")) || 0;
-  const pace = kmNum > 0 && segundos > 0 ? segundos / kmNum : 0;
+  const kmNum = paraKm(numeroDigitado(distancia), modalidade);
+  const ritmo = formatRitmo(segundos, kmNum, modalidade);
 
   function salvar() {
-    if (!sessao || sessao.tipo !== "corrida") return;
+    if (!cardio) return;
     startSalvar(async () => {
       await createRun({
         data: hoje,
         km: kmNum,
         segundos,
-        tipo: sessao.tipoSessao,
+        tipo: cardio.tipoSessao,
+        modalidade: cardio.modalidade,
         sensacao,
         notas: "",
         stravaLink: null,
-        runSessionId: sessao.id,
+        runSessionId: cardio.id,
       });
-      toast.success(`Corrida registrada · ${formatPace(pace)}`);
+      toast.success(`Registrado · ${ritmo}`);
       onOpenChange(false);
       router.refresh();
     });
@@ -294,13 +305,13 @@ function RegistrarCorridaSheet({
         <SheetTitle>Registrar · {sessao?.nome}</SheetTitle>
         <div className="mt-6 flex flex-col gap-5">
           <div>
-            <Label htmlFor="hoje-run-km">Distância (km)</Label>
+            <Label htmlFor="hoje-run-km">Distância ({cfg.unidade})</Label>
             <Input
               id="hoje-run-km"
               inputMode="decimal"
-              value={km}
-              onChange={(e) => setKm(e.target.value)}
-              placeholder="8,2"
+              value={distancia}
+              onChange={(e) => setDistancia(e.target.value)}
+              placeholder={cfg.placeholderDistancia}
               className="tabular"
             />
           </div>
@@ -323,8 +334,10 @@ function RegistrarCorridaSheet({
                 />
               ))}
             </div>
-            {pace > 0 && (
-              <p className="tabular mt-2 text-[12.5px] text-mint">Pace {formatPace(pace)}</p>
+            {ritmo !== "—" && (
+              <p className="tabular mt-2 text-[12.5px] text-mint">
+                {cfg.ritmoLabel} {ritmo}
+              </p>
             )}
           </div>
           <div>

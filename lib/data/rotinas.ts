@@ -19,12 +19,14 @@ import { templateParaEventLike, type RotinaTemplateRow } from "@/lib/rotina-help
 // motor da Agenda: cada RotinaTemplate vira um EventLike sintético, e
 // expandEvent devolve 0 ou 1 ocorrência para a janela de um dia.
 
-export const TIPOS_ROTINA = ["livre", "estudo", "treino", "corrida", "refeicao"] as const;
-export type TipoRotina = (typeof TIPOS_ROTINA)[number];
+// Os tipos de item e os helpers de cardio moram em rotinas-constantes.ts
+// (client-safe); o re-export mantém os call sites server deste módulo intactos.
+export { TIPOS_ROTINA, TIPO_CARDIO, ehTipoCardio } from "./rotinas-constantes";
+export type { TipoRotina, TipoCardio, LocalItem } from "./rotinas-constantes";
+
+import type { LocalItem, TipoRotina } from "./rotinas-constantes";
 
 export type RotinaOpcaoView = { id: string; nome: string };
-
-export type LocalItem = "checklist" | "habitos";
 
 export type RotinaOcorrenciaView = {
   templateId: string;

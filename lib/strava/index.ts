@@ -1,5 +1,6 @@
 import "server-only";
 import { db } from "@/lib/db";
+import type { ModalidadeCardio } from "@/lib/data/treinos-format";
 
 const STRAVA_TOKEN_URL = "https://www.strava.com/oauth/token";
 const STRAVA_API = "https://www.strava.com/api/v3";
@@ -116,8 +117,35 @@ type StravaActivity = {
 };
 
 /**
- * Busca atividades de corrida recentes e cria registros Run que ainda não existem
- * (dedup por stravaActivityId). Retorna quantas foram importadas.
+ * Traduz o esporte do Strava para a modalidade daqui. Devolve null para o que
+ * não temos aba (musculação, caminhada, remo…): importar essas atividades como
+ * "corrida" poluiria pace, volume e recordes com dados de outro esporte.
+ */
+export function modalidadeDoStrava(a: StravaActivity): ModalidadeCardio | null {
+  const esporte = a.sport_type || a.type;
+  if (["Run", "TrailRun", "VirtualRun"].includes(esporte)) return "corrida";
+  if (["Swim", "OpenWaterSwim"].includes(esporte)) return "natacao";
+  if (
+    ["Ride", "VirtualRide", "MountainBikeRide", "GravelRide", "EBikeRide", "EMountainBikeRide"].includes(
+      esporte
+    )
+  ) {
+    return "ciclismo";
+  }
+  return null;
+}
+
+/** Tipo de sessão padrão de cada modalidade ao importar do Strava. */
+const TIPO_PADRAO: Record<ModalidadeCardio, string> = {
+  corrida: "Moderado",
+  natacao: "Leve",
+  ciclismo: "Ritmo",
+};
+
+/**
+ * Busca atividades recentes de corrida, natação e ciclismo e cria os registros
+ * Run que ainda não existem (dedup por stravaActivityId), cada um já na sua
+ * modalidade. Retorna quantas foram importadas.
  */
 export async function sincronizarCorridas(userId: string): Promise<number> {
   const token = await accessTokenValido(userId);
@@ -129,12 +157,13 @@ export async function sincronizarCorridas(userId: string): Promise<number> {
   if (!res.ok) throw new Error(`Strava activities falhou: ${res.status}`);
   const atividades = (await res.json()) as StravaActivity[];
 
-  const corridas = atividades.filter(
-    (a) => a.type === "Run" || a.sport_type === "Run" || a.sport_type === "TrailRun"
-  );
+  const importaveis = atividades.flatMap((a) => {
+    const modalidade = modalidadeDoStrava(a);
+    return modalidade ? [{ atividade: a, modalidade }] : [];
+  });
 
   let importadas = 0;
-  for (const a of corridas) {
+  for (const { atividade: a, modalidade } of importaveis) {
     const jaExiste = await db.run.findFirst({
       where: { userId, stravaActivityId: String(a.id) },
     });
@@ -146,7 +175,8 @@ export async function sincronizarCorridas(userId: string): Promise<number> {
         data: new Date(a.start_date_local),
         km: Math.round((a.distance / 1000) * 100) / 100,
         segundos: a.moving_time,
-        tipo: "Moderado",
+        tipo: TIPO_PADRAO[modalidade],
+        modalidade,
         sensacao: 3,
         notas: a.name,
         stravaActivityId: String(a.id),
