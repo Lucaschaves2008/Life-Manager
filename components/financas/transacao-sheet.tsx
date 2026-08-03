@@ -236,6 +236,16 @@ export function TransacaoSheet({
       <SheetContent aria-describedby={undefined}>
         <SheetTitle>{editando ? "Editar transação" : "Nova transação"}</SheetTitle>
 
+        {contas.length === 0 && (
+          <p className="mt-4 rounded-[12px] border border-stroke bg-surface-2 px-3.5 py-3 text-[12.5px] text-mist">
+            Você ainda não tem nenhuma conta.{" "}
+            <a href="/financas?tab=contas" className="text-mint underline-offset-2 hover:underline">
+              Cadastre uma conta
+            </a>{" "}
+            para conseguir lançar receitas e despesas.
+          </p>
+        )}
+
         <div className="mt-6 flex flex-col gap-5">
           <div className="flex gap-1.5 rounded-full border border-stroke bg-surface-2 p-1">
             {tipos.map((t) => (

@@ -389,6 +389,7 @@ export type ContaComSaldo = {
   nome: string;
   tipo: string;
   cor: string;
+  saldoInicial: number;
   saldo: number;
 };
 
@@ -435,6 +436,7 @@ export async function contasComSaldo(contaFinanceiraId: string): Promise<ContaCo
     nome: c.nome,
     tipo: c.tipo,
     cor: c.cor,
+    saldoInicial: c.saldoInicial,
     saldo: saldos.get(c.id) ?? c.saldoInicial,
   }));
 }

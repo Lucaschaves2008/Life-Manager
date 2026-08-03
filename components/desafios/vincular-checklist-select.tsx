@@ -29,8 +29,12 @@ export function VincularChecklistSelect({
   function vincular(templateId: string) {
     executar(async () => {
       try {
-        await editarMeta(metaId, { ...metaAtual, rotinaTemplateId: templateId });
-        toast.success("Checklist vinculado");
+        const r = await editarMeta(metaId, { ...metaAtual, rotinaTemplateId: templateId });
+        toast.success(
+          r.aplicado
+            ? "Checklist vinculado"
+            : "Pedido enviado — a troca só vale quando todos aprovarem"
+        );
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "Erro ao vincular");
       }

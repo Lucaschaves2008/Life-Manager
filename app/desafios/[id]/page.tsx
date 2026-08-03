@@ -7,6 +7,7 @@ import { DesafioDetalheClient } from "@/components/desafios/desafio-detalhe-clie
 import { desafioDetalhe } from "@/lib/data/desafios";
 import { mensagensDoDesafio } from "@/lib/data/desafios-chat";
 import { documentoDoDesafio } from "@/lib/data/desafios-documento";
+import { solicitacoesDoDesafio } from "@/lib/data/desafios-solicitacoes";
 import { variaveisAtivas } from "@/lib/data/variaveis";
 import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -27,16 +28,18 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   const desafio = await desafioDetalhe(id);
   if (!desafio) notFound();
 
-  const [templates, variaveis, mensagensIniciais, documento] = await Promise.all([
-    db.rotinaTemplate.findMany({
-      where: { userId: user.id, ativo: true },
-      select: { id: true, nome: true },
-      orderBy: { ordem: "asc" },
-    }),
-    variaveisAtivas(user.id),
-    mensagensDoDesafio(id),
-    documentoDoDesafio(id),
-  ]);
+  const [templates, variaveis, mensagensIniciais, documento, solicitacoes] =
+    await Promise.all([
+      db.rotinaTemplate.findMany({
+        where: { userId: user.id, ativo: true },
+        select: { id: true, nome: true },
+        orderBy: { ordem: "asc" },
+      }),
+      variaveisAtivas(user.id),
+      mensagensDoDesafio(id),
+      documentoDoDesafio(id),
+      solicitacoesDoDesafio(id, user.id),
+    ]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -80,6 +83,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
         variaveis={variaveis}
         mensagensIniciais={mensagensIniciais}
         documentoInicial={documento}
+        solicitacoesIniciais={solicitacoes}
         hoje={dayKeySP(nowSP())}
       />
     </div>

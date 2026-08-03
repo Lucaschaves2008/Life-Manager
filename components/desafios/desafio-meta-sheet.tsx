@@ -13,13 +13,19 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
-import { criarMetaGrande, criarMetaPequena, type DesafioMetaInput } from "@/app/actions/desafios";
+import {
+  criarMetaGrande,
+  criarMetaPequena,
+  editarMeta,
+  type DesafioMetaInput,
+} from "@/app/actions/desafios";
 import {
   PERIODOS_DESAFIO,
   type DesafioOrigem,
   type DesafioPeriodo,
 } from "@/lib/data/desafios-constantes";
 import { METRICAS, type MetaMetrica } from "@/lib/data/metas-quantitativas-constantes";
+import type { DesafioMetaView } from "@/lib/data/desafios";
 import type { VariavelView } from "@/lib/data/variaveis";
 
 export function DesafioMetaSheet({
@@ -28,6 +34,8 @@ export function DesafioMetaSheet({
   desafioId,
   tipo,
   metaPaiId,
+  editando,
+  precisaAprovacao,
   templatesChecklist,
   variaveis,
 }: {
@@ -36,17 +44,26 @@ export function DesafioMetaSheet({
   desafioId: string;
   tipo: "grande" | "pequena";
   metaPaiId?: string;
+  /** Quando presente, o sheet edita a meta em vez de criar uma nova. */
+  editando?: DesafioMetaView;
+  /** Desafio com mais de um membro: a mudança vira pedido, não vale na hora. */
+  precisaAprovacao: boolean;
   templatesChecklist: { id: string; nome: string }[];
   variaveis: VariavelView[];
 }) {
   const [pending, executar] = useAcao();
-  const [titulo, setTitulo] = useState("");
-  const [origem, setOrigem] = useState<DesafioOrigem>("metrica");
-  const [metrica, setMetrica] = useState<MetaMetrica>("treinos");
-  const [rotinaTemplateId, setRotinaTemplateId] = useState<string>("");
-  const [variavelId, setVariavelId] = useState<string>("");
-  const [alvo, setAlvo] = useState(0);
-  const [periodo, setPeriodo] = useState<DesafioPeriodo>(tipo === "grande" ? "trimestre" : "mes");
+  const [titulo, setTitulo] = useState(editando?.titulo ?? "");
+  const [origem, setOrigem] = useState<DesafioOrigem>(editando?.origem ?? "metrica");
+  const [metrica, setMetrica] = useState<MetaMetrica>(editando?.metrica ?? "treinos");
+  const [rotinaTemplateId, setRotinaTemplateId] = useState<string>(
+    editando?.rotinaTemplateId ?? ""
+  );
+  const [variavelId, setVariavelId] = useState<string>(editando?.variavelId ?? "");
+  const [alvo, setAlvo] = useState(editando?.alvo ?? 0);
+  const [periodo, setPeriodo] = useState<DesafioPeriodo>(
+    editando?.periodo ?? (tipo === "grande" ? "trimestre" : "mes")
+  );
+  const [justificativa, setJustificativa] = useState("");
 
   const valido =
     titulo.trim().length > 0 &&
@@ -57,10 +74,13 @@ export function DesafioMetaSheet({
 
   function fechar() {
     onOpenChange(false);
-    setTitulo("");
-    setAlvo(0);
-    setRotinaTemplateId("");
-    setVariavelId("");
+    if (!editando) {
+      setTitulo("");
+      setAlvo(0);
+      setRotinaTemplateId("");
+      setVariavelId("");
+    }
+    setJustificativa("");
   }
 
   function salvar() {
@@ -76,23 +96,46 @@ export function DesafioMetaSheet({
 
     executar(async () => {
       try {
-        if (tipo === "grande") {
-          await criarMetaGrande(desafioId, payload);
-        } else if (metaPaiId) {
-          await criarMetaPequena(desafioId, metaPaiId, payload);
-        }
-        toast.success("Meta criada");
+        const resultado = editando
+          ? await editarMeta(editando.id, payload, justificativa)
+          : tipo === "grande"
+            ? await criarMetaGrande(desafioId, payload, justificativa)
+            : metaPaiId
+              ? await criarMetaPequena(desafioId, metaPaiId, payload, justificativa)
+              : null;
+
+        if (!resultado) return;
+        toast.success(
+          resultado.aplicado
+            ? editando
+              ? "Meta atualizada"
+              : "Meta criada"
+            : "Pedido enviado — a mudança só vale quando todos aprovarem"
+        );
         fechar();
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Erro ao criar meta");
+        toast.error(e instanceof Error ? e.message : "Erro ao salvar meta");
       }
     });
   }
 
+  const titulos = editando
+    ? "Editar meta"
+    : tipo === "grande"
+      ? "Nova meta grande"
+      : "Nova meta menor";
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent aria-describedby={undefined}>
-        <SheetTitle>{tipo === "grande" ? "Nova meta grande" : "Nova meta menor"}</SheetTitle>
+        <SheetTitle>{titulos}</SheetTitle>
+
+        {precisaAprovacao && (
+          <p className="mt-4 rounded-[12px] border border-stroke bg-surface-2 px-3.5 py-3 text-[12.5px] text-mist">
+            Este desafio tem mais de um membro: a mudança vira um pedido e só
+            entra em vigor quando <span className="text-ice">todos aprovarem</span>.
+          </p>
+        )}
 
         <div className="mt-6 flex flex-col gap-5">
           <div>
@@ -213,8 +256,20 @@ export function DesafioMetaSheet({
             </Select>
           </div>
 
+          {precisaAprovacao && (
+            <div>
+              <Label htmlFor="justificativa">Motivo (aparece para o grupo)</Label>
+              <Input
+                id="justificativa"
+                value={justificativa}
+                onChange={(e) => setJustificativa(e.target.value)}
+                placeholder="Ex.: mudei de academia e a rotina virou 4x por semana"
+              />
+            </div>
+          )}
+
           <Button variant="primary" disabled={!valido || pending} onClick={salvar} className="mt-1.5">
-            Salvar
+            {precisaAprovacao ? "Enviar pedido ao grupo" : "Salvar"}
           </Button>
         </div>
       </SheetContent>

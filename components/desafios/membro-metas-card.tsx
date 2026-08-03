@@ -2,12 +2,13 @@
 
 import { useState } from "react";
 import { useAcao } from "@/lib/acao-cliente";
-import { Plus, Trash2 } from "lucide-react";
+import { Pencil, Plus, SlidersHorizontal, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardLabel } from "@/components/caverna/card";
 import { LancarDinheiro } from "@/components/caverna/lancar-dinheiro";
 import { Sparkline } from "@/components/caverna/sparkline";
 import { Button } from "@/components/ui/button";
+import { AjusteProgressoSheet } from "@/components/desafios/ajuste-progresso-sheet";
 import { DesafioMetaSheet } from "@/components/desafios/desafio-meta-sheet";
 import { VincularChecklistSelect } from "@/components/desafios/vincular-checklist-select";
 import { excluirMeta } from "@/app/actions/desafios";
@@ -20,9 +21,34 @@ function formatNumero(v: number): string {
   return v % 1 === 0 ? v.toFixed(0) : v.toFixed(1);
 }
 
-function MetaPequenaRow({ meta, souDono }: { meta: DesafioMetaView; souDono: boolean }) {
+/** Toast que deixa claro se a mudança valeu na hora ou virou pedido no grupo. */
+function toastMudanca(aplicado: boolean, textoAplicado: string) {
+  toast.success(
+    aplicado ? textoAplicado : "Pedido enviado — só vale quando todos aprovarem"
+  );
+}
+
+function MetaPequenaRow({
+  meta,
+  souDono,
+  precisaAprovacao,
+  templatesChecklist,
+  variaveis,
+  desafioId,
+  hoje,
+}: {
+  meta: DesafioMetaView;
+  souDono: boolean;
+  precisaAprovacao: boolean;
+  templatesChecklist: { id: string; nome: string }[];
+  variaveis: VariavelView[];
+  desafioId: string;
+  hoje: string;
+}) {
   const [, executar] = useAcao();
   const [removendo, setRemovendo] = useState(false);
+  const [editando, setEditando] = useState(false);
+  const [ajustando, setAjustando] = useState(false);
 
   return (
     <div
@@ -39,21 +65,65 @@ function MetaPequenaRow({ meta, souDono }: { meta: DesafioMetaView; souDono: boo
           </p>
         </div>
         {souDono && (
-          <button
-            aria-label="Excluir meta"
-            onClick={() => {
-              setRemovendo(true);
-              executar(async () => {
-                await excluirMeta(meta.id);
-                toast.success("Meta excluída");
-              });
-            }}
-            className="rounded-md p-1 text-steel opacity-0 transition-opacity hover:text-coral group-hover:opacity-100"
-          >
-            <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
-          </button>
+          <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+            <button
+              aria-label="Ajustar progresso"
+              onClick={() => setAjustando(true)}
+              className="rounded-md p-1 text-steel transition-colors hover:text-ice"
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" strokeWidth={1.5} />
+            </button>
+            <button
+              aria-label="Editar meta"
+              onClick={() => setEditando(true)}
+              className="rounded-md p-1 text-steel transition-colors hover:text-ice"
+            >
+              <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
+            </button>
+            <button
+              aria-label="Excluir meta"
+              onClick={() => {
+                setRemovendo(true);
+                executar(async () => {
+                  try {
+                    const r = await excluirMeta(meta.id);
+                    toastMudanca(r.aplicado, "Meta excluída");
+                    if (!r.aplicado) setRemovendo(false);
+                  } catch (e) {
+                    setRemovendo(false);
+                    toast.error(e instanceof Error ? e.message : "Erro ao excluir");
+                  }
+                });
+              }}
+              className="rounded-md p-1 text-steel transition-colors hover:text-coral"
+            >
+              <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+            </button>
+          </div>
         )}
       </div>
+
+      {souDono && editando && (
+        <DesafioMetaSheet
+          open={editando}
+          onOpenChange={setEditando}
+          desafioId={desafioId}
+          tipo="pequena"
+          editando={meta}
+          precisaAprovacao={precisaAprovacao}
+          templatesChecklist={templatesChecklist}
+          variaveis={variaveis}
+        />
+      )}
+      {souDono && ajustando && (
+        <AjusteProgressoSheet
+          open={ajustando}
+          onOpenChange={setAjustando}
+          meta={meta}
+          precisaAprovacao={precisaAprovacao}
+          hoje={hoje}
+        />
+      )}
       <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-2">
         <div
           className="h-full rounded-full transition-all duration-700 ease-out"
@@ -71,6 +141,7 @@ function MetaGrandeBlock({
   desafioId,
   meta,
   souDono,
+  precisaAprovacao,
   templatesChecklist,
   variaveis,
   hoje,
@@ -78,6 +149,7 @@ function MetaGrandeBlock({
   desafioId: string;
   meta: DesafioMetaView;
   souDono: boolean;
+  precisaAprovacao: boolean;
   templatesChecklist: { id: string; nome: string }[];
   variaveis: VariavelView[];
   hoje: string;
@@ -85,7 +157,11 @@ function MetaGrandeBlock({
   const [, executar] = useAcao();
   const [removendo, setRemovendo] = useState(false);
   const [sheetAberto, setSheetAberto] = useState(false);
+  const [editando, setEditando] = useState(false);
+  const [ajustando, setAjustando] = useState(false);
   const cor = meta.pct >= 100 ? "var(--color-mint)" : "var(--color-ice)";
+  // Meta com filhas soma o progresso delas — o ajuste tem que ser feito na filha.
+  const podeAjustar = meta.filhas.length === 0;
 
   return (
     <div className={cn("rounded-[14px] border border-stroke bg-surface px-4 py-3.5", removendo && "opacity-40")}>
@@ -106,22 +182,68 @@ function MetaGrandeBlock({
             {Math.round(meta.pct)}%
           </span>
           {souDono && (
-            <button
-              aria-label="Excluir meta"
-              onClick={() => {
-                setRemovendo(true);
-                executar(async () => {
-                  await excluirMeta(meta.id);
-                  toast.success("Meta excluída");
-                });
-              }}
-              className="rounded-md p-1 text-steel transition-colors hover:text-coral"
-            >
-              <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
-            </button>
+            <>
+              {podeAjustar && (
+                <button
+                  aria-label="Ajustar progresso"
+                  onClick={() => setAjustando(true)}
+                  className="rounded-md p-1 text-steel transition-colors hover:text-ice"
+                >
+                  <SlidersHorizontal className="h-3.5 w-3.5" strokeWidth={1.5} />
+                </button>
+              )}
+              <button
+                aria-label="Editar meta"
+                onClick={() => setEditando(true)}
+                className="rounded-md p-1 text-steel transition-colors hover:text-ice"
+              >
+                <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
+              </button>
+              <button
+                aria-label="Excluir meta"
+                onClick={() => {
+                  setRemovendo(true);
+                  executar(async () => {
+                    try {
+                      const r = await excluirMeta(meta.id);
+                      toastMudanca(r.aplicado, "Meta excluída");
+                      if (!r.aplicado) setRemovendo(false);
+                    } catch (e) {
+                      setRemovendo(false);
+                      toast.error(e instanceof Error ? e.message : "Erro ao excluir");
+                    }
+                  });
+                }}
+                className="rounded-md p-1 text-steel transition-colors hover:text-coral"
+              >
+                <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+              </button>
+            </>
           )}
         </div>
       </div>
+
+      {souDono && editando && (
+        <DesafioMetaSheet
+          open={editando}
+          onOpenChange={setEditando}
+          desafioId={desafioId}
+          tipo="grande"
+          editando={meta}
+          precisaAprovacao={precisaAprovacao}
+          templatesChecklist={templatesChecklist}
+          variaveis={variaveis}
+        />
+      )}
+      {souDono && ajustando && (
+        <AjusteProgressoSheet
+          open={ajustando}
+          onOpenChange={setAjustando}
+          meta={meta}
+          precisaAprovacao={precisaAprovacao}
+          hoje={hoje}
+        />
+      )}
 
       <div className="mt-3">
         <Sparkline serie={meta.serie} cor={cor} />
@@ -153,7 +275,16 @@ function MetaGrandeBlock({
       {meta.filhas.length > 0 && (
         <div className="mt-3 flex flex-col gap-2">
           {meta.filhas.map((filha) => (
-            <MetaPequenaRow key={filha.id} meta={filha} souDono={souDono} />
+            <MetaPequenaRow
+              key={filha.id}
+              meta={filha}
+              souDono={souDono}
+              precisaAprovacao={precisaAprovacao}
+              templatesChecklist={templatesChecklist}
+              variaveis={variaveis}
+              desafioId={desafioId}
+              hoje={hoje}
+            />
           ))}
         </div>
       )}
@@ -170,6 +301,7 @@ function MetaGrandeBlock({
             desafioId={desafioId}
             tipo="pequena"
             metaPaiId={meta.id}
+            precisaAprovacao={precisaAprovacao}
             templatesChecklist={templatesChecklist}
             variaveis={variaveis}
           />
@@ -184,6 +316,7 @@ export function MembroMetasCard({
   membro,
   souEu,
   metasGrandesLimite,
+  precisaAprovacao,
   templatesChecklist,
   variaveis,
   hoje,
@@ -192,6 +325,8 @@ export function MembroMetasCard({
   membro: MembroDesafio;
   souEu: boolean;
   metasGrandesLimite: number;
+  /** Desafio com mais de um membro: mudanças viram pedido de aprovação. */
+  precisaAprovacao: boolean;
   templatesChecklist: { id: string; nome: string }[];
   variaveis: VariavelView[];
   hoje: string;
@@ -236,6 +371,7 @@ export function MembroMetasCard({
             desafioId={desafioId}
             meta={meta}
             souDono={souEu}
+            precisaAprovacao={precisaAprovacao}
             templatesChecklist={templatesChecklist}
             variaveis={variaveis}
             hoje={hoje}
@@ -254,6 +390,7 @@ export function MembroMetasCard({
             onOpenChange={setSheetAberto}
             desafioId={desafioId}
             tipo="grande"
+            precisaAprovacao={precisaAprovacao}
             templatesChecklist={templatesChecklist}
             variaveis={variaveis}
           />

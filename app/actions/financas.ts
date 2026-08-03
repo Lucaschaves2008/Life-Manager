@@ -389,6 +389,73 @@ export async function updateParcelamento(grupo: string, input: ParcelamentoInput
   revalidar(contaFinanceiraId);
 }
 
+// ---------- Contas ----------
+
+export type ContaInput = {
+  nome: string;
+  tipo: "corrente" | "poupanca" | "carteira";
+  cor: string;
+  saldoInicial: number;
+};
+
+function normalizarConta(input: ContaInput) {
+  const nome = input.nome.trim();
+  if (!nome) throw new Error("Dê um nome à conta.");
+  return {
+    nome,
+    tipo: input.tipo,
+    cor: input.cor,
+    saldoInicial: Math.round(input.saldoInicial),
+  };
+}
+
+export async function createConta(input: ContaInput) {
+  const { id: userId } = await requireUser();
+  const { id: contaFinanceiraId } = await getContaAtiva(userId);
+  await db.account.create({
+    data: { ...normalizarConta(input), userId, contaFinanceiraId },
+  });
+  revalidar(contaFinanceiraId);
+}
+
+export async function updateConta(id: string, input: ContaInput) {
+  const { id: userId } = await requireUser();
+  const { id: contaFinanceiraId } = await getContaAtiva(userId);
+  const conta = await db.account.findFirst({
+    where: { id, userId, contaFinanceiraId },
+    select: { id: true },
+  });
+  if (!conta) throw new Error("Conta não encontrada.");
+
+  await db.account.update({ where: { id }, data: normalizarConta(input) });
+  revalidar(contaFinanceiraId);
+}
+
+/**
+ * Exclui uma conta. As transações dela sobrevivem com accountId=null
+ * (onDelete: SetNull no schema) — por isso a última conta não pode sair:
+ * sem nenhuma conta não há como lançar receita/despesa.
+ */
+export async function deleteConta(id: string) {
+  const { id: userId } = await requireUser();
+  const { id: contaFinanceiraId } = await getContaAtiva(userId);
+  const conta = await db.account.findFirst({
+    where: { id, userId, contaFinanceiraId },
+    select: { id: true },
+  });
+  if (!conta) throw new Error("Conta não encontrada.");
+
+  const total = await db.account.count({ where: { contaFinanceiraId } });
+  if (total <= 1) {
+    throw new Error(
+      "Você precisa de pelo menos uma conta para lançar receitas e despesas."
+    );
+  }
+
+  await db.account.delete({ where: { id } });
+  revalidar(contaFinanceiraId);
+}
+
 // ---------- Categorias ----------
 
 export type CategoriaInput = {

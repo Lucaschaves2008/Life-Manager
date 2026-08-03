@@ -10,6 +10,7 @@ import {
   COOKIE_CONTA_ATIVA,
   type ContaFinanceiraView,
 } from "@/lib/contas-financeiras-shared";
+import { garantirPadroesFinanceiros } from "@/lib/financas-padroes";
 
 /** Lista as contas financeiras do usuário; garante que "Pessoal" sempre exista. */
 export async function listarContasFinanceiras(
@@ -24,6 +25,7 @@ export async function listarContasFinanceiras(
   const pessoal = await db.contaFinanceira.create({
     data: { userId, nome: "Pessoal", padrao: true },
   });
+  await garantirPadroesFinanceiros(userId, pessoal.id);
   return [pessoal];
 }
 
@@ -39,6 +41,7 @@ export async function criarContaFinanceira(nome: string, cor: string) {
   const conta = await db.contaFinanceira.create({
     data: { userId, nome: nome.trim(), cor, padrao: false },
   });
+  await garantirPadroesFinanceiros(userId, conta.id);
   revalidatePath("/financas");
   revalidatePath("/investimentos");
   return conta;

@@ -14,6 +14,7 @@ import { RitmoChart } from "@/components/charts/ritmo-chart";
 import { AssinaturasClient } from "@/components/financas/assinaturas-client";
 import { CartoesClient } from "@/components/financas/cartoes-client";
 import { CategoriasClient } from "@/components/financas/categorias-client";
+import { ContasClient } from "@/components/financas/contas-client";
 import { FluxoChart } from "@/components/financas/fluxo-chart";
 import { ParcelamentosClient } from "@/components/financas/parcelamentos-client";
 import { MetasPoupancaClient } from "@/components/financas/metas-poupanca-client";
@@ -48,6 +49,7 @@ import { formatBRL } from "@/lib/money";
 import { parseJSON } from "@/lib/utils";
 import { getCurrentUser } from "@/lib/auth";
 import { getContaAtiva } from "@/lib/conta-ativa";
+import { garantirPadroesFinanceiros } from "@/lib/financas-padroes";
 import { ContaFinanceiraSelector } from "@/components/shell/conta-financeira-selector";
 
 export const dynamic = "force-dynamic";
@@ -74,6 +76,7 @@ const tabs = [
     href: "/financas?tab=categorias",
     value: "categorias",
   },
+  { label: "Contas", href: "/financas?tab=contas", value: "contas" },
   { label: "Cartões", href: "/financas?tab=cartoes", value: "cartoes" },
   {
     label: "Metas de poupança",
@@ -119,6 +122,9 @@ export default async function Page({
 }) {
   const user = await getCurrentUser();
   const { id: contaFinanceiraId, contas } = await getContaAtiva(user.id);
+  // Contas financeiras criadas antes desta versão nasceram sem conta nem
+  // categorias — o backfill roda aqui, uma vez só (marca em Setting).
+  await garantirPadroesFinanceiros(user.id, contaFinanceiraId);
   const busca = await searchParams;
   const tab = busca.novo === "1" ? "transacoes" : (busca.tab ?? "visao");
   const hoje = nowSP();
@@ -195,6 +201,17 @@ export default async function Page({
       )}
       {tab === "categorias" && (
         <Categorias contaFinanceiraId={contaFinanceiraId} hoje={hoje} />
+      )}
+      {tab === "contas" && (
+        <Card>
+          <CardLabel>Contas</CardLabel>
+          <p className="mt-1.5 text-[12.5px] text-steel">
+            Toda receita e despesa é lançada numa destas contas.
+          </p>
+          <div className="mt-4">
+            <ContasClient contas={contasSaldo} />
+          </div>
+        </Card>
       )}
       {tab === "cartoes" && (
         <Cartoes contaFinanceiraId={contaFinanceiraId} hoje={hoje} />
@@ -315,6 +332,14 @@ async function VisaoGeral({
               icon={Wallet}
               title="Nenhuma conta cadastrada"
               description="Cadastre suas contas para acompanhar saldos e movimentações."
+              action={
+                <Link
+                  href="/financas?tab=contas"
+                  className="text-[12.5px] text-mist transition-colors hover:text-mint"
+                >
+                  Cadastrar conta
+                </Link>
+              }
             />
           ) : (
             <>
