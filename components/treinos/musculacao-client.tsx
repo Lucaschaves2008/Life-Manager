@@ -71,7 +71,15 @@ const grupos = [
   "Abdômen",
 ];
 
-const metodos = ["Nenhum", "Bi-set", "Tri-set", "Drop-set", "Superset"];
+const metodos = [
+  "Nenhum",
+  "Bi-set",
+  "Tri-set",
+  "Drop-set",
+  "Superset",
+  "Pirâmide",
+  "Meta de repetição",
+];
 
 const exercicioVazio: ExercicioInput = {
   nome: "",
