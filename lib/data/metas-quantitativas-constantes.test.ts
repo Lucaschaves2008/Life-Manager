@@ -21,6 +21,12 @@ describe("calcularMetrica (fonte única — metas quantitativas + desafios)", ()
     ).toBe(14);
   });
 
+  it("musculacao_completas conta só musculação, sem cardio", () => {
+    expect(
+      calcularMetrica("musculacao_completas", { ...vazio, treinos: 8, corridas: 3 })
+    ).toBe(8);
+  });
+
   it("corridas_completas conta só corridas, sem musculação", () => {
     expect(calcularMetrica("corridas_completas", { ...vazio, treinos: 8, corridas: 3 })).toBe(3);
   });

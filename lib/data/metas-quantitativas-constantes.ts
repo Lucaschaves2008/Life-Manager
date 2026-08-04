@@ -7,6 +7,7 @@
 
 export type MetaMetrica =
   | "treinos"
+  | "musculacao_completas"
   | "corridas_completas"
   | "km_corridos"
   | "natacoes_completas"
@@ -27,7 +28,18 @@ export const METRICAS: {
   unidade: string;
   placeholder: string;
 }[] = [
-  { value: "treinos", label: "Treinos concluídos", unidade: "treinos", placeholder: "Ex.: 75" },
+  {
+    value: "treinos",
+    label: "Treinos (qualquer tipo)",
+    unidade: "treinos",
+    placeholder: "Ex.: 75",
+  },
+  {
+    value: "musculacao_completas",
+    label: "Treinos de musculação",
+    unidade: "treinos",
+    placeholder: "Ex.: 10",
+  },
   {
     value: "corridas_completas",
     label: "Corridas completas",
@@ -135,6 +147,8 @@ export function calcularMetrica(
       return (
         registros.treinos + registros.corridas + registros.natacoes + registros.pedaladas
       );
+    case "musculacao_completas":
+      return registros.treinos;
     case "corridas_completas":
       return registros.corridas;
     case "km_corridos":

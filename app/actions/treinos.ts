@@ -439,6 +439,8 @@ export type CorridaInput = {
   runSessionId?: string | null;
   stravaLink?: string | null;
   stravaActivityId?: string | null;
+  /** false quando o registro não deve contar em metas/desafios (ex.: caminhada lançada como corrida). */
+  quantificar?: boolean;
 };
 
 export async function createRun(input: CorridaInput) {
@@ -471,6 +473,7 @@ export async function createRun(input: CorridaInput) {
       runSessionId: input.runSessionId ?? null,
       stravaLink: input.stravaLink?.trim() || null,
       stravaActivityId: input.stravaActivityId ?? null,
+      quantificar: input.quantificar ?? true,
       userId,
     },
   });
@@ -512,6 +515,7 @@ export async function updateRun(id: string, input: CorridaInput) {
       runSessionId: input.runSessionId ?? null,
       stravaLink: input.stravaLink?.trim() || null,
       stravaActivityId: input.stravaActivityId ?? null,
+      quantificar: input.quantificar ?? true,
     },
   });
   revalidar(userId);
@@ -535,6 +539,7 @@ export async function restoreRun(dados: {
   notas: string | null;
   stravaLink?: string | null;
   runSessionId?: string | null;
+  quantificar?: boolean;
 }) {
   const { id: userId } = await requireUser();
   // Whitelist explícita (sem spread do payload do cliente); sessão já excluída
@@ -556,6 +561,7 @@ export async function restoreRun(dados: {
       notas: dados.notas,
       stravaLink: dados.stravaLink ?? null,
       runSessionId: sessao?.id ?? null,
+      quantificar: dados.quantificar ?? true,
       userId,
     },
   });

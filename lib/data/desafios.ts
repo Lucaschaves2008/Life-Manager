@@ -148,7 +148,11 @@ async function carregarDadosBrutosMultiUsuario(
       select: { userId: true, data: true },
     }),
     db.run.findMany({
-      where: { userId: { in: userIds }, data: { gte: inicioTotal, lte: fimTotal } },
+      where: {
+        userId: { in: userIds },
+        data: { gte: inicioTotal, lte: fimTotal },
+        quantificar: true,
+      },
       select: { userId: true, data: true, km: true, modalidade: true },
     }),
     db.dietDayLog.findMany({

@@ -338,6 +338,7 @@ async function Cardio({
     sensacao: c.sensacao,
     notas: c.notas,
     stravaLink: c.stravaLink,
+    quantificar: c.quantificar,
   }));
 
   const ritmoPontos = [...sessoes]

@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Download, ExternalLink, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input, Label, Textarea } from "@/components/ui/input";
 import {
   Select,
@@ -50,6 +51,7 @@ export type CorridaView = {
   sensacao: number;
   notas: string | null;
   stravaLink: string | null;
+  quantificar: boolean;
 };
 
 /**
@@ -89,6 +91,7 @@ export function CardioClient({
   const [notas, setNotas] = useState("");
   const [stravaLink, setStravaLink] = useState("");
   const [stravaActivityId, setStravaActivityId] = useState<string | null>(null);
+  const [quantificar, setQuantificar] = useState(true);
 
   // O deep-link "+ Novo" só deve abrir o formulário da aba que o usuário está
   // vendo — sem o guard, as três abas abririam o sheet ao mesmo tempo.
@@ -114,6 +117,7 @@ export function CardioClient({
     setNotas(corrida?.notas ?? "");
     setStravaLink(corrida?.stravaLink ?? "");
     setStravaActivityId(null);
+    setQuantificar(corrida?.quantificar ?? true);
     setAberto(true);
   }
 
@@ -159,6 +163,7 @@ export function CardioClient({
       notas,
       stravaLink: stravaLink.trim() || null,
       stravaActivityId,
+      quantificar,
     };
     startSalvar(async () => {
       try {
@@ -231,8 +236,18 @@ export function CardioClient({
                   </Td>
                   <Td right>{formatRitmo(c.segundos, c.km, modalidade)}</Td>
                   <Td>
-                    <span className="rounded-full bg-surface-2 px-2.5 py-1 text-[11.5px] text-mist">
-                      {c.tipo}
+                    <span className="flex items-center gap-1.5">
+                      <span className="rounded-full bg-surface-2 px-2.5 py-1 text-[11.5px] text-mist">
+                        {c.tipo}
+                      </span>
+                      {!c.quantificar && (
+                        <span
+                          className="text-[11px] text-steel"
+                          title="Não conta em metas e desafios"
+                        >
+                          não contabilizado
+                        </span>
+                      )}
                     </span>
                   </Td>
                   <Td>
@@ -274,6 +289,7 @@ export function CardioClient({
                                       notas: removida.notas,
                                       stravaLink: removida.stravaLink,
                                       runSessionId: removida.runSessionId,
+                                      quantificar: removida.quantificar,
                                     }),
                                 },
                               });
@@ -379,6 +395,24 @@ export function CardioClient({
                 ))}
               </div>
             </div>
+
+            <label className="flex cursor-pointer items-start gap-3">
+              <Checkbox
+                className="mt-0.5"
+                checked={quantificar}
+                onCheckedChange={(v) => setQuantificar(v === true)}
+                aria-label="Contabilizar em metas e desafios"
+              />
+              <span className="min-w-0">
+                <span className="block text-[13.5px] text-ice">
+                  Contabilizar em metas e desafios
+                </span>
+                <span className="mt-0.5 block text-[12px] leading-relaxed text-steel">
+                  Desative para registros que não devem contar como treino — ex.: uma
+                  caminhada leve lançada aqui.
+                </span>
+              </span>
+            </label>
 
             <div>
               <Label htmlFor="run-notas">Notas</Label>

@@ -143,7 +143,7 @@ export async function calcularAtual(
       const [treinos, cardio] = await Promise.all([
         db.workoutSession.count({ where: { userId, data: { gte: inicio, lte: fim } } }),
         db.run.findMany({
-          where: { userId, data: { gte: inicio, lte: fim } },
+          where: { userId, data: { gte: inicio, lte: fim }, quantificar: true },
           select: { modalidade: true },
         }),
       ]);
@@ -153,12 +153,18 @@ export async function calcularAtual(
         ...contarCardio(cardio),
       });
     }
+    case "musculacao_completas": {
+      const treinos = await db.workoutSession.count({
+        where: { userId, data: { gte: inicio, lte: fim } },
+      });
+      return calcularMetrica(metrica, { ...vazio, treinos });
+    }
     case "corridas_completas":
     case "natacoes_completas":
     case "pedaladas_completas": {
       const modalidade = MODALIDADE_DA_METRICA[metrica];
       const sessoes = await db.run.count({
-        where: { userId, modalidade, data: { gte: inicio, lte: fim } },
+        where: { userId, modalidade, data: { gte: inicio, lte: fim }, quantificar: true },
       });
       return calcularMetrica(metrica, { ...vazio, ...contagemDe(modalidade, sessoes) });
     }
@@ -167,7 +173,7 @@ export async function calcularAtual(
     case "km_pedalados": {
       const modalidade = MODALIDADE_DA_METRICA[metrica];
       const agg = await db.run.aggregate({
-        where: { userId, modalidade, data: { gte: inicio, lte: fim } },
+        where: { userId, modalidade, data: { gte: inicio, lte: fim }, quantificar: true },
         _sum: { km: true },
       });
       return calcularMetrica(metrica, {
@@ -228,7 +234,7 @@ async function calcularAtualEmLote(
           select: { data: true },
         }),
         db.run.findMany({
-          where: { userId, data: { gte: inicioTotal, lte: fimTotal } },
+          where: { userId, data: { gte: inicioTotal, lte: fimTotal }, quantificar: true },
           select: { data: true, modalidade: true },
         }),
       ]);
@@ -240,12 +246,24 @@ async function calcularAtualEmLote(
         })
       );
     }
+    case "musculacao_completas": {
+      const sessoes = await db.workoutSession.findMany({
+        where: { userId, data: { gte: inicioTotal, lte: fimTotal } },
+        select: { data: true },
+      });
+      return metas.map(({ inicio, fim }) =>
+        calcularMetrica(metrica, {
+          ...vazio,
+          treinos: sessoes.filter((s) => dentro(s.data, inicio, fim)).length,
+        })
+      );
+    }
     case "corridas_completas":
     case "natacoes_completas":
     case "pedaladas_completas": {
       const modalidade = MODALIDADE_DA_METRICA[metrica];
       const runs = await db.run.findMany({
-        where: { userId, modalidade, data: { gte: inicioTotal, lte: fimTotal } },
+        where: { userId, modalidade, data: { gte: inicioTotal, lte: fimTotal }, quantificar: true },
         select: { data: true },
       });
       return metas.map(({ inicio, fim }) =>
@@ -260,7 +278,7 @@ async function calcularAtualEmLote(
     case "km_pedalados": {
       const modalidade = MODALIDADE_DA_METRICA[metrica];
       const runs = await db.run.findMany({
-        where: { userId, modalidade, data: { gte: inicioTotal, lte: fimTotal } },
+        where: { userId, modalidade, data: { gte: inicioTotal, lte: fimTotal }, quantificar: true },
         select: { data: true, km: true },
       });
       return metas.map(({ inicio, fim }) =>

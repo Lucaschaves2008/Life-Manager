@@ -475,6 +475,9 @@ model Run {
   modalidade       String      @default("corrida") // "corrida" | "natacao" | "ciclismo"
   sensacao         Int         @default(3)
   notas            String?
+  // Quando false, o registro não entra na conta de metas/desafios (ex.: uma
+  // caminhada lançada na aba corrida que não deve contar como treino).
+  quantificar      Boolean     @default(true)
   // planId: vínculo LEGADO ao antigo RunPlan (removido). Mantido só como coluna
   // para preservar o histórico; não há mais relação. runSessionId é o novo elo.
   planId           String?
