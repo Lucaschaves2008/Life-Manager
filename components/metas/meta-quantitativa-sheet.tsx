@@ -41,7 +41,7 @@ export type MetaQuantitativaEditavel = {
 
 function chaveAtual(periodo: MetaPeriodo): string {
   const agora = nowSP();
-  if (periodo === "mes") return monthKeySP(agora);
+  if (periodo === "mes" || periodo === "trimestre_movel") return monthKeySP(agora);
   if (periodo === "trimestre") return quarterKeySP(agora);
   return yearKeySP(agora);
 }

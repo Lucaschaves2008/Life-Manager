@@ -17,7 +17,7 @@ export type MetaMetrica =
   | "horas_estudo"
   | "dinheiro";
 
-export type MetaPeriodo = "mes" | "trimestre" | "ano";
+export type MetaPeriodo = "mes" | "trimestre" | "trimestre_movel" | "ano";
 
 export type MetaOrigem = "metrica" | "variavel";
 
@@ -61,7 +61,8 @@ export const METRICAS: {
 
 export const PERIODOS: { value: MetaPeriodo; label: string }[] = [
   { value: "mes", label: "Este mês" },
-  { value: "trimestre", label: "Este trimestre" },
+  { value: "trimestre", label: "Trimestre civil (jan–mar, abr–jun...)" },
+  { value: "trimestre_movel", label: "3 meses a partir de hoje" },
   { value: "ano", label: "Este ano" },
 ];
 

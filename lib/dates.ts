@@ -11,6 +11,7 @@ import {
   endOfQuarter,
   startOfYear,
   endOfYear,
+  addMonths,
   isSameDay as dfIsSameDay,
 } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -77,6 +78,10 @@ export function spStartOfMonth(date: Date): Date {
 
 export function spEndOfMonth(date: Date): Date {
   return new Date(endOfMonth(toSP(date)).getTime());
+}
+
+export function spAddMonths(date: Date, meses: number): Date {
+  return new Date(addMonths(toSP(date), meses).getTime());
 }
 
 /** Semana começando no DOMINGO (padrão brasileiro / Google Agenda). */

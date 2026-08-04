@@ -1,9 +1,11 @@
 import { db } from "@/lib/db";
 import { parseJSON } from "@/lib/utils";
 import {
+  fmtSP,
   refDoAnoSP,
   refDoMesSP,
   refDoTrimestreSP,
+  spAddMonths,
   spEndOfMonth,
   spEndOfQuarter,
   spEndOfYear,
@@ -60,6 +62,13 @@ function rangeDoPeriodo(periodo: MetaPeriodo, chave: string): { inicio: Date; fi
     const ref = refDoTrimestreSP(chave);
     return { inicio: spStartOfQuarter(ref), fim: spEndOfQuarter(ref) };
   }
+  if (periodo === "trimestre_movel") {
+    // Janela de 3 meses de calendário começando no mês salvo em `chave`
+    // ("yyyy-MM") — não o trimestre civil (jan-mar/abr-jun/...), mas os 3
+    // meses a partir de quando a meta foi criada.
+    const ref = refDoMesSP(chave);
+    return { inicio: spStartOfMonth(ref), fim: spEndOfMonth(spAddMonths(ref, 2)) };
+  }
   const ref = refDoAnoSP(chave);
   return { inicio: spStartOfYear(ref), fim: spEndOfYear(ref) };
 }
@@ -72,6 +81,10 @@ function periodoLabelDe(periodo: MetaPeriodo, chave: string): string {
   if (periodo === "trimestre") {
     const [ano, q] = chave.split("-Q");
     return `${q}º trimestre de ${ano}`;
+  }
+  if (periodo === "trimestre_movel") {
+    const { inicio, fim } = rangeDoPeriodo(periodo, chave);
+    return `${fmtSP(inicio, "MMM")} – ${fmtSP(fim, "MMM 'de' yyyy")}`;
   }
   return chave;
 }
