@@ -382,6 +382,16 @@ export async function criarMetaGrande(
   await requireMembro(desafioId, userId);
   await validarOrigemInput(userId, input);
 
+  const desafio = await db.desafio.findUnique({
+    where: { id: desafioId },
+    select: { metasGrandesLimite: true },
+  });
+  if (!desafio) throw new Error("Desafio não encontrado.");
+  const count = await db.desafioMeta.count({ where: { desafioId, userId, metaPaiId: null } });
+  if (count >= desafio.metasGrandesLimite) {
+    throw new Error(`Limite de ${desafio.metasGrandesLimite} metas grandes atingido.`);
+  }
+
   return registrarMudanca({
     userId,
     desafioId,
