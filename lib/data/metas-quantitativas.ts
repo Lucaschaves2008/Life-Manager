@@ -55,17 +55,11 @@ export type MetaQuantitativaView = {
   noPrazo: boolean;
 };
 
-/**
- * Converte (periodo, chave) num range de datas estável — único lugar que sabe
- * fazer essa conta. "personalizado" precisa de `criadoEm` porque a meta não
- * tem início próprio: começa a contar da data em que foi criada e vai até a
- * data escolhida pelo usuário (guardada em `chave`, formato "yyyy-MM-dd").
- */
-function rangeDoPeriodo(
-  periodo: MetaPeriodo,
-  chave: string,
-  criadoEm: Date
-): { inicio: Date; fim: Date } {
+/** Separador entre início e fim na `chave` de metas "personalizado" — datas "yyyy-MM-dd" não o contêm. */
+const SEP_PERSONALIZADO = "..";
+
+/** Converte (periodo, chave) num range de datas estável — único lugar que sabe fazer essa conta. */
+function rangeDoPeriodo(periodo: MetaPeriodo, chave: string): { inicio: Date; fim: Date } {
   if (periodo === "mes") {
     const ref = refDoMesSP(chave);
     return { inicio: spStartOfMonth(ref), fim: spEndOfMonth(ref) };
@@ -82,15 +76,18 @@ function rangeDoPeriodo(
     return { inicio: spStartOfMonth(ref), fim: spEndOfMonth(spAddMonths(ref, 2)) };
   }
   if (periodo === "personalizado") {
-    return { inicio: spStartOfDay(criadoEm), fim: spEndOfDay(refDoDiaSP(chave)) };
+    // Início e fim escolhidos pelo usuário, guardados juntos em `chave`
+    // como "yyyy-MM-dd..yyyy-MM-dd" (não depende de quando a meta foi criada).
+    const [inicioChave, fimChave] = chave.split(SEP_PERSONALIZADO);
+    return { inicio: spStartOfDay(refDoDiaSP(inicioChave)), fim: spEndOfDay(refDoDiaSP(fimChave)) };
   }
   const ref = refDoAnoSP(chave);
   return { inicio: spStartOfYear(ref), fim: spEndOfYear(ref) };
 }
 
-function periodoLabelDe(periodo: MetaPeriodo, chave: string, criadoEm: Date): string {
+function periodoLabelDe(periodo: MetaPeriodo, chave: string): string {
   if (periodo === "mes") {
-    const { inicio } = rangeDoPeriodo(periodo, chave, criadoEm);
+    const { inicio } = rangeDoPeriodo(periodo, chave);
     return inicio.toLocaleDateString("pt-BR", { month: "long", year: "numeric", timeZone: "America/Sao_Paulo" });
   }
   if (periodo === "trimestre") {
@@ -98,12 +95,12 @@ function periodoLabelDe(periodo: MetaPeriodo, chave: string, criadoEm: Date): st
     return `${q}º trimestre de ${ano}`;
   }
   if (periodo === "trimestre_movel") {
-    const { inicio, fim } = rangeDoPeriodo(periodo, chave, criadoEm);
+    const { inicio, fim } = rangeDoPeriodo(periodo, chave);
     return `${fmtSP(inicio, "MMM")} – ${fmtSP(fim, "MMM 'de' yyyy")}`;
   }
   if (periodo === "personalizado") {
-    const { fim } = rangeDoPeriodo(periodo, chave, criadoEm);
-    return `até ${fmtSP(fim, "d 'de' MMM 'de' yyyy")}`;
+    const { inicio, fim } = rangeDoPeriodo(periodo, chave);
+    return `${fmtSP(inicio, "d MMM")} – ${fmtSP(fim, "d MMM 'de' yyyy")}`;
   }
   return chave;
 }
@@ -366,9 +363,7 @@ export async function metasQuantitativas(
   });
   if (metas.length === 0) return [];
 
-  const ranges = metas.map((m) =>
-    rangeDoPeriodo(m.periodo as MetaPeriodo, m.chave, m.criadoEm)
-  );
+  const ranges = metas.map((m) => rangeDoPeriodo(m.periodo as MetaPeriodo, m.chave));
   const atuais = new Array<number>(metas.length);
 
   // origem="metrica": agrupa por métrica pra fazer 1 leva de queries por
@@ -447,7 +442,7 @@ export async function metasQuantitativas(
       pct,
       periodo,
       chave: m.chave,
-      periodoLabel: periodoLabelDe(periodo, m.chave, m.criadoEm),
+      periodoLabel: periodoLabelDe(periodo, m.chave),
       diasRestantes,
       noPrazo,
     };

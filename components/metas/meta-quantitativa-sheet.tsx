@@ -45,9 +45,15 @@ function chaveAtual(periodo: MetaPeriodo): string {
   return yearKeySP(agora);
 }
 
-/** Sugestão inicial pro seletor de data: hoje + 30 dias. */
-function dataFimSugerida(): string {
-  return dayKeySP(new Date(nowSP().getTime() + 30 * 24 * 60 * 60 * 1000));
+const SEP_PERSONALIZADO = "..";
+
+/** Sugestão inicial pros seletores de data: hoje até hoje + 30 dias. */
+function periodoPersonalizadoSugerido(): { inicio: string; fim: string } {
+  const agora = nowSP();
+  return {
+    inicio: dayKeySP(agora),
+    fim: dayKeySP(new Date(agora.getTime() + 30 * 24 * 60 * 60 * 1000)),
+  };
 }
 
 export function MetaQuantitativaSheet({
@@ -68,9 +74,13 @@ export function MetaQuantitativaSheet({
   const [variavelId, setVariavelId] = useState(editando?.variavelId ?? variaveis[0]?.id ?? "");
   const [alvo, setAlvo] = useState(editando?.alvo ?? 0);
   const [periodo, setPeriodo] = useState<MetaPeriodo>(editando?.periodo ?? "mes");
-  const [dataFim, setDataFim] = useState(
-    editando?.periodo === "personalizado" ? editando.chave : dataFimSugerida()
+  const personalizadoSugerido = periodoPersonalizadoSugerido();
+  const personalizadoEditando =
+    editando?.periodo === "personalizado" ? editando.chave.split(SEP_PERSONALIZADO) : null;
+  const [dataInicio, setDataInicio] = useState(
+    personalizadoEditando?.[0] ?? personalizadoSugerido.inicio
   );
+  const [dataFim, setDataFim] = useState(personalizadoEditando?.[1] ?? personalizadoSugerido.fim);
 
   const metricaInfo = METRICAS.find((m) => m.value === metrica)!;
   const variavelInfo = variaveis.find((v) => v.id === variavelId);
@@ -78,7 +88,7 @@ export function MetaQuantitativaSheet({
     titulo.trim().length > 0 &&
     alvo > 0 &&
     (origem === "metrica" || (origem === "variavel" && !!variavelId)) &&
-    (periodo !== "personalizado" || !!dataFim);
+    (periodo !== "personalizado" || (!!dataInicio && !!dataFim && dataInicio <= dataFim));
 
   function salvar() {
     const payload: MetaQuantitativaInput = {
@@ -88,7 +98,10 @@ export function MetaQuantitativaSheet({
       variavelId: origem === "variavel" ? variavelId : null,
       alvo,
       periodo,
-      chave: periodo === "personalizado" ? dataFim : editando?.chave ?? chaveAtual(periodo),
+      chave:
+        periodo === "personalizado"
+          ? `${dataInicio}${SEP_PERSONALIZADO}${dataFim}`
+          : editando?.chave ?? chaveAtual(periodo),
     };
 
     executar(async () => {
@@ -225,14 +238,26 @@ export function MetaQuantitativaSheet({
           </div>
 
           {periodo === "personalizado" && (
-            <div>
-              <Label htmlFor="dataFim">Data final</Label>
-              <Input
-                id="dataFim"
-                type="date"
-                value={dataFim}
-                onChange={(e) => setDataFim(e.target.value)}
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="dataInicio">Data inicial</Label>
+                <Input
+                  id="dataInicio"
+                  type="date"
+                  value={dataInicio}
+                  onChange={(e) => setDataInicio(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label htmlFor="dataFim">Data final</Label>
+                <Input
+                  id="dataFim"
+                  type="date"
+                  value={dataFim}
+                  min={dataInicio || undefined}
+                  onChange={(e) => setDataFim(e.target.value)}
+                />
+              </div>
             </div>
           )}
 
