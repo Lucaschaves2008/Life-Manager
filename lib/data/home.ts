@@ -15,6 +15,7 @@ import {
   spStartOfWeek,
   timeHM,
 } from "@/lib/dates";
+import { macrosDaReceita, receitaInclude } from "@/lib/data/dieta";
 import { expandEvents } from "@/lib/recurrence";
 import { parseJSON } from "@/lib/utils";
 
@@ -194,29 +195,17 @@ export type KcalHoje = {
 type ExtraLog = { nome: string; kcal: number; prot: number; carb: number; gord: number };
 type EscolhaLog = { mealId: string; optionId: string };
 
-type MealItemLike = {
-  quantidade: number;
-  unidade: string;
-  food: { kcal100: number | null; porcaoG: number | null };
-};
+type ReceitaLike = Parameters<typeof macrosDaReceita>[0];
 type MealComOpcoes = {
   id: string;
-  options: { id: string; items: MealItemLike[] }[];
+  options: { id: string; recipe: ReceitaLike }[];
 };
 
-/** kcal de um MealItem a partir do Food. */
-function kcalDoItem(item: MealItemLike): number {
-  const kcal100 = item.food.kcal100 ?? 0;
-  const gramas =
-    item.unidade === "porcao"
-      ? item.quantidade * (item.food.porcaoG ?? 100)
-      : item.quantidade;
-  return (kcal100 * gramas) / 100;
-}
-
 /**
- * kcal das refeições cumpridas num dia: para cada meal cumprida, soma os itens
- * da OPÇÃO escolhida (sem escolha → não conta, coerente com diaDaDieta).
+ * kcal das refeições cumpridas num dia: para cada meal cumprida, os macros da
+ * refeição da OPÇÃO escolhida (sem escolha → não conta, coerente com
+ * diaDaDieta). O cálculo é o mesmo de /dieta — macrosDaReceita respeita os
+ * macros informados na mão, então os dois lugares nunca divergem.
  */
 function kcalDoLog(
   meals: MealComOpcoes[],
@@ -231,7 +220,7 @@ function kcalDoLog(
     if (!optionId) continue;
     const opcao = meal.options.find((o) => o.id === optionId);
     if (!opcao) continue;
-    for (const item of opcao.items) kcal += kcalDoItem(item);
+    kcal += macrosDaReceita(opcao.recipe).kcal;
   }
   return kcal;
 }
@@ -252,7 +241,9 @@ async function kcalDoDia(userId: string, dia: string): Promise<KcalHoje> {
   const dieta = await db.diet.findFirst({
     where: { userId, ativa: true },
     include: {
-      meals: { include: { options: { include: { items: { include: { food: true } } } } } },
+      meals: {
+        include: { options: { include: { recipe: { include: receitaInclude } } } },
+      },
     },
   });
   const log = await db.dietDayLog.findFirst({
@@ -287,7 +278,9 @@ async function mediaKcal7dDoDia(userId: string, dia: string): Promise<number> {
   const dieta = await db.diet.findFirst({
     where: { userId, ativa: true },
     include: {
-      meals: { include: { options: { include: { items: { include: { food: true } } } } } },
+      meals: {
+        include: { options: { include: { recipe: { include: receitaInclude } } } },
+      },
     },
   });
   if (!dieta) return 0;

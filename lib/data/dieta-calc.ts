@@ -38,3 +38,54 @@ export function erroCoerenciaMacros(entrada: MacrosEntrada): string | null {
   }
   return null;
 }
+
+// ---------- Ingredientes ----------
+
+/** Unidades aceitas num ingrediente. "ml" conta como grama (≈1 g/ml). */
+export const UNIDADES = [
+  { valor: "g", label: "gramas" },
+  { valor: "ml", label: "ml" },
+  { valor: "porcao", label: "porções" },
+] as const;
+
+const numero = (n: number) =>
+  n.toLocaleString("pt-BR", { maximumFractionDigits: 2 });
+
+/**
+ * Plural da medida caseira, só na primeira palavra: "colher de sopa" →
+ * "colheres de sopa", "unidade" → "unidades". Cobre o que aparece numa cozinha;
+ * o resto cai no acréscimo de "s", que erra pouco e nunca quebra a leitura.
+ */
+export function pluralPorcao(nome: string): string {
+  const [primeira, ...resto] = nome.trim().split(" ");
+  if (!primeira) return nome;
+  const plural = /r$|z$/i.test(primeira)
+    ? `${primeira}es`
+    : /s$/i.test(primeira)
+      ? primeira
+      : /(ão)$/i.test(primeira)
+        ? primeira.replace(/ão$/i, "ões")
+        : /l$/i.test(primeira)
+          ? primeira.replace(/l$/i, "is")
+          : `${primeira}s`;
+  return [plural, ...resto].join(" ");
+}
+
+export type IngredienteLike = {
+  nome: string;
+  /** null = "a gosto" — entra na lista sem somar macro. */
+  quantidade: number | null;
+  unidade: string;
+  porcaoNome: string | null;
+};
+
+/** "2 colheres de sopa de requeijão", "60 g de aveia", "sal a gosto". */
+export function rotuloIngrediente(item: IngredienteLike): string {
+  const { nome, quantidade, unidade, porcaoNome } = item;
+  if (quantidade == null) return `${nome} a gosto`;
+  if (unidade === "porcao") {
+    const medida = porcaoNome?.trim() || "porção";
+    return `${numero(quantidade)} ${quantidade > 1 ? pluralPorcao(medida) : medida} de ${nome}`;
+  }
+  return `${numero(quantidade)} ${unidade === "ml" ? "ml" : "g"} de ${nome}`;
+}

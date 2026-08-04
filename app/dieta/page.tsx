@@ -14,6 +14,7 @@ import {
 } from "@/components/dieta/hoje-client";
 import { MacroBars } from "@/components/dieta/macro-bars";
 import { PlanoClient, type DietaView } from "@/components/dieta/plano-client";
+import { ReceitasClient } from "@/components/dieta/receitas-client";
 import {
   PesoChart,
   PesoClient,
@@ -22,10 +23,12 @@ import {
 import { LembretePesoCard } from "@/components/dieta/lembrete-peso-client";
 import {
   aderencia7d,
+  bibliotecaDeReceitas,
   diaDaDieta,
   evolucaoPeso,
-  macrosDaRefeicao,
   macrosZero,
+  opcaoView,
+  receitaInclude,
   somaMacros,
   streakDieta,
 } from "@/lib/data/dieta";
@@ -39,6 +42,7 @@ export const dynamic = "force-dynamic";
 const tabs = [
   { label: "Hoje", href: "/dieta", value: "hoje" },
   { label: "Plano alimentar", href: "/dieta?tab=plano", value: "plano" },
+  { label: "Refeições", href: "/dieta?tab=refeicoes", value: "refeicoes" },
   { label: "Alimentos", href: "/dieta?tab=alimentos", value: "alimentos" },
   { label: "Métricas", href: "/dieta?tab=metricas", value: "metricas" },
 ];
@@ -58,6 +62,7 @@ export default async function Page({
       <PillTabs tabs={tabs} param="tab" />
       {tab === "hoje" && <Hoje userId={user.id} hoje={hoje} />}
       {tab === "plano" && <Plano userId={user.id} />}
+      {tab === "refeicoes" && <Refeicoes userId={user.id} />}
       {tab === "alimentos" && <Alimentos userId={user.id} />}
       {tab === "metricas" && <Metricas userId={user.id} hoje={hoje} />}
     </div>
@@ -155,7 +160,7 @@ async function Hoje({ userId, hoje }: { userId: string; hoje: Date }) {
 }
 
 async function Plano({ userId }: { userId: string }) {
-  const [dietas, alimentos] = await Promise.all([
+  const [dietas, receitas, alimentos] = await Promise.all([
     db.diet.findMany({
       where: { userId },
       orderBy: { nome: "asc" },
@@ -165,29 +170,20 @@ async function Plano({ userId }: { userId: string }) {
           include: {
             options: {
               orderBy: { ordem: "asc" },
-              include: { items: { include: { food: true } } },
+              include: { recipe: { include: receitaInclude } },
             },
           },
         },
       },
     }),
+    bibliotecaDeReceitas(userId),
     db.food.findMany({ where: { userId }, orderBy: { nome: "asc" } }),
   ]);
 
   const view: DietaView[] = dietas.map((d) => {
     const refeicoes = d.meals.map((m) => {
-      const opcoes = m.options.map((o) => ({
-        id: o.id,
-        nome: o.nome,
-        macros: macrosDaRefeicao(o.items),
-        itens: o.items.map((i) => ({
-          id: i.id,
-          nome: i.food.nome,
-          quantidade: i.quantidade,
-          unidade: i.unidade,
-        })),
-      }));
-      // preview da refeição = 1ª opção (referência do plano montado)
+      const opcoes = m.options.map(opcaoView);
+      // preview do horário = 1ª opção (referência do plano montado)
       return {
         id: m.id,
         nome: m.nome,
@@ -211,23 +207,23 @@ async function Plano({ userId }: { userId: string }) {
     };
   });
 
-  return (
-    <PlanoClient
-      dietas={view}
-      alimentos={alimentos.map((a) => ({
-        id: a.id,
-        nome: a.nome,
-        porcaoNome: a.porcaoNome,
-      }))}
-    />
-  );
+  return <PlanoClient dietas={view} receitas={receitas} alimentos={alimentos} />;
+}
+
+async function Refeicoes({ userId }: { userId: string }) {
+  const [receitas, alimentos] = await Promise.all([
+    bibliotecaDeReceitas(userId),
+    db.food.findMany({ where: { userId }, orderBy: { nome: "asc" } }),
+  ]);
+
+  return <ReceitasClient receitas={receitas} alimentos={alimentos} />;
 }
 
 async function Alimentos({ userId }: { userId: string }) {
   const alimentos = await db.food.findMany({
     where: { userId },
     orderBy: { nome: "asc" },
-    include: { _count: { select: { mealItems: true } } },
+    include: { _count: { select: { recipeItems: true } } },
   });
 
   const view: AlimentoView[] = alimentos.map((a) => ({
@@ -239,7 +235,7 @@ async function Alimentos({ userId }: { userId: string }) {
     gord100: a.gord100,
     porcaoNome: a.porcaoNome,
     porcaoG: a.porcaoG,
-    usadoEmRefeicoes: a._count.mealItems,
+    usadoEmRefeicoes: a._count.recipeItems,
   }));
 
   return (

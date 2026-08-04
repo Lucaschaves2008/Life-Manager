@@ -33,13 +33,15 @@ type FoodLike = {
   porcaoG: number | null;
 };
 
-type ItemLike = { quantidade: number; unidade: string; food: FoodLike };
+type ItemLike = { quantidade: number | null; unidade: string; food: FoodLike };
 
 /**
- * Macros de um item: unidade "g" usa a quantidade direto;
+ * Macros de um item: unidade "g" (e "ml", ≈1 g/ml) usa a quantidade direto;
  * "porcao" multiplica pela gramagem da porção. Sempre por 100g.
+ * Quantidade null é "a gosto" (sal, tempero) — não soma nada.
  */
 export function macrosDoItem(item: ItemLike): Macros {
+  if (item.quantidade == null) return macrosZero;
   const gramas =
     item.unidade === "porcao"
       ? item.quantidade * (item.food.porcaoG ?? 100)
@@ -57,6 +59,102 @@ export function macrosDaRefeicao(items: ItemLike[]): Macros {
   return items.map(macrosDoItem).reduce(somaMacros, macrosZero);
 }
 
+type ReceitaLike = {
+  kcalManual: number | null;
+  protManual: number | null;
+  carbManual: number | null;
+  gordManual: number | null;
+  itens: ItemLike[];
+};
+
+/**
+ * Macros da refeição: a soma dos ingredientes, a não ser que o usuário tenha
+ * informado os valores na mão — aí mandam os dele. É o caso das refeições que
+ * são regra e não receita ("2 palmas de proteína + 2 conchas de arroz") e da
+ * comida que ele não pesa.
+ */
+export function macrosDaReceita(receita: ReceitaLike): Macros {
+  if (receita.kcalManual != null) {
+    return {
+      kcal: receita.kcalManual,
+      prot: receita.protManual ?? 0,
+      carb: receita.carbManual ?? 0,
+      gord: receita.gordManual ?? 0,
+    };
+  }
+  return macrosDaRefeicao(receita.itens);
+}
+
+/** Ingrediente já pronto pra tela (ver rotuloIngrediente em dieta-calc). */
+export type IngredienteView = {
+  id: string;
+  foodId: string;
+  nome: string;
+  quantidade: number | null;
+  unidade: string;
+  porcaoNome: string | null;
+};
+
+/** Refeição da biblioteca — existe fora da dieta e é usada por quantas quiser. */
+export type ReceitaView = {
+  id: string;
+  nome: string;
+  descricao: string | null;
+  macros: Macros;
+  /** true quando os macros vieram digitados, não da soma dos ingredientes. */
+  macrosManuais: boolean;
+  ingredientes: IngredienteView[];
+  /** em quantas dietas ela está vinculada agora. */
+  usos: number;
+};
+
+type ItemComFood = ItemLike & {
+  id: string;
+  foodId: string;
+  food: FoodLike & { nome: string; porcaoNome: string | null };
+};
+
+type ReceitaComItens = Omit<ReceitaLike, "itens"> & {
+  id: string;
+  nome: string;
+  descricao: string | null;
+  itens: ItemComFood[];
+};
+
+export function receitaView(receita: ReceitaComItens, usos = 0): ReceitaView {
+  return {
+    id: receita.id,
+    nome: receita.nome,
+    descricao: receita.descricao,
+    macros: macrosDaReceita(receita),
+    macrosManuais: receita.kcalManual != null,
+    ingredientes: receita.itens.map((i) => ({
+      id: i.id,
+      foodId: i.foodId,
+      nome: i.food.nome,
+      quantidade: i.quantidade,
+      unidade: i.unidade,
+      porcaoNome: i.food.porcaoNome,
+    })),
+    usos,
+  };
+}
+
+/** Include padrão pra montar uma ReceitaView (ingredientes na ordem do usuário). */
+export const receitaInclude = {
+  itens: { orderBy: { ordem: "asc" }, include: { food: true } },
+} as const;
+
+/** Biblioteca de refeições do usuário, com quantas dietas usam cada uma. */
+export async function bibliotecaDeReceitas(userId: string): Promise<ReceitaView[]> {
+  const receitas = await db.recipe.findMany({
+    where: { userId },
+    orderBy: { nome: "asc" },
+    include: { ...receitaInclude, _count: { select: { usos: true } } },
+  });
+  return receitas.map((r) => receitaView(r, r._count.usos));
+}
+
 export type ExtraLog = {
   nome: string;
   kcal: number;
@@ -67,11 +165,18 @@ export type ExtraLog = {
 
 export type EscolhaLog = { mealId: string; optionId: string };
 
+/**
+ * Alternativa de um horário da dieta: o vínculo (MealOption) achatado com a
+ * refeição da biblioteca que ele aponta. `id` é o do VÍNCULO — é ele que o dia
+ * grava em DietDayLog.escolhas.
+ */
 export type OpcaoView = {
   id: string;
+  receitaId: string;
   nome: string;
+  descricao: string | null;
   macros: Macros;
-  itens: { id: string; nome: string; quantidade: number; unidade: string }[];
+  ingredientes: IngredienteView[];
 };
 
 export type RefeicaoView = {
@@ -83,9 +188,22 @@ export type RefeicaoView = {
   /** id da opção comida hoje (null = ainda não escolhida). */
   escolhaId: string | null;
   opcoes: OpcaoView[];
-  /** itens da opção escolhida (ou da 1ª) — compat com quem lê itens direto. */
-  itens: { id: string; nome: string; quantidade: number; unidade: string }[];
+  /** ingredientes da opção escolhida (ou da 1ª) — atalho pra quem só lê a lista. */
+  ingredientes: IngredienteView[];
 };
+
+/** Vínculo → OpcaoView, com a refeição da biblioteca achatada dentro. */
+export function opcaoView(opcao: { id: string; recipe: ReceitaComItens }): OpcaoView {
+  const receita = receitaView(opcao.recipe);
+  return {
+    id: opcao.id,
+    receitaId: receita.id,
+    nome: receita.nome,
+    descricao: receita.descricao,
+    macros: receita.macros,
+    ingredientes: receita.ingredientes,
+  };
+}
 
 export type DiaDaDieta = {
   data: string;
@@ -125,7 +243,7 @@ async function diaDaDietaDoDia(userId: string, dia: string): Promise<DiaDaDieta>
           include: {
             options: {
               orderBy: { ordem: "asc" },
-              include: { items: { include: { food: true } } },
+              include: { recipe: { include: receitaInclude } },
             },
           },
         },
@@ -145,17 +263,7 @@ async function diaDaDietaDoDia(userId: string, dia: string): Promise<DiaDaDieta>
   const escolhaPorMeal = new Map(escolhas.map((e) => [e.mealId, e.optionId]));
 
   const refeicoes: RefeicaoView[] = (dieta?.meals ?? []).map((meal) => {
-    const opcoes: OpcaoView[] = meal.options.map((o) => ({
-      id: o.id,
-      nome: o.nome,
-      macros: macrosDaRefeicao(o.items),
-      itens: o.items.map((i) => ({
-        id: i.id,
-        nome: i.food.nome,
-        quantidade: i.quantidade,
-        unidade: i.unidade,
-      })),
-    }));
+    const opcoes: OpcaoView[] = meal.options.map(opcaoView);
 
     const escolhaId = escolhaPorMeal.get(meal.id) ?? null;
     // opção efetiva p/ exibição: a escolhida hoje, senão a 1ª (preview)
@@ -169,7 +277,7 @@ async function diaDaDietaDoDia(userId: string, dia: string): Promise<DiaDaDieta>
       macros: efetiva?.macros ?? macrosZero,
       escolhaId,
       opcoes,
-      itens: efetiva?.itens ?? [],
+      ingredientes: efetiva?.ingredientes ?? [],
     };
   });
 

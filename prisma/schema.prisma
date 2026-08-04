@@ -231,18 +231,61 @@ model AssetMovement {
 }
 
 model Food {
-  id         String     @id @default(cuid())
-  userId     String
-  nome       String
-  kcal100    Float?
-  prot100    Float?
-  carb100    Float?
-  gord100    Float?
-  porcaoNome String?
-  porcaoG    Float?
-  mealItems  MealItem[]
+  id          String       @id @default(cuid())
+  userId      String
+  nome        String
+  kcal100     Float?
+  prot100     Float?
+  carb100     Float?
+  gord100     Float?
+  porcaoNome  String?
+  porcaoG     Float?
+  recipeItems RecipeItem[]
 
   @@index([userId])
+}
+
+/// Refeição da biblioteca do usuário: nome, ingredientes e o modo de preparo.
+/// Vive FORA da dieta de propósito — a mesma "Panqueca proteica" pode estar na
+/// dieta de ganho de massa e, meses depois, na de perda, sem cópia nem perda do
+/// histórico (a dieta aponta pra ela via MealOption).
+model Recipe {
+  id        String  @id @default(cuid())
+  userId    String
+  nome      String
+  /// Modo de preparo em texto livre (uma linha por passo).
+  descricao String?
+  /// Macros informados na mão. Quando kcalManual != null, mandam sobre a soma
+  /// dos ingredientes — serve pras refeições que são REGRA e não receita
+  /// ("2 palmas de proteína + 2 conchas de arroz") e pra comida de rua.
+  kcalManual Float?
+  protManual Float?
+  carbManual Float?
+  gordManual Float?
+
+  itens RecipeItem[]
+  usos  MealOption[]
+
+  @@index([userId])
+}
+
+model RecipeItem {
+  id String @id @default(cuid())
+
+  userId String
+  /// null = "a gosto" (sal, pimenta, manteiga da frigideira): entra na lista
+  /// de ingredientes sem somar macro nenhum.
+  quantidade Float?
+  unidade    String @default("g")
+  ordem      Int    @default(0)
+  recipeId   String
+  foodId     String
+  recipe     Recipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  food       Food   @relation(fields: [foodId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([recipeId])
+  @@index([foodId])
 }
 
 model Diet {
@@ -259,6 +302,8 @@ model Diet {
   @@index([userId])
 }
 
+// Horário da dieta ("Café da manhã", 07:30). É o slot: quem tem o conteúdo são
+// as refeições da biblioteca vinculadas nele (options).
 model Meal {
   id      String       @id @default(cuid())
   userId  String
@@ -267,44 +312,27 @@ model Meal {
   ordem   Int          @default(0)
   dietId  String
   diet    Diet         @relation(fields: [dietId], references: [id], onDelete: Cascade)
-  items   MealItem[] // itens "soltos" (pré-opções) — migrados p/ options no backfill
   options MealOption[] // no máx. 4 por refeição (validado na action)
 
   @@index([userId])
   @@index([dietId])
 }
 
-// Opção de uma refeição: "Opção A/B/C" com sua própria lista de alimentos.
-// No check-in do dia o usuário escolhe qual opção comeu (DietDayLog.escolhas).
+// Vínculo entre um horário da dieta e uma refeição da biblioteca — a
+// "alternativa A/B/C" daquele horário. No check-in do dia o usuário escolhe
+// qual comeu (DietDayLog.escolhas guarda mealId + optionId).
 model MealOption {
-  id     String     @id @default(cuid())
-  userId String
-  nome   String
-  ordem  Int        @default(0)
-  mealId String
-  meal   Meal       @relation(fields: [mealId], references: [id], onDelete: Cascade)
-  items  MealItem[]
+  id       String @id @default(cuid())
+  userId   String
+  ordem    Int    @default(0)
+  mealId   String
+  recipeId String
+  meal     Meal   @relation(fields: [mealId], references: [id], onDelete: Cascade)
+  recipe   Recipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([mealId])
-}
-
-model MealItem {
-  id         String      @id @default(cuid())
-  userId     String
-  quantidade Float
-  unidade    String      @default("g")
-  mealId     String
-  foodId     String
-  optionId   String? // opção a que o item pertence (null = legado pré-backfill)
-  food       Food        @relation(fields: [foodId], references: [id], onDelete: Cascade)
-  meal       Meal        @relation(fields: [mealId], references: [id], onDelete: Cascade)
-  option     MealOption? @relation(fields: [optionId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([mealId])
-  @@index([foodId])
-  @@index([optionId])
+  @@index([recipeId])
 }
 
 model DietDayLog {

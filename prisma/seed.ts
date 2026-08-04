@@ -43,7 +43,9 @@ async function main() {
   await db.routineExercise.deleteMany({ where: { userId } });
   await db.routine.deleteMany({ where: { userId } });
   await db.run.deleteMany({ where: { userId } });
-  await db.mealItem.deleteMany({ where: { userId } });
+  await db.recipeItem.deleteMany({ where: { userId } });
+  await db.mealOption.deleteMany({ where: { userId } });
+  await db.recipe.deleteMany({ where: { userId } });
   await db.meal.deleteMany({ where: { userId } });
   await db.diet.deleteMany({ where: { userId } });
   await db.food.deleteMany({ where: { userId } });
@@ -322,70 +324,115 @@ async function main() {
     },
   });
 
+  // Cada horário da dieta recebe uma refeição da biblioteca (Recipe) via
+  // vínculo (MealOption) — é a mesma estrutura que a tela monta.
   const mkMeal = async (
     nome: string,
     horario: string,
     ordem: number,
-    items: { food: { id: string }; quantidade: number; unidade?: string }[]
-  ) => {
-    const meal = await db.meal.create({
-      data: { userId, nome, horario, ordem, dietId: diet.id },
-    });
-    for (const it of items) {
-      await db.mealItem.create({
-        data: {
-          userId,
-          mealId: meal.id,
-          foodId: it.food.id,
-          quantidade: it.quantidade,
-          unidade: it.unidade ?? "g",
-        },
-      });
+    receita: {
+      nome: string;
+      descricao: string;
+      itens: { food: { id: string }; quantidade: number; unidade?: string }[];
     }
-    return meal;
+  ) => {
+    const recipe = await db.recipe.create({
+      data: {
+        userId,
+        nome: receita.nome,
+        descricao: receita.descricao,
+        itens: {
+          create: receita.itens.map((it, i) => ({
+            userId,
+            foodId: it.food.id,
+            quantidade: it.quantidade,
+            unidade: it.unidade ?? "g",
+            ordem: i,
+          })),
+        },
+      },
+    });
+    const meal = await db.meal.create({
+      data: {
+        userId,
+        nome,
+        horario,
+        ordem,
+        dietId: diet.id,
+        options: { create: { userId, recipeId: recipe.id, ordem: 0 } },
+      },
+      include: { options: true },
+    });
+    return { id: meal.id, optionId: meal.options[0].id };
   };
 
-  const cafe = await mkMeal("Café da manhã", "07:00", 0, [
-    { food: foods.ovo, quantidade: 3, unidade: "porcao" },
-    { food: foods.aveia, quantidade: 50 },
-    { food: foods.banana, quantidade: 1, unidade: "porcao" },
-  ]);
-  const almoco = await mkMeal("Almoço", "12:30", 1, [
-    { food: foods.arroz, quantidade: 200 },
-    { food: foods.feijao, quantidade: 100 },
-    { food: foods.frango, quantidade: 180 },
-    { food: foods.brocolis, quantidade: 100 },
-    { food: foods.azeite, quantidade: 1, unidade: "porcao" },
-  ]);
-  const lanche = await mkMeal("Lanche da tarde", "16:00", 2, [
-    { food: foods.whey, quantidade: 1, unidade: "porcao" },
-    { food: foods.paoIntegral, quantidade: 2, unidade: "porcao" },
-    { food: foods.castanha, quantidade: 20 },
-  ]);
-  const jantar = await mkMeal("Jantar", "20:00", 3, [
-    { food: foods.batataDoce, quantidade: 200 },
-    { food: foods.tilapia, quantidade: 200 },
-    { food: foods.brocolis, quantidade: 100 },
-  ]);
-  const ceia = await mkMeal("Ceia", "22:30", 4, [
-    { food: foods.iogurte, quantidade: 200 },
-    { food: foods.castanha, quantidade: 15 },
-  ]);
+  const cafe = await mkMeal("Café da manhã", "07:00", 0, {
+    nome: "Ovos com aveia e banana",
+    descricao:
+      "Bate a aveia com a banana amassada e leva na frigideira em fogo baixo.\nOs ovos vão mexidos, na manteiga, fora do fogo no final.",
+    itens: [
+      { food: foods.ovo, quantidade: 3, unidade: "porcao" },
+      { food: foods.aveia, quantidade: 50 },
+      { food: foods.banana, quantidade: 1, unidade: "porcao" },
+    ],
+  });
+  const almoco = await mkMeal("Almoço", "12:30", 1, {
+    nome: "Prato do dia: frango, arroz e feijão",
+    descricao:
+      "Regra do prato: metade de salada e legumes, 2 palmas de proteína, 2 conchas de arroz e 1 de feijão.",
+    itens: [
+      { food: foods.arroz, quantidade: 200 },
+      { food: foods.feijao, quantidade: 100 },
+      { food: foods.frango, quantidade: 180 },
+      { food: foods.brocolis, quantidade: 100 },
+      { food: foods.azeite, quantidade: 1, unidade: "porcao" },
+    ],
+  });
+  const lanche = await mkMeal("Lanche da tarde", "16:00", 2, {
+    nome: "Shake de whey com pão integral",
+    descricao: "Whey batido com gelo e água. As castanhas entram no lugar da fome de doce.",
+    itens: [
+      { food: foods.whey, quantidade: 1, unidade: "porcao" },
+      { food: foods.paoIntegral, quantidade: 2, unidade: "porcao" },
+      { food: foods.castanha, quantidade: 20 },
+    ],
+  });
+  const jantar = await mkMeal("Jantar", "20:00", 3, {
+    nome: "Tilápia com batata-doce",
+    descricao: "Tilápia na frigideira, 3 minutos de cada lado. Batata-doce cozida do domingo.",
+    itens: [
+      { food: foods.batataDoce, quantidade: 200 },
+      { food: foods.tilapia, quantidade: 200 },
+      { food: foods.brocolis, quantidade: 100 },
+    ],
+  });
+  const ceia = await mkMeal("Ceia", "22:30", 4, {
+    nome: "Iogurte com castanhas",
+    descricao: "Só montar na tigela. Serve pra segurar a fome antes de dormir.",
+    itens: [
+      { food: foods.iogurte, quantidade: 200 },
+      { food: foods.castanha, quantidade: 15 },
+    ],
+  });
 
   // 10 dias de diário (7–16 de julho)
-  const mealIds = [cafe.id, almoco.id, lanche.id, jantar.id, ceia.id];
+  const refeicoes = [cafe, almoco, lanche, jantar, ceia];
   for (let dia = 7; dia <= 16; dia++) {
     const cumpre =
       dia === 12
-        ? mealIds.slice(0, 3) // domingo: furou o plano
+        ? refeicoes.slice(0, 3) // domingo: furou o plano
         : dia === 16
-          ? mealIds.slice(0, 2) // hoje: dia em andamento
-          : mealIds.slice(0, 4 + (dia % 2)); // 4 ou 5 refeições
+          ? refeicoes.slice(0, 2) // hoje: dia em andamento
+          : refeicoes.slice(0, 4 + (dia % 2)); // 4 ou 5 refeições
     await db.dietDayLog.create({
       data: {
         userId,
         data: spDay(7, dia),
-        refeicoesCumpridas: JSON.stringify(cumpre),
+        refeicoesCumpridas: JSON.stringify(cumpre.map((r) => r.id)),
+        // sem a opção escolhida os macros do dia não fecham (ver diaDaDieta)
+        escolhas: JSON.stringify(
+          cumpre.map((r) => ({ mealId: r.id, optionId: r.optionId }))
+        ),
         extras:
           dia === 11
             ? JSON.stringify([{ nome: "Açaí 300ml", kcal: 380, prot: 5, carb: 72, gord: 8 }])

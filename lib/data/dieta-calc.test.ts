@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { erroCoerenciaMacros, kcalEstimada } from "./dieta-calc";
+import {
+  erroCoerenciaMacros,
+  kcalEstimada,
+  pluralPorcao,
+  rotuloIngrediente,
+} from "./dieta-calc";
 
 describe("kcalEstimada", () => {
   it("aplica a regra de Atwater (4/4/9)", () => {
@@ -30,5 +35,51 @@ describe("erroCoerenciaMacros", () => {
   it("usa piso absoluto de tolerância para entradas pequenas", () => {
     // estimado = 0, tolerância 15% de 0 seria 0 — piso garante alguma folga
     expect(erroCoerenciaMacros({ kcal: 15, prot: 0, carb: 0, gord: 0 })).toBeNull();
+  });
+});
+
+describe("pluralPorcao", () => {
+  it("pluraliza só a primeira palavra da medida", () => {
+    expect(pluralPorcao("colher de sopa")).toBe("colheres de sopa");
+    expect(pluralPorcao("fatia")).toBe("fatias");
+    expect(pluralPorcao("unidade")).toBe("unidades");
+    expect(pluralPorcao("concha")).toBe("conchas");
+  });
+});
+
+describe("rotuloIngrediente", () => {
+  const base = { nome: "Requeijão cremoso", porcaoNome: "colher de sopa" };
+
+  it("usa a medida caseira no plural quando é mais de uma", () => {
+    expect(rotuloIngrediente({ ...base, quantidade: 2, unidade: "porcao" })).toBe(
+      "2 colheres de sopa de Requeijão cremoso"
+    );
+  });
+
+  it("mantém no singular quando é uma só", () => {
+    expect(rotuloIngrediente({ ...base, quantidade: 1, unidade: "porcao" })).toBe(
+      "1 colher de sopa de Requeijão cremoso"
+    );
+  });
+
+  it("cai em “porção” quando o alimento não tem medida caseira", () => {
+    expect(
+      rotuloIngrediente({ nome: "Aveia", porcaoNome: null, quantidade: 2, unidade: "porcao" })
+    ).toBe("2 porções de Aveia");
+  });
+
+  it("escreve gramas e ml direto", () => {
+    expect(
+      rotuloIngrediente({ nome: "Aveia", porcaoNome: null, quantidade: 60, unidade: "g" })
+    ).toBe("60 g de Aveia");
+    expect(
+      rotuloIngrediente({ nome: "Suco", porcaoNome: null, quantidade: 300, unidade: "ml" })
+    ).toBe("300 ml de Suco");
+  });
+
+  it("quantidade vazia vira “a gosto” (sal, tempero)", () => {
+    expect(
+      rotuloIngrediente({ nome: "Sal", porcaoNome: null, quantidade: null, unidade: "g" })
+    ).toBe("Sal a gosto");
   });
 });

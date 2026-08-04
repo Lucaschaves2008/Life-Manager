@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { useAcao } from "@/lib/acao-cliente";
 import { useRouter, useSearchParams } from "next/navigation";
-import { GlassWater, Plus, Trash2, UtensilsCrossed } from "lucide-react";
+import { ChevronDown, GlassWater, Plus, Trash2, UtensilsCrossed } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -18,7 +18,8 @@ import {
   setNotas,
   toggleRefeicaoCumprida,
 } from "@/app/actions/dieta";
-import type { DiaDaDieta, ExtraLog } from "@/lib/data/dieta";
+import { rotuloIngrediente } from "@/lib/data/dieta-calc";
+import type { DiaDaDieta, ExtraLog, OpcaoView } from "@/lib/data/dieta";
 import { cn } from "@/lib/utils";
 
 export function RefeicoesClient({ dia }: { dia: DiaDaDieta }) {
@@ -101,18 +102,12 @@ export function RefeicoesClient({ dia }: { dia: DiaDaDieta }) {
                       {Math.round(r.macros.kcal)} kcal · P {Math.round(r.macros.prot)}g ·
                       C {Math.round(r.macros.carb)}g · G {Math.round(r.macros.gord)}g
                     </p>
-                    {opcaoUnica && opcaoUnica.itens.length > 0 && (
+                    {opcaoUnica && opcaoUnica.ingredientes.length > 0 && (
                       <p className="mt-1.5 text-[12px] text-mist">
-                        {opcaoUnica.itens
-                          .map(
-                            (i) =>
-                              `${i.quantidade.toLocaleString("pt-BR", {
-                                maximumFractionDigits: 0,
-                              })}${i.unidade === "g" ? " g" : "×"} ${i.nome}`
-                          )
-                          .join(" · ")}
+                        {opcaoUnica.ingredientes.map(rotuloIngrediente).join(" · ")}
                       </p>
                     )}
+                    {opcaoUnica && <Preparo opcao={opcaoUnica} />}
                   </>
                 ) : (
                   <>
@@ -123,44 +118,51 @@ export function RefeicoesClient({ dia }: { dia: DiaDaDieta }) {
                       {r.opcoes.map((o) => {
                         const sel = escolhida === o.id;
                         return (
-                          <button
+                          <div
                             key={o.id}
-                            onClick={() => escolher(r.id, sel ? null : o.id)}
                             className={cn(
-                              "flex items-center justify-between gap-3 rounded-[10px] border px-3 py-2 text-left transition-colors",
+                              "rounded-[10px] border px-3 py-2 transition-colors",
                               sel
                                 ? "border-[var(--mint-border)] bg-surface-1"
                                 : "border-stroke bg-surface-1 hover:border-[var(--mint-border)]"
                             )}
                           >
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2">
-                                <span
-                                  className={cn(
-                                    "grid h-3.5 w-3.5 shrink-0 place-items-center rounded-full border",
-                                    sel
-                                      ? "border-mint bg-mint"
-                                      : "border-steel bg-transparent"
-                                  )}
-                                >
-                                  {sel && (
-                                    <span className="h-1.5 w-1.5 rounded-full bg-surface-1" />
-                                  )}
-                                </span>
-                                <span className="truncate text-[12.5px] text-ice">
-                                  {o.nome}
-                                </span>
+                            <button
+                              onClick={() => escolher(r.id, sel ? null : o.id)}
+                              className="flex w-full items-center justify-between gap-3 text-left"
+                            >
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className={cn(
+                                      "grid h-3.5 w-3.5 shrink-0 place-items-center rounded-full border",
+                                      sel
+                                        ? "border-mint bg-mint"
+                                        : "border-steel bg-transparent"
+                                    )}
+                                  >
+                                    {sel && (
+                                      <span className="h-1.5 w-1.5 rounded-full bg-surface-1" />
+                                    )}
+                                  </span>
+                                  <span className="truncate text-[12.5px] text-ice">
+                                    {o.nome}
+                                  </span>
+                                </div>
+                                {o.ingredientes.length > 0 && (
+                                  <p className="mt-0.5 truncate pl-5 text-[11px] text-mist">
+                                    {o.ingredientes.map((i) => i.nome).join(" · ")}
+                                  </p>
+                                )}
                               </div>
-                              {o.itens.length > 0 && (
-                                <p className="mt-0.5 truncate pl-5 text-[11px] text-mist">
-                                  {o.itens.map((i) => i.nome).join(" · ")}
-                                </p>
-                              )}
+                              <span className="tabular shrink-0 text-[11px] text-steel">
+                                {Math.round(o.macros.kcal)} kcal
+                              </span>
+                            </button>
+                            <div className="pl-5">
+                              <Preparo opcao={o} />
                             </div>
-                            <span className="tabular shrink-0 text-[11px] text-steel">
-                              {Math.round(o.macros.kcal)} kcal
-                            </span>
-                          </button>
+                          </div>
                         );
                       })}
                     </div>
@@ -172,6 +174,40 @@ export function RefeicoesClient({ dia }: { dia: DiaDaDieta }) {
         );
       })}
     </div>
+  );
+}
+
+/**
+ * O modo de preparo na hora de comer — fechado por padrão, porque na maioria
+ * dos dias ele já sabe fazer; aberto, é a receita inteira sem sair da tela.
+ */
+function Preparo({ opcao }: { opcao: OpcaoView }) {
+  const [aberto, setAberto] = useState(false);
+  const passos = (opcao.descricao ?? "").split("\n").filter((l) => l.trim());
+  if (passos.length === 0) return null;
+
+  return (
+    <>
+      <button
+        onClick={() => setAberto((v) => !v)}
+        className="mt-1.5 flex items-center gap-1.5 text-[11.5px] text-steel transition-colors hover:text-ice"
+      >
+        <ChevronDown
+          className={cn("h-3 w-3 transition-transform", aberto && "rotate-180")}
+          strokeWidth={1.5}
+        />
+        {aberto ? "Esconder o preparo" : "Como faz"}
+      </button>
+      {aberto && (
+        <ol className="mt-1.5 flex flex-col gap-1 border-l border-stroke pl-3">
+          {passos.map((passo, i) => (
+            <li key={i} className="text-[11.5px] leading-relaxed text-mist">
+              {passo}
+            </li>
+          ))}
+        </ol>
+      )}
+    </>
   );
 }
 

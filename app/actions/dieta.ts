@@ -264,6 +264,11 @@ export async function deleteDieta(id: string) {
   revalidar(userId);
 }
 
+/**
+ * Copia a dieta com seus horários e vínculos. As refeições NÃO são duplicadas:
+ * a cópia aponta pras mesmas da biblioteca — é o ponto da biblioteca. Editar o
+ * preparo da panqueca conserta as duas dietas de uma vez.
+ */
 export async function duplicarDieta(id: string) {
   const { id: userId } = await requireUser();
   const dieta = await db.diet.findFirst({
@@ -271,17 +276,13 @@ export async function duplicarDieta(id: string) {
     include: {
       meals: {
         orderBy: { ordem: "asc" },
-        include: {
-          options: { orderBy: { ordem: "asc" }, include: { items: true } },
-        },
+        include: { options: { orderBy: { ordem: "asc" } } },
       },
     },
   });
   if (!dieta) return;
 
-  // Cria a dieta e as refeições primeiro; depois opções e itens em passos, pois
-  // MealItem precisa de mealId + optionId concretos (não dá pra aninhar tudo).
-  const nova = await db.diet.create({
+  await db.diet.create({
     data: {
       userId,
       nome: `${dieta.nome} (cópia)`,
@@ -290,31 +291,23 @@ export async function duplicarDieta(id: string) {
       metaProt: dieta.metaProt,
       metaCarb: dieta.metaCarb,
       metaGord: dieta.metaGord,
+      meals: {
+        create: dieta.meals.map((m) => ({
+          userId,
+          nome: m.nome,
+          horario: m.horario,
+          ordem: m.ordem,
+          options: {
+            create: m.options.map((o) => ({
+              userId,
+              recipeId: o.recipeId,
+              ordem: o.ordem,
+            })),
+          },
+        })),
+      },
     },
   });
-
-  for (const m of dieta.meals) {
-    const novaMeal = await db.meal.create({
-      data: { userId, dietId: nova.id, nome: m.nome, horario: m.horario, ordem: m.ordem },
-    });
-    for (const o of m.options) {
-      const novaOpcao = await db.mealOption.create({
-        data: { userId, mealId: novaMeal.id, nome: o.nome, ordem: o.ordem },
-      });
-      if (o.items.length > 0) {
-        await db.mealItem.createMany({
-          data: o.items.map((i) => ({
-            userId,
-            mealId: novaMeal.id,
-            optionId: novaOpcao.id,
-            foodId: i.foodId,
-            quantidade: i.quantidade,
-            unidade: i.unidade,
-          })),
-        });
-      }
-    }
-  }
   revalidar(userId);
 }
 
@@ -328,17 +321,10 @@ export async function createRefeicao(dietId: string, nome: string, horario: stri
   });
   if (!dieta) throw new Error("Recurso não encontrado.");
   const total = await db.meal.count({ where: { userId, dietId } });
-  // Toda refeição nasce com a "Opção 1" pronta, pra o fluxo de itens funcionar
-  // sem obrigar o usuário a criar opção antes.
+  // Nasce vazio: o horário existe, e o usuário pendura nele as refeições da
+  // biblioteca (uma só, ou até MAX_OPCOES alternativas pra escolher no dia).
   await db.meal.create({
-    data: {
-      dietId,
-      nome,
-      horario: horario || null,
-      ordem: total,
-      userId,
-      options: { create: { userId, nome: "Opção 1", ordem: 0 } },
-    },
+    data: { dietId, nome, horario: horario || null, ordem: total, userId },
   });
   revalidar(userId);
 }
@@ -358,99 +344,165 @@ export async function deleteRefeicao(id: string) {
   revalidar(userId);
 }
 
-// ---------- Opções de refeição ----------
+// ---------- Vínculo refeição ↔ horário da dieta ----------
 
-export async function createOption(mealId: string, nome: string) {
+/**
+ * Pendura uma refeição da biblioteca num horário da dieta. Nada é copiado: o
+ * vínculo aponta pra receita, então a mesma panqueca pode estar no bulking e,
+ * meses depois, na dieta de perda, sem recadastrar.
+ */
+export async function vincularReceita(mealId: string, recipeId: string) {
   const { id: userId } = await requireUser();
-  const meal = await db.meal.findFirst({
-    where: { id: mealId, userId },
-    select: { id: true, _count: { select: { options: true } } },
-  });
-  if (!meal) throw new Error("Recurso não encontrado.");
+  const [meal, receita] = await Promise.all([
+    db.meal.findFirst({
+      where: { id: mealId, userId },
+      select: { id: true, _count: { select: { options: true } } },
+    }),
+    db.recipe.findFirst({ where: { id: recipeId, userId }, select: { id: true } }),
+  ]);
+  if (!meal || !receita) throw new Error("Recurso não encontrado.");
   if (meal._count.options >= MAX_OPCOES) {
     throw new Error(`Máximo de ${MAX_OPCOES} opções por refeição.`);
   }
-  const ordem = meal._count.options;
-  const opcao = await db.mealOption.create({
-    data: { mealId, nome: nome.trim() || `Opção ${ordem + 1}`, ordem, userId },
+  const repetida = await db.mealOption.findFirst({
+    where: { mealId, recipeId, userId },
+    select: { id: true },
   });
-  revalidar(userId);
-  return opcao.id;
-}
+  if (repetida) throw new Error("Essa refeição já está nesse horário.");
 
-export async function updateOption(id: string, nome: string) {
-  const { id: userId } = await requireUser();
-  await db.mealOption.update({
-    where: { id, userId },
-    data: { nome: nome.trim() || "Opção" },
-  });
-  revalidar(userId);
-}
-
-export async function deleteOption(id: string) {
-  const { id: userId } = await requireUser();
-  await db.mealOption.delete({ where: { id, userId } });
-  revalidar(userId);
-}
-
-/** Duplica uma opção (com seus itens) dentro da mesma refeição, se couber. */
-export async function duplicarOption(id: string) {
-  const { id: userId } = await requireUser();
-  const opcao = await db.mealOption.findFirst({
-    where: { id, userId },
-    include: { items: true, meal: { select: { _count: { select: { options: true } } } } },
-  });
-  if (!opcao) return;
-  if (opcao.meal._count.options >= MAX_OPCOES) {
-    throw new Error(`Máximo de ${MAX_OPCOES} opções por refeição.`);
-  }
   await db.mealOption.create({
+    data: { mealId, recipeId, ordem: meal._count.options, userId },
+  });
+  revalidar(userId);
+}
+
+/** Tira a refeição do horário. A receita continua na biblioteca. */
+export async function desvincularReceita(optionId: string) {
+  const { id: userId } = await requireUser();
+  await db.mealOption.delete({ where: { id: optionId, userId } });
+  revalidar(userId);
+}
+
+// ---------- Biblioteca de refeições ----------
+
+export type IngredienteInput = {
+  foodId: string;
+  /** null = "a gosto" (sal, tempero, manteiga da frigideira). */
+  quantidade: number | null;
+  unidade: string;
+};
+
+export type ReceitaInput = {
+  nome: string;
+  /** modo de preparo, texto livre */
+  descricao: string | null;
+  /** null = macros somados dos ingredientes */
+  macrosManuais: { kcal: number; prot: number; carb: number; gord: number } | null;
+  ingredientes: IngredienteInput[];
+};
+
+async function validarReceita(userId: string, input: ReceitaInput) {
+  if (!input.nome.trim()) throw new Error("A refeição precisa de um nome.");
+  if (input.macrosManuais) {
+    const erro = erroCoerenciaMacros(input.macrosManuais);
+    if (erro) throw new Error(erro);
+  }
+  for (const i of input.ingredientes) {
+    if (i.quantidade != null && !(i.quantidade > 0)) {
+      throw new Error("Quantidade deve ser maior que zero (ou vazia, para “a gosto”).");
+    }
+  }
+  // Um alimento de outro usuário não pode entrar na receita.
+  const ids = [...new Set(input.ingredientes.map((i) => i.foodId))];
+  if (ids.length > 0) {
+    const validos = await db.food.count({ where: { id: { in: ids }, userId } });
+    if (validos !== ids.length) throw new Error("Recurso não encontrado.");
+  }
+}
+
+function dadosDaReceita(userId: string, input: ReceitaInput) {
+  return {
+    nome: input.nome.trim(),
+    descricao: input.descricao?.trim() || null,
+    kcalManual: input.macrosManuais?.kcal ?? null,
+    protManual: input.macrosManuais?.prot ?? null,
+    carbManual: input.macrosManuais?.carb ?? null,
+    gordManual: input.macrosManuais?.gord ?? null,
+    itens: {
+      create: input.ingredientes.map((i, ordem) => ({
+        userId,
+        foodId: i.foodId,
+        quantidade: i.quantidade,
+        unidade: i.unidade,
+        ordem,
+      })),
+    },
+  };
+}
+
+export async function createReceita(input: ReceitaInput) {
+  const { id: userId } = await requireUser();
+  await validarReceita(userId, input);
+  const receita = await db.recipe.create({
+    data: { userId, ...dadosDaReceita(userId, input) },
+  });
+  revalidar(userId);
+  return receita.id;
+}
+
+/**
+ * Salva a refeição inteira: os ingredientes são trocados de uma vez (apaga e
+ * recria) porque a tela edita a lista toda, não item a item — e assim a ordem
+ * digitada é a ordem gravada.
+ */
+export async function updateReceita(id: string, input: ReceitaInput) {
+  const { id: userId } = await requireUser();
+  await validarReceita(userId, input);
+  const existente = await db.recipe.findFirst({ where: { id, userId }, select: { id: true } });
+  if (!existente) throw new Error("Recurso não encontrado.");
+
+  const { itens, ...campos } = dadosDaReceita(userId, input);
+  await db.$transaction([
+    db.recipeItem.deleteMany({ where: { recipeId: id, userId } }),
+    db.recipe.update({ where: { id, userId }, data: { ...campos, itens } }),
+  ]);
+  revalidar(userId);
+}
+
+/** Apaga a refeição da biblioteca — sai junto das dietas onde estava. */
+export async function deleteReceita(id: string) {
+  const { id: userId } = await requireUser();
+  await db.recipe.delete({ where: { id, userId } });
+  revalidar(userId);
+}
+
+export async function duplicarReceita(id: string) {
+  const { id: userId } = await requireUser();
+  const receita = await db.recipe.findFirst({
+    where: { id, userId },
+    include: { itens: { orderBy: { ordem: "asc" } } },
+  });
+  if (!receita) return;
+  await db.recipe.create({
     data: {
       userId,
-      mealId: opcao.mealId,
-      nome: `${opcao.nome} (cópia)`,
-      ordem: opcao.meal._count.options,
-      items: {
-        create: opcao.items.map((i) => ({
+      nome: `${receita.nome} (cópia)`,
+      descricao: receita.descricao,
+      kcalManual: receita.kcalManual,
+      protManual: receita.protManual,
+      carbManual: receita.carbManual,
+      gordManual: receita.gordManual,
+      itens: {
+        create: receita.itens.map((i) => ({
           userId,
-          mealId: opcao.mealId,
           foodId: i.foodId,
           quantidade: i.quantidade,
           unidade: i.unidade,
+          ordem: i.ordem,
         })),
       },
     },
   });
-  revalidar(userId);
-}
-
-// ---------- Itens (dentro de uma opção) ----------
-
-export async function addItem(
-  optionId: string,
-  foodId: string,
-  quantidade: number,
-  unidade: string
-) {
-  const { id: userId } = await requireUser();
-  const [option, food] = await Promise.all([
-    db.mealOption.findFirst({
-      where: { id: optionId, userId },
-      select: { id: true, mealId: true },
-    }),
-    db.food.findFirst({ where: { id: foodId, userId }, select: { id: true } }),
-  ]);
-  if (!option || !food) throw new Error("Recurso não encontrado.");
-  if (!(quantidade > 0)) throw new Error("Quantidade deve ser maior que zero.");
-  await db.mealItem.create({
-    data: { optionId, mealId: option.mealId, foodId, quantidade, unidade, userId },
-  });
-  revalidar(userId);
-}
-
-export async function deleteItem(id: string) {
-  const { id: userId } = await requireUser();
-  await db.mealItem.delete({ where: { id, userId } });
   revalidar(userId);
 }
 
@@ -473,11 +525,14 @@ function validarAlimento(input: AlimentoInput) {
   if (erro) throw new Error(`${erro} (valores por 100 g)`);
 }
 
+/** Devolve o id — é ele que a tela de refeição usa pra já pôr o alimento
+ * recém-criado como ingrediente, sem uma segunda ida ao servidor. */
 export async function createAlimento(input: AlimentoInput) {
   validarAlimento(input);
   const { id: userId } = await requireUser();
-  await db.food.create({ data: { ...input, userId } });
+  const food = await db.food.create({ data: { ...input, userId } });
   revalidar(userId);
+  return food.id;
 }
 
 export async function updateAlimento(id: string, input: AlimentoInput) {

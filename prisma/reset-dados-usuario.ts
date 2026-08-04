@@ -51,7 +51,8 @@ async function main() {
     Asset: await db.asset.count({ where: w }),
     ContaFinanceira: await db.contaFinanceira.count({ where: w }),
     // Dieta
-    MealItem: await db.mealItem.count({ where: w }),
+    RecipeItem: await db.recipeItem.count({ where: w }),
+    Recipe: await db.recipe.count({ where: w }),
     MealOption: await db.mealOption.count({ where: w }),
     Meal: await db.meal.count({ where: w }),
     Diet: await db.diet.count({ where: w }),
@@ -140,8 +141,9 @@ async function main() {
     await tx.runSession.deleteMany({ where: w });
     await tx.runRoutine.deleteMany({ where: w });
 
-    await tx.mealItem.deleteMany({ where: w });
+    await tx.recipeItem.deleteMany({ where: w });
     await tx.mealOption.deleteMany({ where: w });
+    await tx.recipe.deleteMany({ where: w });
     await tx.meal.deleteMany({ where: w });
     await tx.diet.deleteMany({ where: w });
     await tx.food.deleteMany({ where: w });

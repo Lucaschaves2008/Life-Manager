@@ -1,49 +1,44 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useAcao } from "@/lib/acao-cliente";
-import { Copy, Pencil, Plus, Power, Salad, Trash2 } from "lucide-react";
+import {
+  ChevronDown,
+  Copy,
+  Link2Off,
+  Pencil,
+  Plus,
+  Power,
+  Salad,
+  Search,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { StatusPill } from "@/components/ui/table";
 import { Card, CardLabel } from "@/components/caverna/card";
 import { DotsMenu } from "@/components/caverna/dots-menu";
 import { EmptyState } from "@/components/caverna/empty-state";
+import { ReceitaForm, type AlimentoOpcao } from "@/components/dieta/receita-form";
 import {
-  addItem,
   ativarDieta,
   createDieta,
-  createOption,
   createRefeicao,
   deleteDieta,
-  deleteItem,
-  deleteOption,
   deleteRefeicao,
+  desvincularReceita,
   duplicarDieta,
-  duplicarOption,
   updateDieta,
-  updateOption,
+  vincularReceita,
   type DietaInput,
 } from "@/app/actions/dieta";
-import type { Macros } from "@/lib/data/dieta";
+import { rotuloIngrediente } from "@/lib/data/dieta-calc";
+import type { Macros, OpcaoView, ReceitaView } from "@/lib/data/dieta";
+import { cn } from "@/lib/utils";
 
 const MAX_OPCOES = 4;
-
-export type OpcaoView = {
-  id: string;
-  nome: string;
-  macros: Macros;
-  itens: { id: string; nome: string; quantidade: number; unidade: string }[];
-};
 
 export type RefeicaoView = {
   id: string;
@@ -72,10 +67,12 @@ const dietaVazia: DietaInput = {
 
 export function PlanoClient({
   dietas,
+  receitas,
   alimentos,
 }: {
   dietas: DietaView[];
-  alimentos: { id: string; nome: string; porcaoNome: string | null }[];
+  receitas: ReceitaView[];
+  alimentos: AlimentoOpcao[];
 }) {
   const [, executar] = useAcao();
   const [pending, startSalvar] = useTransition();
@@ -84,18 +81,15 @@ export function PlanoClient({
   const [editandoId, setEditandoId] = useState<string | null>(null);
   const [form, setForm] = useState<DietaInput>(dietaVazia);
 
-  const [detalhe, setDetalhe] = useState<DietaView | null>(null);
+  const [detalheId, setDetalheId] = useState<string | null>(null);
   const [novaRefeicao, setNovaRefeicao] = useState({ nome: "", horario: "" });
-  const [novoItem, setNovoItem] = useState<{
-    optionId: string;
-    foodId: string;
-    quantidade: string;
-    unidade: string;
-  } | null>(null);
-  // opção sendo renomeada (id → texto do input)
-  const [editandoOpcao, setEditandoOpcao] = useState<{ id: string; nome: string } | null>(
-    null
-  );
+  // horário que está escolhendo qual refeição pendurar
+  const [escolhendo, setEscolhendo] = useState<string | null>(null);
+  const [novaReceita, setNovaReceita] = useState<string | null>(null);
+
+  // O detalhe segue a prop, não uma cópia: assim vincular uma refeição já
+  // aparece na hora, sem fechar e reabrir o painel.
+  const detalhe = dietas.find((d) => d.id === detalheId) ?? null;
 
   function abrirDieta(dieta: DietaView | null) {
     setEditandoId(dieta?.id ?? null);
@@ -140,7 +134,7 @@ export function PlanoClient({
           <EmptyState
             icon={Salad}
             title="Nenhuma dieta montada ainda"
-            description="Monte seu plano alimentar com refeições e opções para bater suas metas."
+            description="Monte seu plano alimentar com horários e as refeições da sua biblioteca."
             className="py-16"
             action={
               <Button variant="dashed" size="sm" onClick={() => abrirDieta(null)}>
@@ -226,7 +220,7 @@ export function PlanoClient({
                 variant="outline"
                 size="sm"
                 className="mt-4"
-                onClick={() => setDetalhe(dieta)}
+                onClick={() => setDetalheId(dieta.id)}
               >
                 Ver refeições
               </Button>
@@ -289,20 +283,21 @@ export function PlanoClient({
         </SheetContent>
       </Sheet>
 
-      {/* Sheet de refeições da dieta */}
-      <Sheet open={!!detalhe} onOpenChange={(v) => !v && setDetalhe(null)}>
+      {/* Sheet dos horários da dieta */}
+      <Sheet open={!!detalhe} onOpenChange={(v) => !v && setDetalheId(null)}>
         <SheetContent aria-describedby={undefined}>
           {detalhe && (
             <>
               <SheetTitle>{detalhe.nome}</SheetTitle>
               <p className="mt-1 text-[12.5px] text-steel">
-                Monte as refeições e os alimentos de cada uma.
+                Cada horário recebe as refeições da sua biblioteca. Com mais de uma,
+                você escolhe no dia qual comeu.
               </p>
 
               <div className="mt-6 flex flex-col gap-4">
                 {detalhe.refeicoes.length === 0 && (
                   <p className="text-[13px] text-steel">
-                    Nenhuma refeição nesta dieta ainda.
+                    Nenhum horário nesta dieta ainda.
                   </p>
                 )}
 
@@ -320,12 +315,11 @@ export function PlanoClient({
                           </span>
                         )}
                         <button
-                          aria-label="Excluir refeição"
+                          aria-label={`Excluir ${r.nome}`}
                           onClick={() =>
                             executar(async () => {
                               await deleteRefeicao(r.id);
-                              setDetalhe(null);
-                              toast.success("Refeição excluída");
+                              toast.success("Horário excluído da dieta");
                             })
                           }
                           className="rounded-md p-1 text-steel hover:text-coral"
@@ -335,250 +329,68 @@ export function PlanoClient({
                       </div>
                     </div>
                     <p className="mt-0.5 text-[11px] text-steel">
-                      {r.opcoes.length}{" "}
-                      {r.opcoes.length === 1 ? "opção" : "opções"} · você escolhe qual
-                      comeu no dia
+                      {r.opcoes.length === 0
+                        ? "sem refeição vinculada"
+                        : r.opcoes.length === 1
+                          ? "1 refeição"
+                          : `${r.opcoes.length} opções · você escolhe qual comeu no dia`}
                     </p>
 
-                    <div className="mt-3 flex flex-col gap-3">
+                    <div className="mt-3 flex flex-col gap-2">
                       {r.opcoes.map((o) => (
-                        <div
+                        <OpcaoVinculada
                           key={o.id}
-                          className="rounded-[11px] border border-stroke bg-surface-1 p-3"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            {editandoOpcao?.id === o.id ? (
-                              <Input
-                                aria-label="Nome da opção"
-                                value={editandoOpcao.nome}
-                                autoFocus
-                                onChange={(e) =>
-                                  setEditandoOpcao({ id: o.id, nome: e.target.value })
-                                }
-                                onBlur={() =>
-                                  executar(async () => {
-                                    await updateOption(o.id, editandoOpcao.nome);
-                                    setEditandoOpcao(null);
-                                  })
-                                }
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter") e.currentTarget.blur();
-                                }}
-                                className="h-7 text-[12.5px]"
-                              />
-                            ) : (
-                              <button
-                                onClick={() => setEditandoOpcao({ id: o.id, nome: o.nome })}
-                                className="flex items-center gap-1.5 text-[12.5px] text-ice hover:text-paper"
-                              >
-                                {o.nome}
-                                <Pencil className="h-3 w-3 text-steel" strokeWidth={1.5} />
-                              </button>
-                            )}
-                            <div className="flex items-center gap-1">
-                              <span className="tabular text-[11px] text-steel">
-                                {Math.round(o.macros.kcal)} kcal
-                              </span>
-                              <DotsMenu
-                                items={[
-                                  {
-                                    label: "Duplicar opção",
-                                    icon: Copy,
-                                    onSelect: () =>
-                                      executar(async () => {
-                                        if (r.opcoes.length >= MAX_OPCOES) {
-                                          toast.error(
-                                            `Máximo de ${MAX_OPCOES} opções por refeição`
-                                          );
-                                          return;
-                                        }
-                                        await duplicarOption(o.id);
-                                        setDetalhe(null);
-                                        toast.success("Opção duplicada");
-                                      }),
-                                  },
-                                  ...(r.opcoes.length > 1
-                                    ? [
-                                        {
-                                          label: "Excluir opção",
-                                          icon: Trash2,
-                                          destructive: true,
-                                          onSelect: () =>
-                                            executar(async () => {
-                                              await deleteOption(o.id);
-                                              setDetalhe(null);
-                                              toast.success("Opção excluída");
-                                            }),
-                                        },
-                                      ]
-                                    : []),
-                                ]}
-                              />
-                            </div>
-                          </div>
-                          <p className="tabular mt-0.5 text-[10.5px] text-steel">
-                            P {Math.round(o.macros.prot)}g · C {Math.round(o.macros.carb)}g
-                            · G {Math.round(o.macros.gord)}g
-                          </p>
-
-                          <div className="mt-2 flex flex-col">
-                            {o.itens.map((i) => (
-                              <div
-                                key={i.id}
-                                className="group flex items-center gap-2 border-b border-stroke py-1.5 text-[12.5px] last:border-0"
-                              >
-                                <span className="tabular text-steel">
-                                  {i.quantidade.toLocaleString("pt-BR", {
-                                    maximumFractionDigits: 0,
-                                  })}
-                                  {i.unidade === "g" ? " g" : "×"}
-                                </span>
-                                <span className="flex-1 text-mist">{i.nome}</span>
-                                <button
-                                  aria-label="Remover alimento"
-                                  onClick={() =>
-                                    executar(async () => {
-                                      await deleteItem(i.id);
-                                      setDetalhe(null);
-                                    })
-                                  }
-                                  className="rounded-md p-1 text-steel opacity-0 transition-opacity hover:text-coral group-hover:opacity-100"
-                                >
-                                  <Trash2 className="h-3 w-3" strokeWidth={1.5} />
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-
-                          {novoItem?.optionId === o.id ? (
-                            <div className="mt-2.5 flex flex-col gap-2.5">
-                              <Select
-                                value={novoItem.foodId}
-                                onValueChange={(v) =>
-                                  setNovoItem({ ...novoItem, foodId: v })
-                                }
-                              >
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Escolher alimento" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {alimentos.map((a) => (
-                                    <SelectItem key={a.id} value={a.id}>
-                                      {a.nome}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                              <div className="flex gap-2">
-                                <Input
-                                  aria-label="Quantidade"
-                                  inputMode="decimal"
-                                  value={novoItem.quantidade}
-                                  onChange={(e) =>
-                                    setNovoItem({
-                                      ...novoItem,
-                                      quantidade: e.target.value,
-                                    })
-                                  }
-                                  placeholder="120"
-                                  className="tabular"
-                                />
-                                <Select
-                                  value={novoItem.unidade}
-                                  onValueChange={(v) =>
-                                    setNovoItem({ ...novoItem, unidade: v })
-                                  }
-                                >
-                                  <SelectTrigger className="w-[130px]">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="g">gramas</SelectItem>
-                                    <SelectItem value="porcao">porções</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                              <div className="flex gap-2">
-                                <Button
-                                  variant="primary"
-                                  size="sm"
-                                  disabled={
-                                    !novoItem.foodId ||
-                                    !(Number(novoItem.quantidade.replace(",", ".")) > 0) ||
-                                    pending
-                                  }
-                                  onClick={() =>
-                                    startSalvar(async () => {
-                                      await addItem(
-                                        o.id,
-                                        novoItem.foodId,
-                                        Number(novoItem.quantidade.replace(",", ".")),
-                                        novoItem.unidade
-                                      );
-                                      setNovoItem(null);
-                                      setDetalhe(null);
-                                      toast.success("Alimento adicionado");
-                                    })
-                                  }
-                                >
-                                  Adicionar
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => setNovoItem(null)}
-                                >
-                                  Cancelar
-                                </Button>
-                              </div>
-                            </div>
-                          ) : (
-                            <Button
-                              variant="dashed"
-                              size="sm"
-                              className="mt-2.5 w-full"
-                              onClick={() =>
-                                setNovoItem({
-                                  optionId: o.id,
-                                  foodId: "",
-                                  quantidade: "",
-                                  unidade: "g",
-                                })
-                              }
-                            >
-                              <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
-                              Adicionar alimento
-                            </Button>
-                          )}
-                        </div>
-                      ))}
-
-                      {r.opcoes.length < MAX_OPCOES && (
-                        <Button
-                          variant="soft"
-                          size="sm"
-                          className="w-full"
-                          onClick={() =>
+                          opcao={o}
+                          onDesvincular={() =>
                             executar(async () => {
-                              await createOption(r.id, `Opção ${r.opcoes.length + 1}`);
-                              setDetalhe(null);
-                              toast.success("Opção adicionada");
+                              await desvincularReceita(o.id);
+                              toast.success("Refeição tirada do horário");
                             })
                           }
-                        >
-                          <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
-                          Nova opção ({r.opcoes.length}/{MAX_OPCOES})
-                        </Button>
+                        />
+                      ))}
+
+                      {escolhendo === r.id ? (
+                        <EscolherReceita
+                          receitas={receitas}
+                          jaVinculadas={r.opcoes.map((o) => o.receitaId)}
+                          onEscolher={(receitaId) =>
+                            executar(async () => {
+                              await vincularReceita(r.id, receitaId);
+                              setEscolhendo(null);
+                              toast.success("Refeição adicionada ao horário");
+                            })
+                          }
+                          onCriarNova={() => {
+                            setNovaReceita(r.id);
+                            setEscolhendo(null);
+                          }}
+                          onCancelar={() => setEscolhendo(null)}
+                        />
+                      ) : (
+                        r.opcoes.length < MAX_OPCOES && (
+                          <Button
+                            variant="dashed"
+                            size="sm"
+                            className="w-full"
+                            onClick={() => setEscolhendo(r.id)}
+                          >
+                            <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
+                            {r.opcoes.length === 0
+                              ? "Vincular refeição"
+                              : `Outra opção (${r.opcoes.length}/${MAX_OPCOES})`}
+                          </Button>
+                        )
                       )}
                     </div>
                   </div>
                 ))}
 
                 <div className="rounded-[14px] border border-dashed border-stroke p-4">
-                  <p className="microlabel">Nova refeição</p>
+                  <p className="microlabel">Novo horário</p>
                   <div className="mt-3 flex gap-2">
                     <Input
-                      aria-label="Nome da refeição"
+                      aria-label="Nome do horário"
                       value={novaRefeicao.nome}
                       onChange={(e) =>
                         setNovaRefeicao({ ...novaRefeicao, nome: e.target.value })
@@ -608,12 +420,11 @@ export function PlanoClient({
                           novaRefeicao.horario
                         );
                         setNovaRefeicao({ nome: "", horario: "" });
-                        setDetalhe(null);
-                        toast.success("Refeição criada");
+                        toast.success("Horário criado");
                       })
                     }
                   >
-                    Criar refeição
+                    Criar horário
                   </Button>
                 </div>
               </div>
@@ -621,6 +432,161 @@ export function PlanoClient({
           )}
         </SheetContent>
       </Sheet>
+
+      {/* Criar refeição já vinculando no horário que pediu */}
+      <ReceitaForm
+        aberta={!!novaReceita}
+        onOpenChange={(v) => !v && setNovaReceita(null)}
+        receita={null}
+        alimentos={alimentos}
+        aoSalvar={async (receitaId) => {
+          const mealId = novaReceita;
+          if (!mealId) return;
+          await vincularReceita(mealId, receitaId);
+          setNovaReceita(null);
+        }}
+      />
     </>
+  );
+}
+
+/** Refeição pendurada num horário: macros, ingredientes e o preparo sob demanda. */
+function OpcaoVinculada({
+  opcao,
+  onDesvincular,
+}: {
+  opcao: OpcaoView;
+  onDesvincular: () => void;
+}) {
+  const [aberta, setAberta] = useState(false);
+  const passos = (opcao.descricao ?? "").split("\n").filter((l) => l.trim());
+
+  return (
+    <div className="rounded-[11px] border border-stroke bg-surface-1 p-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate text-[12.5px] text-ice">{opcao.nome}</p>
+          <p className="tabular mt-0.5 text-[10.5px] text-steel">
+            {Math.round(opcao.macros.kcal)} kcal · P {Math.round(opcao.macros.prot)}g · C{" "}
+            {Math.round(opcao.macros.carb)}g · G {Math.round(opcao.macros.gord)}g
+          </p>
+        </div>
+        <button
+          aria-label={`Tirar ${opcao.nome} do horário`}
+          onClick={onDesvincular}
+          className="shrink-0 rounded-md p-1 text-steel transition-colors hover:text-coral"
+          title="Tirar do horário (a refeição continua na biblioteca)"
+        >
+          <Link2Off className="h-3.5 w-3.5" strokeWidth={1.5} />
+        </button>
+      </div>
+
+      {opcao.ingredientes.length > 0 && (
+        <p className="mt-1.5 text-[11.5px] text-mist">
+          {opcao.ingredientes.map((i) => rotuloIngrediente(i)).join(" · ")}
+        </p>
+      )}
+
+      {passos.length > 0 && (
+        <>
+          <button
+            onClick={() => setAberta((v) => !v)}
+            className="mt-2 flex items-center gap-1.5 text-[11.5px] text-steel transition-colors hover:text-ice"
+          >
+            <ChevronDown
+              className={cn("h-3 w-3 transition-transform", aberta && "rotate-180")}
+              strokeWidth={1.5}
+            />
+            {aberta ? "Esconder o preparo" : "Como faz"}
+          </button>
+          {aberta && (
+            <ol className="mt-2 flex flex-col gap-1 border-l border-stroke pl-3">
+              {passos.map((passo, i) => (
+                <li key={i} className="text-[11.5px] leading-relaxed text-mist">
+                  {passo}
+                </li>
+              ))}
+            </ol>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Escolhe uma refeição da biblioteca pra pendurar no horário. */
+function EscolherReceita({
+  receitas,
+  jaVinculadas,
+  onEscolher,
+  onCriarNova,
+  onCancelar,
+}: {
+  receitas: ReceitaView[];
+  jaVinculadas: string[];
+  onEscolher: (receitaId: string) => void;
+  onCriarNova: () => void;
+  onCancelar: () => void;
+}) {
+  const [busca, setBusca] = useState("");
+  const termo = busca.trim().toLowerCase();
+  const vinculadas = useMemo(() => new Set(jaVinculadas), [jaVinculadas]);
+
+  const achadas = useMemo(
+    () =>
+      receitas
+        .filter((r) => !vinculadas.has(r.id) && r.nome.toLowerCase().includes(termo))
+        .slice(0, 8),
+    [receitas, termo, vinculadas]
+  );
+
+  return (
+    <div className="rounded-[11px] border border-stroke bg-surface-1 p-3">
+      <div className="relative">
+        <Search
+          className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-steel"
+          strokeWidth={1.5}
+        />
+        <Input
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          placeholder="Buscar na biblioteca…"
+          className="h-8 pl-8"
+          autoFocus
+        />
+      </div>
+
+      <div className="mt-2 flex flex-col">
+        {achadas.map((r) => (
+          <button
+            key={r.id}
+            onClick={() => onEscolher(r.id)}
+            className="flex items-center justify-between gap-2 rounded-[8px] px-2 py-1.5 text-left text-[12.5px] text-mist transition-colors hover:bg-surface-2 hover:text-ice"
+          >
+            <span className="truncate">{r.nome}</span>
+            <span className="tabular shrink-0 text-[11px] text-steel">
+              {Math.round(r.macros.kcal)} kcal
+            </span>
+          </button>
+        ))}
+        {achadas.length === 0 && (
+          <p className="px-2 py-1.5 text-[12.5px] text-steel">
+            {receitas.length === 0
+              ? "Sua biblioteca está vazia."
+              : "Nenhuma refeição disponível com esse nome."}
+          </p>
+        )}
+      </div>
+
+      <div className="mt-2 flex items-center gap-2">
+        <Button variant="soft" size="sm" onClick={onCriarNova}>
+          <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
+          Criar refeição nova
+        </Button>
+        <Button variant="ghost" size="sm" onClick={onCancelar}>
+          Cancelar
+        </Button>
+      </div>
+    </div>
   );
 }
