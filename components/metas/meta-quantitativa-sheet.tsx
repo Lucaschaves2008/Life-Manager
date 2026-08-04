@@ -26,7 +26,7 @@ import {
   type MetaPeriodo,
 } from "@/lib/data/metas-quantitativas-constantes";
 import type { VariavelView } from "@/lib/data/variaveis";
-import { monthKeySP, nowSP, quarterKeySP, yearKeySP } from "@/lib/dates";
+import { dayKeySP, monthKeySP, nowSP, yearKeySP } from "@/lib/dates";
 
 export type MetaQuantitativaEditavel = {
   id: string;
@@ -41,9 +41,13 @@ export type MetaQuantitativaEditavel = {
 
 function chaveAtual(periodo: MetaPeriodo): string {
   const agora = nowSP();
-  if (periodo === "mes" || periodo === "trimestre_movel") return monthKeySP(agora);
-  if (periodo === "trimestre") return quarterKeySP(agora);
+  if (periodo === "mes") return monthKeySP(agora);
   return yearKeySP(agora);
+}
+
+/** Sugestão inicial pro seletor de data: hoje + 30 dias. */
+function dataFimSugerida(): string {
+  return dayKeySP(new Date(nowSP().getTime() + 30 * 24 * 60 * 60 * 1000));
 }
 
 export function MetaQuantitativaSheet({
@@ -64,13 +68,17 @@ export function MetaQuantitativaSheet({
   const [variavelId, setVariavelId] = useState(editando?.variavelId ?? variaveis[0]?.id ?? "");
   const [alvo, setAlvo] = useState(editando?.alvo ?? 0);
   const [periodo, setPeriodo] = useState<MetaPeriodo>(editando?.periodo ?? "mes");
+  const [dataFim, setDataFim] = useState(
+    editando?.periodo === "personalizado" ? editando.chave : dataFimSugerida()
+  );
 
   const metricaInfo = METRICAS.find((m) => m.value === metrica)!;
   const variavelInfo = variaveis.find((v) => v.id === variavelId);
   const valido =
     titulo.trim().length > 0 &&
     alvo > 0 &&
-    (origem === "metrica" || (origem === "variavel" && !!variavelId));
+    (origem === "metrica" || (origem === "variavel" && !!variavelId)) &&
+    (periodo !== "personalizado" || !!dataFim);
 
   function salvar() {
     const payload: MetaQuantitativaInput = {
@@ -80,7 +88,7 @@ export function MetaQuantitativaSheet({
       variavelId: origem === "variavel" ? variavelId : null,
       alvo,
       periodo,
-      chave: editando?.chave ?? chaveAtual(periodo),
+      chave: periodo === "personalizado" ? dataFim : editando?.chave ?? chaveAtual(periodo),
     };
 
     executar(async () => {
@@ -201,6 +209,11 @@ export function MetaQuantitativaSheet({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  {PERIODOS.some((p) => p.value === periodo) ? null : (
+                    // Meta antiga com período removido das opções (trimestre civil ou
+                    // móvel) — mantém visível só pra não quebrar o Select em edição.
+                    <SelectItem value={periodo}>{editando?.chave}</SelectItem>
+                  )}
                   {PERIODOS.map((p) => (
                     <SelectItem key={p.value} value={p.value}>
                       {p.label}
@@ -210,6 +223,18 @@ export function MetaQuantitativaSheet({
               </Select>
             </div>
           </div>
+
+          {periodo === "personalizado" && (
+            <div>
+              <Label htmlFor="dataFim">Data final</Label>
+              <Input
+                id="dataFim"
+                type="date"
+                value={dataFim}
+                onChange={(e) => setDataFim(e.target.value)}
+              />
+            </div>
+          )}
 
           <div className="mt-1 flex items-center gap-3">
             <Button variant="primary" onClick={salvar} disabled={!valido || pending}>

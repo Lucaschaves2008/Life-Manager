@@ -18,7 +18,7 @@ export type MetaMetrica =
   | "horas_estudo"
   | "dinheiro";
 
-export type MetaPeriodo = "mes" | "trimestre" | "trimestre_movel" | "ano";
+export type MetaPeriodo = "mes" | "trimestre" | "trimestre_movel" | "personalizado" | "ano";
 
 export type MetaOrigem = "metrica" | "variavel";
 
@@ -71,10 +71,16 @@ export const METRICAS: {
   { value: "dinheiro", label: "Dinheiro ganho", unidade: "R$", placeholder: "Ex.: 10000" },
 ];
 
+/**
+ * Opções oferecidas na criação/edição de meta. "trimestre" e "trimestre_movel"
+ * não aparecem mais aqui (ambíguos: trimestre civil vs. 3 meses a partir de
+ * hoje) — substituídos por "personalizado", onde o usuário escolhe a data
+ * final diretamente. Os dois tipos continuam reconhecidos em rangeDoPeriodo/
+ * periodoLabelDe só para não quebrar metas antigas já salvas com eles.
+ */
 export const PERIODOS: { value: MetaPeriodo; label: string }[] = [
   { value: "mes", label: "Este mês" },
-  { value: "trimestre", label: "Trimestre civil (jan–mar, abr–jun...)" },
-  { value: "trimestre_movel", label: "3 meses a partir de hoje" },
+  { value: "personalizado", label: "Até uma data escolhida" },
   { value: "ano", label: "Este ano" },
 ];
 
