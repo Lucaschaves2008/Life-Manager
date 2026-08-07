@@ -463,7 +463,7 @@ export function CardioClient({
               <Button
                 variant="primary"
                 onClick={salvar}
-                disabled={kmNum <= 0 || segundos <= 0 || pending}
+                disabled={(kmNum <= 0 && segundos <= 0) || pending}
               >
                 {pending ? "Salvando…" : "Salvar"}
               </Button>
@@ -471,6 +471,11 @@ export function CardioClient({
                 Cancelar
               </Button>
             </div>
+            {kmNum <= 0 && segundos <= 0 && (
+              <p className="text-[12px] text-steel">
+                Preencha a distância ou o tempo para salvar.
+              </p>
+            )}
           </div>
         </SheetContent>
       </Sheet>

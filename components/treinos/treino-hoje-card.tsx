@@ -363,7 +363,7 @@ function RegistrarCardioSheet({
             <Button
               variant="primary"
               onClick={salvar}
-              disabled={kmNum <= 0 || segundos <= 0 || pending}
+              disabled={(kmNum <= 0 && segundos <= 0) || pending}
             >
               {pending ? "Salvando…" : "Salvar"}
             </Button>
@@ -371,6 +371,11 @@ function RegistrarCardioSheet({
               Cancelar
             </Button>
           </div>
+          {kmNum <= 0 && segundos <= 0 && (
+            <p className="text-[12px] text-steel">
+              Preencha a distância ou o tempo para salvar.
+            </p>
+          )}
         </div>
       </SheetContent>
     </Sheet>

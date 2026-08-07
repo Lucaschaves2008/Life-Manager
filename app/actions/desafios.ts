@@ -3,7 +3,7 @@
 import { revalidatePath } from "@/lib/cache-revalidate";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
-import type { DesafioOrigem, DesafioPeriodo } from "@/lib/data/desafios";
+import { desafioDetalhe, type DesafioDetalhe, type DesafioOrigem, type DesafioPeriodo } from "@/lib/data/desafios";
 import { PERIODOS_DESAFIO } from "@/lib/data/desafios-constantes";
 import { METRICAS, type MetaMetrica } from "@/lib/data/metas-quantitativas-constantes";
 import {
@@ -690,6 +690,17 @@ export async function buscarSolicitacoes(desafioId: string): Promise<Solicitacao
   const { id: userId } = await requireUser();
   await requireMembro(desafioId, userId);
   return solicitacoesDoDesafio(desafioId, userId);
+}
+
+/**
+ * Detalhe atual do desafio (metas + progresso de todos os membros) — usado
+ * pelo cliente da página via polling, pra refletir aprovações de outros
+ * membros sem depender de um reload manual da aba de quem está esperando.
+ */
+export async function buscarDesafioDetalhe(desafioId: string): Promise<DesafioDetalhe | null> {
+  const { id: userId } = await requireUser();
+  await requireMembro(desafioId, userId);
+  return desafioDetalhe(desafioId);
 }
 
 const LIMITE_TEXTO_MENSAGEM = 500;

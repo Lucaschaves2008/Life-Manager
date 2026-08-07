@@ -1,19 +1,23 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { InsightsFeed } from "@/components/desafios/insights-feed";
 import { MembroMetasCard } from "@/components/desafios/membro-metas-card";
 import { DesafioLeaderboard } from "@/components/desafios/desafio-leaderboard";
 import { DesafioChat } from "@/components/desafios/desafio-chat";
 import { DesafioDocumento } from "@/components/desafios/desafio-documento";
 import { SolicitacoesCard } from "@/components/desafios/solicitacoes-card";
+import { buscarDesafioDetalhe, buscarSolicitacoes } from "@/app/actions/desafios";
 import type { DesafioDetalhe } from "@/lib/data/desafios";
 import type { MensagemView } from "@/lib/data/desafios-chat";
 import type { DesafioDocumentoView } from "@/lib/data/desafios-documento";
 import type { SolicitacaoView } from "@/lib/data/desafios-solicitacoes";
 import type { VariavelView } from "@/lib/data/variaveis";
 
+const INTERVALO_POLL_MS = 6000;
+
 export function DesafioDetalheClient({
-  desafio,
+  desafio: desafioInicial,
   viewerUserId,
   templatesChecklist,
   variaveis,
@@ -31,6 +35,30 @@ export function DesafioDetalheClient({
   solicitacoesIniciais: SolicitacaoView[];
   hoje: string;
 }) {
+  const [desafio, setDesafio] = useState(desafioInicial);
+  const [solicitacoes, setSolicitacoes] = useState(solicitacoesIniciais);
+
+  // Solicitações de edição são resolvidas por outro membro em outra aba: sem
+  // polling aqui, quem pediu a mudança nunca vê a meta ou o status do pedido
+  // atualizarem sozinhos e conclui (errado) que "aceitar não fez nada".
+  useEffect(() => {
+    let cancelado = false;
+    const intervalo = setInterval(async () => {
+      const [desafioNovo, solicitacoesNovas] = await Promise.all([
+        buscarDesafioDetalhe(desafio.id),
+        buscarSolicitacoes(desafio.id),
+      ]);
+      if (cancelado) return;
+      if (desafioNovo) setDesafio(desafioNovo);
+      setSolicitacoes(solicitacoesNovas);
+    }, INTERVALO_POLL_MS);
+    return () => {
+      cancelado = true;
+      clearInterval(intervalo);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [desafio.id]);
+
   const eu = desafio.membros.find((m) => m.userId === viewerUserId);
   const outros = desafio.membros.filter((m) => m.userId !== viewerUserId);
   const streakPorUsuario = new Map(desafio.membros.map((m) => [m.userId, m.streak]));
@@ -72,7 +100,7 @@ export function DesafioDetalheClient({
         {precisaAprovacao && (
           <SolicitacoesCard
             desafioId={desafio.id}
-            solicitacoesIniciais={solicitacoesIniciais}
+            solicitacoesIniciais={solicitacoes}
           />
         )}
         <DesafioDocumento
