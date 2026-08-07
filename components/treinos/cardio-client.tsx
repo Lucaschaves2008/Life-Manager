@@ -36,9 +36,13 @@ import {
   numeroDigitado,
   paraKm,
   type ModalidadeCardio,
+  type PlanoCorridaView,
 } from "@/lib/data/treinos-format";
 import { ICONE_MODALIDADE } from "@/components/treinos/plano-cardio-client";
 import { cn } from "@/lib/utils";
+
+/** Valor sentinela do Select — "sem vínculo com nenhuma sessão planejada". */
+const LIVRE = "livre";
 
 export type CorridaView = {
   id: string;
@@ -52,6 +56,7 @@ export type CorridaView = {
   notas: string | null;
   stravaLink: string | null;
   quantificar: boolean;
+  runSessionId: string | null;
 };
 
 /**
@@ -64,10 +69,13 @@ export function CardioClient({
   corridas,
   hoje,
   modalidade,
+  planos,
 }: {
   corridas: CorridaView[];
   hoje: string;
   modalidade: ModalidadeCardio;
+  /** Planos cadastrados desta modalidade — permite vincular o registro a uma sessão planejada. */
+  planos: PlanoCorridaView[];
 }) {
   const cfg = MODALIDADE[modalidade];
   const Icone = ICONE_MODALIDADE[modalidade];
@@ -92,6 +100,13 @@ export function CardioClient({
   const [stravaLink, setStravaLink] = useState("");
   const [stravaActivityId, setStravaActivityId] = useState<string | null>(null);
   const [quantificar, setQuantificar] = useState(true);
+  const [sessaoId, setSessaoId] = useState<string | null>(null);
+
+  // Sessões planejadas desta modalidade, achatadas com o nome do plano — o
+  // registro pode se vincular a uma delas pra marcar o plano como cumprido.
+  const sessoesPlano = planos.flatMap((p) =>
+    p.sessoes.map((s) => ({ id: s.id, label: `${p.nome} · ${s.nome}`, tipo: s.tipo }))
+  );
 
   // O deep-link "+ Novo" só deve abrir o formulário da aba que o usuário está
   // vendo — sem o guard, as três abas abririam o sheet ao mesmo tempo.
@@ -118,7 +133,15 @@ export function CardioClient({
     setStravaLink(corrida?.stravaLink ?? "");
     setStravaActivityId(null);
     setQuantificar(corrida?.quantificar ?? true);
+    setSessaoId(corrida?.runSessionId ?? null);
     setAberto(true);
+  }
+
+  function selecionarSessao(id: string) {
+    const valor = id === LIVRE ? null : id;
+    setSessaoId(valor);
+    const sessao = sessoesPlano.find((s) => s.id === valor);
+    if (sessao) setTipo(sessao.tipo);
   }
 
   function buscarDoStrava() {
@@ -164,6 +187,7 @@ export function CardioClient({
       stravaLink: stravaLink.trim() || null,
       stravaActivityId,
       quantificar,
+      runSessionId: sessaoId,
     };
     startSalvar(async () => {
       try {
@@ -311,6 +335,30 @@ export function CardioClient({
             {editandoId ? `Editar ${cfg.atividade}` : `Nova ${cfg.atividade}`}
           </SheetTitle>
           <div className="mt-6 flex flex-col gap-5">
+            {sessoesPlano.length > 0 && (
+              <div>
+                <Label>Sessão do plano</Label>
+                <Select value={sessaoId ?? LIVRE} onValueChange={selecionarSessao}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={LIVRE}>Registro livre (sem plano)</SelectItem>
+                    {sessoesPlano.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {sessaoId && (
+                  <p className="mt-1.5 text-[12px] text-steel">
+                    Marca essa sessão como cumprida no plano da semana.
+                  </p>
+                )}
+              </div>
+            )}
+
             <div>
               <Label htmlFor="run-data">Data</Label>
               <Input

@@ -339,6 +339,7 @@ async function Cardio({
     notas: c.notas,
     stravaLink: c.stravaLink,
     quantificar: c.quantificar,
+    runSessionId: c.runSessionId,
   }));
 
   const ritmoPontos = [...sessoes]
@@ -444,7 +445,7 @@ async function Cardio({
       </Card>
 
       <Card className="col-span-12">
-        <CardioClient corridas={view} hoje={dayKeySP(hoje)} modalidade={modalidade} />
+        <CardioClient corridas={view} hoje={dayKeySP(hoje)} modalidade={modalidade} planos={planos} />
       </Card>
     </div>
   );
