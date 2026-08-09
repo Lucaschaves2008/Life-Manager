@@ -267,6 +267,7 @@ function MetaGrandeBlock({
               metrica: meta.metrica ?? undefined,
               alvo: meta.alvo,
               periodo: meta.periodo,
+              dificuldade: meta.dificuldade,
             }}
           />
         </div>

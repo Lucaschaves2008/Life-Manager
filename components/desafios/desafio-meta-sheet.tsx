@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { Segmented } from "@/components/caverna/segmented";
 import {
   criarMetaGrande,
   criarMetaPequena,
@@ -20,7 +21,9 @@ import {
   type DesafioMetaInput,
 } from "@/app/actions/desafios";
 import {
+  DIFICULDADES_DESAFIO,
   PERIODOS_DESAFIO,
+  type DesafioDificuldade,
   type DesafioOrigem,
   type DesafioPeriodo,
 } from "@/lib/data/desafios-constantes";
@@ -63,6 +66,9 @@ export function DesafioMetaSheet({
   const [periodo, setPeriodo] = useState<DesafioPeriodo>(
     editando?.periodo ?? (tipo === "grande" ? "trimestre" : "mes")
   );
+  const [dificuldade, setDificuldade] = useState<DesafioDificuldade>(
+    editando?.dificuldade ?? "normal"
+  );
   const [justificativa, setJustificativa] = useState("");
 
   const valido =
@@ -79,6 +85,7 @@ export function DesafioMetaSheet({
       setAlvo(0);
       setRotinaTemplateId("");
       setVariavelId("");
+      setDificuldade("normal");
     }
     setJustificativa("");
   }
@@ -92,6 +99,7 @@ export function DesafioMetaSheet({
       variavelId: origem === "variavel" ? variavelId : undefined,
       alvo,
       periodo,
+      dificuldade,
     };
 
     executar(async () => {
@@ -254,6 +262,18 @@ export function DesafioMetaSheet({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          <div>
+            <Label>Dificuldade</Label>
+            <Segmented
+              options={DIFICULDADES_DESAFIO}
+              value={dificuldade}
+              onChange={setDificuldade}
+            />
+            <p className="mt-1.5 text-[11.5px] text-steel">
+              Metas difíceis rendem 1,5x mais pontos no ranking do desafio.
+            </p>
           </div>
 
           {precisaAprovacao && (

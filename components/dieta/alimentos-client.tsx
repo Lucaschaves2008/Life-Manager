@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useAcao } from "@/lib/acao-cliente";
-import { Apple, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { Apple, Database, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
@@ -10,13 +10,17 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Table, Td, Th, THead, Tr } from "@/components/ui/table";
 import { DotsMenu } from "@/components/caverna/dots-menu";
 import { EmptyState } from "@/components/caverna/empty-state";
+import { Segmented } from "@/components/caverna/segmented";
 import {
+  buscarCatalogoAlimentos,
   createAlimento,
   deleteAlimento,
+  importarAlimentoCatalogo,
   restoreAlimento,
   updateAlimento,
   type AlimentoInput,
 } from "@/app/actions/dieta";
+import type { AlimentoCatalogoView } from "@/lib/data/alimentos-catalogo";
 
 export type AlimentoView = AlimentoInput & { id: string; usadoEmRefeicoes: number };
 
@@ -41,6 +45,50 @@ export function AlimentosClient({ alimentos }: { alimentos: AlimentoView[] }) {
   const [aberto, setAberto] = useState(false);
   const [editandoId, setEditandoId] = useState<string | null>(null);
   const [form, setForm] = useState<AlimentoInput>(vazio);
+  const [modo, setModo] = useState<"buscar" | "manual">("buscar");
+
+  // Catálogo pré-carregado (TACO): busca com debounce ao abrir o modo "Buscar".
+  const [catalogoBusca, setCatalogoBusca] = useState("");
+  const [doCatalogo, setDoCatalogo] = useState<AlimentoCatalogoView[]>([]);
+  const [buscandoCatalogo, setBuscandoCatalogo] = useState(false);
+  const [importandoId, setImportandoId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const termo = catalogoBusca.trim();
+    if (!termo || modo !== "buscar") {
+      setDoCatalogo([]);
+      return;
+    }
+    let cancelado = false;
+    setBuscandoCatalogo(true);
+    const timeout = setTimeout(async () => {
+      try {
+        const resultado = await buscarCatalogoAlimentos(termo);
+        if (!cancelado) setDoCatalogo(resultado);
+      } finally {
+        if (!cancelado) setBuscandoCatalogo(false);
+      }
+    }, 300);
+    return () => {
+      cancelado = true;
+      clearTimeout(timeout);
+    };
+  }, [catalogoBusca, modo]);
+
+  function importar(item: AlimentoCatalogoView) {
+    setImportandoId(item.id);
+    startSalvar(async () => {
+      try {
+        await importarAlimentoCatalogo(item.id);
+        toast.success("Alimento importado");
+        setAberto(false);
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Não foi possível importar.");
+      } finally {
+        setImportandoId(null);
+      }
+    });
+  }
 
   const filtrados = useMemo(
     () =>
@@ -65,6 +113,8 @@ export function AlimentosClient({ alimentos }: { alimentos: AlimentoView[] }) {
           }
         : vazio
     );
+    setModo(alimento ? "manual" : "buscar");
+    setCatalogoBusca("");
     setAberto(true);
   }
 
@@ -184,6 +234,77 @@ export function AlimentosClient({ alimentos }: { alimentos: AlimentoView[] }) {
       <Sheet open={aberto} onOpenChange={setAberto}>
         <SheetContent aria-describedby={undefined}>
           <SheetTitle>{editandoId ? "Editar alimento" : "Novo alimento"}</SheetTitle>
+
+          {!editandoId && (
+            <Segmented
+              className="mt-4"
+              options={[
+                { label: "Buscar", value: "buscar" },
+                { label: "Cadastro manual", value: "manual" },
+              ]}
+              value={modo}
+              onChange={setModo}
+            />
+          )}
+
+          {!editandoId && modo === "buscar" ? (
+            <div className="mt-5">
+              <div className="relative">
+                <Search
+                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-steel"
+                  strokeWidth={1.5}
+                />
+                <Input
+                  value={catalogoBusca}
+                  onChange={(e) => setCatalogoBusca(e.target.value)}
+                  placeholder="Buscar na tabela de alimentos…"
+                  className="pl-9"
+                  autoFocus
+                />
+              </div>
+              <div className="mt-2 flex flex-col">
+                {doCatalogo.map((c) => (
+                  <button
+                    key={c.id}
+                    disabled={pending}
+                    onClick={() => importar(c)}
+                    className="flex items-center justify-between gap-2 rounded-[8px] px-2 py-1.5 text-left text-[13px] text-mist transition-colors hover:bg-surface-2 hover:text-ice disabled:opacity-60"
+                  >
+                    <span className="flex min-w-0 items-center gap-1.5 truncate">
+                      <Database className="h-3.5 w-3.5 shrink-0 text-steel" strokeWidth={1.5} />
+                      <span className="truncate">{c.nome}</span>
+                    </span>
+                    <span className="tabular shrink-0 text-[11.5px] text-steel">
+                      {importandoId === c.id
+                        ? "Importando…"
+                        : c.kcal100 == null
+                          ? "—"
+                          : `${Math.round(c.kcal100)} kcal/100g`}
+                    </span>
+                  </button>
+                ))}
+                {!buscandoCatalogo && catalogoBusca.trim() && doCatalogo.length === 0 && (
+                  <p className="px-2 py-1.5 text-[12.5px] text-steel">
+                    Nenhum item na tabela com esse nome.{" "}
+                    <button
+                      className="text-ice underline underline-offset-2"
+                      onClick={() => {
+                        setForm({ ...vazio, nome: catalogoBusca.trim() });
+                        setModo("manual");
+                      }}
+                    >
+                      Cadastrar na mão
+                    </button>
+                  </p>
+                )}
+                {!catalogoBusca.trim() && (
+                  <p className="px-2 py-1.5 text-[12.5px] text-steel">
+                    Digite o nome de um alimento pra buscar na tabela pré-carregada.
+                  </p>
+                )}
+              </div>
+            </div>
+          ) : (
           <div className="mt-6 flex flex-col gap-5">
             <div>
               <Label htmlFor="food-nome">Nome</Label>
@@ -277,6 +398,7 @@ export function AlimentosClient({ alimentos }: { alimentos: AlimentoView[] }) {
               </Button>
             </div>
           </div>
+          )}
         </SheetContent>
       </Sheet>
     </>

@@ -25,7 +25,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   });
   if (!souMembro) notFound();
 
-  const desafio = await desafioDetalhe(id);
+  const desafio = await desafioDetalhe(id, user.id);
   if (!desafio) notFound();
 
   const [templates, variaveis, mensagensIniciais, documento, solicitacoes] =

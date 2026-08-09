@@ -245,16 +245,34 @@ model Food {
   @@index([userId])
 }
 
+/// Catálogo global de alimentos pré-carregado (semeado a partir da tabela
+/// TACO) — não pertence a nenhum usuário. Serve só como fonte de busca: ao
+/// escolher um item, a action cria um Food normal pro usuário (copy-on-select),
+/// então editar/excluir depois nunca mexe neste catálogo nem em outro usuário.
+model AlimentoCatalogo {
+  id         String  @id @default(cuid())
+  nome       String
+  fonte      String  @default("taco")
+  kcal100    Float?
+  prot100    Float?
+  carb100    Float?
+  gord100    Float?
+  porcaoNome String?
+  porcaoG    Float?
+
+  @@index([nome])
+}
+
 /// Refeição da biblioteca do usuário: nome, ingredientes e o modo de preparo.
 /// Vive FORA da dieta de propósito — a mesma "Panqueca proteica" pode estar na
 /// dieta de ganho de massa e, meses depois, na de perda, sem cópia nem perda do
 /// histórico (a dieta aponta pra ela via MealOption).
 model Recipe {
-  id        String  @id @default(cuid())
-  userId    String
-  nome      String
+  id         String  @id @default(cuid())
+  userId     String
+  nome       String
   /// Modo de preparo em texto livre (uma linha por passo).
-  descricao String?
+  descricao  String?
   /// Macros informados na mão. Quando kcalManual != null, mandam sobre a soma
   /// dos ingredientes — serve pras refeições que são REGRA e não receita
   /// ("2 palmas de proteína + 2 conchas de arroz") e pra comida de rua.
@@ -272,7 +290,7 @@ model Recipe {
 model RecipeItem {
   id String @id @default(cuid())
 
-  userId String
+  userId     String
   /// null = "a gosto" (sal, pimenta, manteiga da frigideira): entra na lista
   /// de ingredientes sem somar macro nenhum.
   quantidade Float?
@@ -813,6 +831,7 @@ model Desafio {
   documento    DesafioDocumento?
   solicitacoes DesafioSolicitacao[]
   ajustes      DesafioAjuste[]
+  eventos      DesafioEvento[]
 
   @@index([criadorId])
 }
@@ -852,6 +871,9 @@ model DesafioMeta {
   variavelId       String?
   alvo             Float
   periodo          String // "semana" | "mes" | "trimestre" | "semestre"
+  // "normal" | "dificil" — dá pontos extras na pontuação diária do desafio
+  // (ver PONTOS_DIFICULDADE_MULTIPLICADOR em lib/data/desafios.ts).
+  dificuldade      String   @default("normal")
   ordem            Int      @default(0)
   criadoEm         DateTime @default(now())
 
@@ -862,6 +884,45 @@ model DesafioMeta {
   @@index([desafioId])
   @@index([userId])
   @@index([metaPaiId])
+}
+
+// Evento do feed de atividade do desafio — gerado automaticamente (meta
+// concluída no período, streak batendo um marco, líder da semana), nunca
+// criado pelo usuário. `chave` é o componente de idempotência: junto com
+// desafioId+userId+tipo forma a unique constraint que permite recalcular o
+// feed inteiro a cada leitura (ver lib/data/desafios-eventos.ts) sem duplicar
+// evento já existente — só entra registro novo quando a chave muda (ex.: meta
+// concluída de novo num período seguinte, streak batendo o próximo marco).
+model DesafioEvento {
+  id        String   @id @default(cuid())
+  desafioId String
+  userId    String
+  tipo      String // "meta_concluida" | "streak" | "lidera_semana"
+  metaId    String?
+  chave     String
+  texto     String
+  data      DateTime @default(now())
+
+  desafio Desafio               @relation(fields: [desafioId], references: [id], onDelete: Cascade)
+  reacoes DesafioEventoReacao[]
+
+  @@unique([desafioId, userId, tipo, chave])
+  @@index([desafioId, data])
+}
+
+// Reação rápida (emoji) de um membro a um DesafioEvento — um por pessoa por
+// evento; reagir de novo com outro emoji troca a reação anterior.
+model DesafioEventoReacao {
+  id       String   @id @default(cuid())
+  eventoId String
+  userId   String
+  emoji    String
+  criadoEm DateTime @default(now())
+
+  evento DesafioEvento @relation(fields: [eventoId], references: [id], onDelete: Cascade)
+
+  @@unique([eventoId, userId])
+  @@index([eventoId])
 }
 
 // Pedido de mudança nas metas de um desafio com mais de um membro. Toda

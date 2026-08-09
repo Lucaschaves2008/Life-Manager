@@ -1,4 +1,4 @@
-import { subMonths, subQuarters, subWeeks } from "date-fns";
+import { addDays, subMonths, subQuarters, subWeeks } from "date-fns";
 import { db } from "@/lib/db";
 import {
   monthKeySP,
@@ -8,10 +8,12 @@ import {
   refDoSemestreSP,
   refDoTrimestreSP,
   semesterKeySP,
+  spEndOfDay,
   spEndOfMonth,
   spEndOfQuarter,
   spEndOfSemester,
   spEndOfWeek,
+  spStartOfDay,
   spStartOfMonth,
   spStartOfQuarter,
   spStartOfSemester,
@@ -26,14 +28,20 @@ import {
   type MetaMetrica,
 } from "@/lib/data/metas-quantitativas-constantes";
 import { modalidadeDe, type ModalidadeCardio } from "@/lib/data/treinos-format";
-import { gerarInsights, type InsightView } from "@/lib/data/desafios-insights";
 import { streakLC } from "@/lib/data/home";
 import { parseJSON } from "@/lib/utils";
 import {
   PERIODOS_DESAFIO,
+  type DesafioDificuldade,
   type DesafioOrigem,
   type DesafioPeriodo,
 } from "@/lib/data/desafios-constantes";
+import {
+  gerarCandidatosEventos,
+  sincronizarEventos,
+  eventosDoDesafio,
+  type DesafioEventoView,
+} from "@/lib/data/desafios-eventos";
 
 /**
  * Desafios: grupos de crescimento colaborativos estilo Gymrats. Cada membro
@@ -90,6 +98,7 @@ type MetaRow = {
   variavelId: string | null;
   alvo: number;
   periodo: string;
+  dificuldade: string;
 };
 
 /**
@@ -304,6 +313,45 @@ function calcularAtualMeta(meta: MetaRow, dados: DadosBrutosUsuario, inicio: Dat
   return ajuste;
 }
 
+const PONTOS_POR_DIA_BASE = 10;
+const PONTOS_DIFICULDADE_MULTIPLICADOR = 1.5;
+const BONUS_STREAK_POR_DIA = 1;
+const BONUS_STREAK_MAX = 10;
+
+/**
+ * Pontuação diária de uma meta folha: cada dia com QUALQUER atividade rende
+ * pontos base (1.5x se a meta for "difícil"), mais um bônus que cresce com
+ * dias seguidos cumpridos (streak DESSA meta, não o streak geral do usuário)
+ * até um teto. Reusa calcularAtualMeta dia a dia — mesma fonte de verdade do
+ * progresso em %, só que aplicada a uma janela de 1 dia por vez em vez do
+ * período inteiro. Alimenta o ranking do desafio (ver desafio-leaderboard.tsx)
+ * no lugar do % médio simples.
+ */
+function pontosDaMetaFolha(
+  meta: MetaRow,
+  dados: DadosBrutosUsuario,
+  periodoInicio: Date,
+  periodoFim: Date,
+  agora: Date
+): number {
+  const fim = periodoFim < agora ? periodoFim : agora;
+  if (periodoInicio > fim) return 0;
+  const base = PONTOS_POR_DIA_BASE * (meta.dificuldade === "dificil" ? PONTOS_DIFICULDADE_MULTIPLICADOR : 1);
+
+  let pontos = 0;
+  let streak = 0;
+  for (let dia = toSP(periodoInicio); dia <= fim; dia = addDays(dia, 1)) {
+    const atividade = calcularAtualMeta(meta, dados, spStartOfDay(dia), spEndOfDay(dia));
+    if (atividade > 0) {
+      streak++;
+      pontos += base + Math.min(streak - 1, BONUS_STREAK_MAX) * BONUS_STREAK_POR_DIA;
+    } else {
+      streak = 0;
+    }
+  }
+  return Math.round(pontos);
+}
+
 export type DesafioResumo = {
   id: string;
   nome: string;
@@ -347,10 +395,13 @@ export type DesafioMetaView = {
   metrica: MetaMetrica | null;
   rotinaTemplateId: string | null;
   variavelId: string | null;
+  dificuldade: DesafioDificuldade;
   unidade: string;
   atual: number;
   alvo: number;
   pct: number;
+  /** Pontos do período atual — ver pontosDaMetaFolha. */
+  pontos: number;
   periodo: DesafioPeriodo;
   ordem: number;
   serie: number[]; // % nos últimos pontos (mais antigo -> mais recente, último = atual)
@@ -362,6 +413,8 @@ export type MembroDesafio = {
   nome: string | null;
   avatarUrl: string | null;
   streak: number;
+  /** Soma de pontos de todas as metas grandes no período atual — base do ranking. */
+  pontosTotais: number;
   metasGrandes: DesafioMetaView[];
 };
 
@@ -373,7 +426,7 @@ export type DesafioDetalhe = {
   criadorId: string;
   metasGrandesLimite: number;
   membros: MembroDesafio[];
-  insights: InsightView[];
+  eventos: DesafioEventoView[];
 };
 
 const PONTOS_SERIE = 8;
@@ -417,6 +470,7 @@ function viewDeMeta(
     const atual = filhasView.reduce((s, f) => s + f.atual, 0);
     const alvo = filhasView.reduce((s, f) => s + f.alvo, 0) || meta.alvo;
     const pct = alvo > 0 ? (atual / alvo) * 100 : 0;
+    const pontos = filhasView.reduce((s, f) => s + f.pontos, 0);
     const serie = Array.from({ length: PONTOS_SERIE }, (_, i) => i).map((i) => {
       const pesos = filhasView.map((f) => f.serie[i] ?? 0);
       return pesos.length > 0 ? pesos.reduce((s, v) => s + v, 0) / pesos.length : 0;
@@ -428,10 +482,12 @@ function viewDeMeta(
       metrica: meta.metrica as MetaMetrica | null,
       rotinaTemplateId: meta.rotinaTemplateId,
       variavelId: meta.variavelId,
+      dificuldade: meta.dificuldade as DesafioDificuldade,
       unidade,
       atual,
       alvo,
       pct,
+      pontos,
       periodo,
       ordem: 0,
       serie,
@@ -442,6 +498,7 @@ function viewDeMeta(
   const { inicio, fim } = rangeDoPeriodo(periodo, chaveDoPeriodo(periodo, agora));
   const atual = calcularAtualMeta(meta, dados, inicio, fim);
   const pct = meta.alvo > 0 ? (atual / meta.alvo) * 100 : 0;
+  const pontos = pontosDaMetaFolha(meta, dados, inicio, fim, agora);
 
   const serie = Array.from({ length: PONTOS_SERIE }, (_, i) => PONTOS_SERIE - 1 - i).map((n) => {
     const dataDeslocada = deslocarPeriodo(periodo, agora, n);
@@ -458,10 +515,12 @@ function viewDeMeta(
     metrica: meta.metrica as MetaMetrica | null,
     rotinaTemplateId: meta.rotinaTemplateId,
     variavelId: meta.variavelId,
+    dificuldade: meta.dificuldade as DesafioDificuldade,
     unidade,
     atual,
     alvo: meta.alvo,
     pct,
+    pontos,
     periodo,
     ordem: 0,
     serie,
@@ -469,9 +528,10 @@ function viewDeMeta(
   };
 }
 
-/** Detalhe completo: metas grandes de CADA membro (com filhas + série) e feed de insights. */
+/** Detalhe completo: metas grandes de CADA membro (com filhas + série, pontos e streak) e o feed de eventos do desafio. */
 export async function desafioDetalhe(
   desafioId: string,
+  viewerUserId: string,
   agora: Date = new Date()
 ): Promise<DesafioDetalhe | null> {
   const desafio = await db.desafio.findUnique({
@@ -544,11 +604,17 @@ export async function desafioDetalhe(
       nome: perfilPorId.get(dm.userId)?.nome ?? null,
       avatarUrl: perfilPorId.get(dm.userId)?.avatarUrl ?? null,
       streak: streakPorUsuario.get(dm.userId) ?? 0,
+      pontosTotais: metasGrandes.reduce((s, m) => s + m.pontos, 0),
       metasGrandes,
     };
   });
 
-  const insights = gerarInsights(membros, agora);
+  // Detecta e persiste (idempotente) os eventos novos do feed — meta
+  // concluída no período, streak batendo marco, líder da semana — e devolve
+  // o feed completo já com as reações de cada evento.
+  const candidatos = gerarCandidatosEventos(membros, agora);
+  if (candidatos.length > 0) await sincronizarEventos(desafioId, candidatos);
+  const eventos = await eventosDoDesafio(desafioId, viewerUserId, perfilPorId);
 
   return {
     id: desafio.id,
@@ -558,6 +624,6 @@ export async function desafioDetalhe(
     criadorId: desafio.criadorId,
     metasGrandesLimite: desafio.metasGrandesLimite,
     membros,
-    insights,
+    eventos,
   };
 }

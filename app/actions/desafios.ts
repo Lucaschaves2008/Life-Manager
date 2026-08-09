@@ -4,7 +4,8 @@ import { revalidatePath } from "@/lib/cache-revalidate";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { desafioDetalhe, type DesafioDetalhe, type DesafioOrigem, type DesafioPeriodo } from "@/lib/data/desafios";
-import { PERIODOS_DESAFIO } from "@/lib/data/desafios-constantes";
+import { PERIODOS_DESAFIO, type DesafioDificuldade } from "@/lib/data/desafios-constantes";
+import { reagirEvento, removerReacaoEvento } from "@/lib/data/desafios-eventos";
 import { METRICAS, type MetaMetrica } from "@/lib/data/metas-quantitativas-constantes";
 import {
   solicitacoesDoDesafio,
@@ -127,6 +128,7 @@ export type DesafioMetaInput = {
   variavelId?: string;
   alvo: number;
   periodo: DesafioPeriodo;
+  dificuldade: DesafioDificuldade;
 };
 
 async function validarOrigemInput(userId: string, input: DesafioMetaInput) {
@@ -160,6 +162,7 @@ function camposDaMeta(input: DesafioMetaInput) {
     variavelId: input.origem === "variavel" ? (input.variavelId ?? null) : null,
     alvo: input.alvo,
     periodo: input.periodo,
+    dificuldade: input.dificuldade,
   };
 }
 
@@ -289,6 +292,7 @@ type MetaAtual = {
   variavelId: string | null;
   alvo: number;
   periodo: string;
+  dificuldade: string;
 };
 
 const ROTULO_ORIGEM: Record<string, string> = {
@@ -308,6 +312,9 @@ function diffDaMeta(antes: MetaAtual, depois: DesafioMetaInput): string {
   }
   if (antes.periodo !== depois.periodo) {
     partes.push(`Período: ${rotuloPeriodo(antes.periodo)} → ${rotuloPeriodo(depois.periodo)}`);
+  }
+  if (antes.dificuldade !== depois.dificuldade) {
+    partes.push(`Dificuldade: ${antes.dificuldade} → ${depois.dificuldade}`);
   }
   if (antes.origem !== depois.origem) {
     partes.push(
@@ -700,7 +707,7 @@ export async function buscarSolicitacoes(desafioId: string): Promise<Solicitacao
 export async function buscarDesafioDetalhe(desafioId: string): Promise<DesafioDetalhe | null> {
   const { id: userId } = await requireUser();
   await requireMembro(desafioId, userId);
-  return desafioDetalhe(desafioId);
+  return desafioDetalhe(desafioId, userId);
 }
 
 const LIMITE_TEXTO_MENSAGEM = 500;
@@ -775,5 +782,24 @@ export async function excluirDocumento(desafioId: string) {
 
   await db.desafioDocumento.delete({ where: { desafioId } });
   await removeDesafioDocumento(desafioId);
+  revalidar(desafioId);
+}
+
+// ---------- Feed de atividade ----------
+
+/** Reagir de novo (mesmo emoji ou outro) troca a reação; usada como toggle pelo cliente. */
+export async function reagirAoEvento(desafioId: string, eventoId: string, emoji: string) {
+  const { id: userId } = await requireUser();
+  await requireMembro(desafioId, userId);
+  const evento = await db.desafioEvento.findFirst({ where: { id: eventoId, desafioId } });
+  if (!evento) throw new Error("Evento não encontrado.");
+  await reagirEvento(eventoId, userId, emoji);
+  revalidar(desafioId);
+}
+
+export async function removerReacaoAoEvento(desafioId: string, eventoId: string) {
+  const { id: userId } = await requireUser();
+  await requireMembro(desafioId, userId);
+  await removerReacaoEvento(eventoId, userId);
   revalidar(desafioId);
 }

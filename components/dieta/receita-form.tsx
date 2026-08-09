@@ -1,19 +1,22 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
-import { ChefHat, Plus, Search, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState, useTransition } from "react";
+import { ChefHat, Database, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Textarea } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Segmented } from "@/components/caverna/segmented";
 import {
+  buscarCatalogoAlimentos,
   createAlimento,
   createReceita,
+  importarAlimentoCatalogo,
   updateReceita,
   type AlimentoInput,
   type ReceitaInput,
 } from "@/app/actions/dieta";
+import type { AlimentoCatalogoView } from "@/lib/data/alimentos-catalogo";
 import { UNIDADES, kcalEstimada, rotuloIngrediente } from "@/lib/data/dieta-calc";
 import type { Macros, ReceitaView } from "@/lib/data/dieta";
 import { cn } from "@/lib/utils";
@@ -125,8 +128,17 @@ function FormularioReceita({
       : macrosVazios
   );
   const [adicionando, setAdicionando] = useState(false);
+  // Alimentos criados/importados nesta sessão do form — a lista `alimentos`
+  // (prop vinda do servidor) só chega atualizada depois da revalidação, então
+  // sem isso o ingrediente recém-adicionado pisca como "Alimento removido"
+  // até a tela receber o próximo payload.
+  const [alimentosNovos, setAlimentosNovos] = useState<AlimentoOpcao[]>([]);
 
-  const porId = useMemo(() => new Map(alimentos.map((a) => [a.id, a])), [alimentos]);
+  const porId = useMemo(() => {
+    const mapa = new Map(alimentos.map((a) => [a.id, a]));
+    for (const a of alimentosNovos) mapa.set(a.id, a);
+    return mapa;
+  }, [alimentos, alimentosNovos]);
 
   const calculados: Macros = useMemo(() => {
     return linhas.reduce<Macros>(
@@ -289,8 +301,11 @@ function FormularioReceita({
 
           {adicionando ? (
             <BuscaAlimento
-              alimentos={alimentos}
-              onEscolher={(foodId) => {
+              alimentos={[...alimentos, ...alimentosNovos]}
+              onEscolher={(foodId, novoAlimento) => {
+                if (novoAlimento) {
+                  setAlimentosNovos((atuais) => [...atuais, novoAlimento]);
+                }
                 setLinhas((atuais) => [
                   ...atuais,
                   { chave: novaChave(), foodId, quantidade: "", unidade: "g" },
@@ -424,7 +439,7 @@ function BuscaAlimento({
   onCancelar,
 }: {
   alimentos: AlimentoOpcao[];
-  onEscolher: (foodId: string) => void;
+  onEscolher: (foodId: string, novoAlimento?: AlimentoOpcao) => void;
   onCancelar: () => void;
 }) {
   const [busca, setBusca] = useState("");
@@ -449,6 +464,56 @@ function BuscaAlimento({
       ).slice(0, 8),
     [alimentos, termo]
   );
+
+  // Catálogo pré-carregado (TACO): busca com debounce, só quando há termo —
+  // reduz o cadastro manual mostrando os macros já prontos.
+  const [doCatalogo, setDoCatalogo] = useState<AlimentoCatalogoView[]>([]);
+  const [buscandoCatalogo, setBuscandoCatalogo] = useState(false);
+  const [importandoId, setImportandoId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!termo) {
+      setDoCatalogo([]);
+      return;
+    }
+    let cancelado = false;
+    setBuscandoCatalogo(true);
+    const timeout = setTimeout(async () => {
+      try {
+        const resultado = await buscarCatalogoAlimentos(termo);
+        if (!cancelado) setDoCatalogo(resultado);
+      } finally {
+        if (!cancelado) setBuscandoCatalogo(false);
+      }
+    }, 300);
+    return () => {
+      cancelado = true;
+      clearTimeout(timeout);
+    };
+  }, [termo]);
+
+  function importar(item: AlimentoCatalogoView) {
+    setImportandoId(item.id);
+    startCriar(async () => {
+      try {
+        const id = await importarAlimentoCatalogo(item.id);
+        onEscolher(id, {
+          id,
+          nome: item.nome,
+          kcal100: item.kcal100,
+          prot100: item.prot100,
+          carb100: item.carb100,
+          gord100: item.gord100,
+          porcaoNome: item.porcaoNome,
+          porcaoG: item.porcaoG,
+        });
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Não foi possível importar.");
+      } finally {
+        setImportandoId(null);
+      }
+    });
+  }
 
   const campos: { chave: keyof AlimentoInput; label: string }[] = [
     { chave: "kcal100", label: "Kcal / 100 g" },
@@ -520,7 +585,7 @@ function BuscaAlimento({
                   try {
                     const id = await createAlimento(novo);
                     toast.success("Alimento criado");
-                    onEscolher(id);
+                    onEscolher(id, { ...novo, id });
                   } catch (e) {
                     toast.error(
                       e instanceof Error ? e.message : "Não foi possível salvar."
@@ -572,12 +637,52 @@ function BuscaAlimento({
             </span>
           </button>
         ))}
-        {achados.length === 0 && (
+        {achados.length === 0 && !termo && (
           <p className="px-2 py-1.5 text-[12.5px] text-steel">
-            Nenhum alimento com esse nome.
+            Nenhum alimento na sua biblioteca ainda.
           </p>
         )}
       </div>
+
+      {termo && (
+        <div className="mt-2 flex flex-col border-t border-stroke pt-2">
+          <p className="microlabel px-2">Tabela de alimentos (TACO)</p>
+          <div className="mt-1 flex flex-col">
+            {doCatalogo
+              .filter(
+                (c) => !alimentos.some((a) => a.nome.toLowerCase() === c.nome.toLowerCase())
+              )
+              .map((c) => (
+                <button
+                  key={c.id}
+                  disabled={pending}
+                  onClick={() => importar(c)}
+                  className={cn(
+                    "flex items-center justify-between gap-2 rounded-[8px] px-2 py-1.5 text-left",
+                    "text-[12.5px] text-mist transition-colors hover:bg-surface-1 hover:text-ice disabled:opacity-60"
+                  )}
+                >
+                  <span className="flex min-w-0 items-center gap-1.5 truncate">
+                    <Database className="h-3 w-3 shrink-0 text-steel" strokeWidth={1.5} />
+                    <span className="truncate">{c.nome}</span>
+                  </span>
+                  <span className="tabular shrink-0 text-[11px] text-steel">
+                    {importandoId === c.id
+                      ? "Importando…"
+                      : c.kcal100 == null
+                        ? "—"
+                        : `${Math.round(c.kcal100)} kcal/100g`}
+                  </span>
+                </button>
+              ))}
+            {!buscandoCatalogo && doCatalogo.length === 0 && (
+              <p className="px-2 py-1.5 text-[12.5px] text-steel">
+                Nenhum item na tabela com esse nome.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="mt-2 flex items-center gap-2">
         <Button

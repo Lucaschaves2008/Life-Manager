@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { InsightsFeed } from "@/components/desafios/insights-feed";
+import { DesafioEventosFeed } from "@/components/desafios/desafio-eventos-feed";
 import { MembroMetasCard } from "@/components/desafios/membro-metas-card";
 import { DesafioLeaderboard } from "@/components/desafios/desafio-leaderboard";
 import { DesafioChat } from "@/components/desafios/desafio-chat";
@@ -110,7 +110,7 @@ export function DesafioDetalheClient({
           documentoInicial={documentoInicial}
         />
         {desafio.membros.length > 1 && <DesafioLeaderboard membros={desafio.membros} />}
-        <InsightsFeed insights={desafio.insights} />
+        <DesafioEventosFeed desafioId={desafio.id} eventos={desafio.eventos} />
         <DesafioChat
           desafioId={desafio.id}
           viewerUserId={viewerUserId}

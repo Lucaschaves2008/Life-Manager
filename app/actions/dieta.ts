@@ -9,6 +9,10 @@ import { marcarDiaAtivo } from "@/lib/streak";
 import { parseJSON } from "@/lib/utils";
 import { erroCoerenciaMacros } from "@/lib/data/dieta-calc";
 import type { EscolhaLog, ExtraLog } from "@/lib/data/dieta";
+import {
+  buscarAlimentosCatalogo,
+  type AlimentoCatalogoView,
+} from "@/lib/data/alimentos-catalogo";
 
 const MAX_OPCOES = 4;
 
@@ -554,6 +558,39 @@ export async function restoreAlimento(dados: AlimentoInput) {
   const { id: userId } = await requireUser();
   await db.food.create({ data: { ...dados, userId } });
   revalidar(userId);
+}
+
+/** Busca no catálogo pré-carregado (TACO) — primeira opção antes do cadastro manual. */
+export async function buscarCatalogoAlimentos(
+  termo: string
+): Promise<AlimentoCatalogoView[]> {
+  await requireUser();
+  return buscarAlimentosCatalogo(termo);
+}
+
+/**
+ * Importa um item do catálogo pra biblioteca do usuário — cria um Food
+ * normal (copy-on-select). Devolve o id, no mesmo padrão de createAlimento,
+ * pra tela de refeição já usar o alimento recém-importado como ingrediente.
+ */
+export async function importarAlimentoCatalogo(catalogoId: string) {
+  const { id: userId } = await requireUser();
+  const item = await db.alimentoCatalogo.findUnique({ where: { id: catalogoId } });
+  if (!item) throw new Error("Alimento não encontrado no catálogo.");
+  const food = await db.food.create({
+    data: {
+      userId,
+      nome: item.nome,
+      kcal100: item.kcal100,
+      prot100: item.prot100,
+      carb100: item.carb100,
+      gord100: item.gord100,
+      porcaoNome: item.porcaoNome,
+      porcaoG: item.porcaoG,
+    },
+  });
+  revalidar(userId);
+  return food.id;
 }
 
 // ---------- Peso ----------

@@ -6,10 +6,16 @@
 
 export type DesafioPeriodo = "semana" | "mes" | "trimestre" | "semestre";
 export type DesafioOrigem = "metrica" | "checklist" | "variavel";
+export type DesafioDificuldade = "normal" | "dificil";
 
 export const PERIODOS_DESAFIO: { value: DesafioPeriodo; label: string }[] = [
   { value: "semana", label: "Semanal" },
   { value: "mes", label: "Mensal" },
   { value: "trimestre", label: "Trimestral" },
   { value: "semestre", label: "Semestral" },
+];
+
+export const DIFICULDADES_DESAFIO: { value: DesafioDificuldade; label: string }[] = [
+  { value: "normal", label: "Normal" },
+  { value: "dificil", label: "Difícil (pontua mais)" },
 ];

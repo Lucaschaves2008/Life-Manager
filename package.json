@@ -13,6 +13,7 @@
     "test": "vitest run",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
+    "db:seed:alimentos": "tsx prisma/seed-alimentos-catalogo.ts",
     "db:reset": "echo '⛔ db:reset APAGA o banco remoto inteiro. Se tiver certeza, use: npm run db:reset:confirmo' && exit 1",
     "db:reset:confirmo": "prisma db push --force-reset && tsx prisma/seed.ts"
   },
