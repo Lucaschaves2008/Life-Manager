@@ -561,13 +561,15 @@ export async function solicitarAjusteProgresso(
   if (!motivo) throw new Error("Explique o motivo do ajuste — o grupo precisa disso para votar.");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(ajuste.data)) throw new Error("Data inválida.");
 
-  // Meta com filhas soma o progresso das filhas: um ajuste nela seria ignorado
-  // no cálculo, então o pedido é barrado aqui em vez de virar um voto inútil.
-  const filhas = await db.desafioMeta.count({ where: { metaPaiId: metaId } });
-  if (filhas > 0) {
-    throw new Error(
-      "Esta meta soma o progresso das metas menores. Faça o ajuste na meta menor correspondente."
-    );
+  // Só bloqueia quando a meta de fato soma o progresso das filhas — meta com
+  // filhas independentes (somaFilhas=false) pode receber ajuste normalmente.
+  if (meta.somaFilhas) {
+    const filhas = await db.desafioMeta.count({ where: { metaPaiId: metaId } });
+    if (filhas > 0) {
+      throw new Error(
+        "Esta meta soma o progresso das metas menores. Faça o ajuste na meta menor correspondente."
+      );
+    }
   }
 
   const limpo: AjusteInput = { quantidade, data: ajuste.data, motivo };
