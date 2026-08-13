@@ -129,6 +129,8 @@ export type DesafioMetaInput = {
   alvo: number;
   periodo: DesafioPeriodo;
   dificuldade: DesafioDificuldade;
+  /** Só faz sentido pra meta grande: soma o progresso das metas menores em vez do próprio. */
+  somaFilhas?: boolean;
 };
 
 async function validarOrigemInput(userId: string, input: DesafioMetaInput) {
@@ -163,6 +165,7 @@ function camposDaMeta(input: DesafioMetaInput) {
     alvo: input.alvo,
     periodo: input.periodo,
     dificuldade: input.dificuldade,
+    somaFilhas: input.somaFilhas ?? false,
   };
 }
 
@@ -293,6 +296,7 @@ type MetaAtual = {
   alvo: number;
   periodo: string;
   dificuldade: string;
+  somaFilhas: boolean;
 };
 
 const ROTULO_ORIGEM: Record<string, string> = {
@@ -327,6 +331,11 @@ function diffDaMeta(antes: MetaAtual, depois: DesafioMetaInput): string {
   ) {
     partes.push("Fonte do progresso trocada");
   }
+  if (antes.somaFilhas !== (depois.somaFilhas ?? false)) {
+    partes.push(
+      depois.somaFilhas ? "Passou a somar as metas menores" : "Deixou de somar as metas menores"
+    );
+  }
   return partes.length > 0 ? partes.join(" · ") : "Sem mudança de valores";
 }
 
@@ -342,6 +351,10 @@ async function membrosDoDesafio(desafioId: string): Promise<string[]> {
 /**
  * Coração da regra: sozinho no desafio, aplica na hora; com outras pessoas,
  * vira solicitação pendente com o voto de aprovação do próprio autor.
+ *
+ * Exceção: o criador do desafio EDITANDO a própria meta (autoAprovar) aplica
+ * na hora igual — mas ainda registra a solicitação já resolvida, pra ficar
+ * no histórico e o resto do grupo ver o que mudou.
  */
 async function registrarMudanca(params: {
   userId: string;
@@ -352,12 +365,34 @@ async function registrarMudanca(params: {
   payload: unknown;
   resumo: string;
   justificativa?: string;
+  autoAprovar?: boolean;
   aplicar: () => Promise<void>;
 }): Promise<ResultadoMudanca> {
   const membros = await membrosDoDesafio(params.desafioId);
 
   if (membros.length <= 1) {
     await params.aplicar();
+    revalidar(params.desafioId);
+    return { aplicado: true };
+  }
+
+  if (params.autoAprovar) {
+    await params.aplicar();
+    await db.desafioSolicitacao.create({
+      data: {
+        desafioId: params.desafioId,
+        autorId: params.userId,
+        tipo: params.tipo,
+        metaId: params.metaId,
+        metaTitulo: params.metaTitulo,
+        payload: JSON.stringify(params.payload),
+        resumo: params.resumo,
+        justificativa: params.justificativa?.trim() || null,
+        status: "aprovada",
+        resolvidoEm: new Date(),
+        votos: { create: { userId: params.userId, aprovado: true } },
+      },
+    });
     revalidar(params.desafioId);
     return { aplicado: true };
   }
@@ -450,7 +485,17 @@ export async function editarMeta(
   const meta = await db.desafioMeta.findFirst({ where: { id: metaId, userId } });
   if (!meta) throw new Error("Meta não encontrada.");
   await requireMembro(meta.desafioId, userId);
+
   await validarOrigemInput(userId, input);
+
+  // O criador do desafio edita a própria meta sem esperar o resto do grupo
+  // aprovar — só criar/excluir meta e ajuste de progresso continuam exigindo
+  // unanimidade, mesmo pra ele.
+  const desafio = await db.desafio.findUnique({
+    where: { id: meta.desafioId },
+    select: { criadorId: true },
+  });
+  const ehCriador = desafio?.criadorId === userId;
 
   return registrarMudanca({
     userId,
@@ -461,6 +506,7 @@ export async function editarMeta(
     payload: { meta: input },
     resumo: `Mudar a meta "${meta.titulo}" — ${diffDaMeta(meta, input)}`,
     justificativa,
+    autoAprovar: ehCriador,
     aplicar: () => aplicarEditarMeta(userId, metaId, input),
   });
 }

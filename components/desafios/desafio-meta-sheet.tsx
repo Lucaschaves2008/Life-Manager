@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Segmented } from "@/components/caverna/segmented";
 import {
   criarMetaGrande,
@@ -39,6 +40,7 @@ export function DesafioMetaSheet({
   metaPaiId,
   editando,
   precisaAprovacao,
+  souCriador = false,
   templatesChecklist,
   variaveis,
 }: {
@@ -51,6 +53,8 @@ export function DesafioMetaSheet({
   editando?: DesafioMetaView;
   /** Desafio com mais de um membro: a mudança vira pedido, não vale na hora. */
   precisaAprovacao: boolean;
+  /** Criador do desafio: edita a própria meta sem esperar aprovação do grupo. */
+  souCriador?: boolean;
   templatesChecklist: { id: string; nome: string }[];
   variaveis: VariavelView[];
 }) {
@@ -70,6 +74,16 @@ export function DesafioMetaSheet({
     editando?.dificuldade ?? "normal"
   );
   const [justificativa, setJustificativa] = useState("");
+  const [somaFilhas, setSomaFilhas] = useState(editando?.somaFilhas ?? false);
+
+  // A meta grande é independente das menores por padrão — cada uma tem seu
+  // próprio alvo. "Somar filhas" é opt-in: só nesse caso o alvo daqui vira a
+  // soma das metas menores (e para de fazer sentido editar à mão).
+  const temFilhas = Boolean(editando && editando.filhas.length > 0);
+  const alvoDesabilitado = tipo === "grande" && somaFilhas && temFilhas;
+  // Criador do desafio editando a própria meta: aplica na hora, sem esperar
+  // o grupo aprovar (ainda assim entra no histórico de mudanças).
+  const aprovacaoNecessaria = precisaAprovacao && !(Boolean(editando) && souCriador);
 
   const valido =
     titulo.trim().length > 0 &&
@@ -100,6 +114,7 @@ export function DesafioMetaSheet({
       alvo,
       periodo,
       dificuldade,
+      somaFilhas: tipo === "grande" ? somaFilhas : undefined,
     };
 
     executar(async () => {
@@ -138,10 +153,16 @@ export function DesafioMetaSheet({
       <SheetContent aria-describedby={undefined}>
         <SheetTitle>{titulos}</SheetTitle>
 
-        {precisaAprovacao && (
+        {aprovacaoNecessaria && (
           <p className="mt-4 rounded-[12px] border border-stroke bg-surface-2 px-3.5 py-3 text-[12.5px] text-mist">
             Este desafio tem mais de um membro: a mudança vira um pedido e só
             entra em vigor quando <span className="text-ice">todos aprovarem</span>.
+          </p>
+        )}
+        {precisaAprovacao && !aprovacaoNecessaria && (
+          <p className="mt-4 rounded-[12px] border border-stroke bg-surface-2 px-3.5 py-3 text-[12.5px] text-mist">
+            Você criou este desafio: a mudança <span className="text-ice">vale na hora</span>,
+            sem esperar o resto do grupo — mas ainda vai para o histórico.
           </p>
         )}
 
@@ -245,8 +266,29 @@ export function DesafioMetaSheet({
               onChange={(e) => setAlvo(Number(e.target.value))}
               onFocus={(e) => e.target.select()}
               placeholder="Ex.: 10"
+              disabled={alvoDesabilitado}
             />
+            {alvoDesabilitado && (
+              <p className="mt-1.5 text-[11.5px] text-steel">
+                Com &quot;somar metas menores&quot; ligado, esse número é a
+                soma das metas menores desta meta — para mudar o alvo, edite
+                cada meta menor abaixo ou desligue a soma automática.
+              </p>
+            )}
           </div>
+
+          {tipo === "grande" && temFilhas && (
+            <label className="flex cursor-pointer items-start gap-2.5">
+              <Checkbox checked={somaFilhas} onCheckedChange={(v) => setSomaFilhas(v === true)} />
+              <span className="text-[13px] text-mist">
+                Somar automaticamente o progresso das metas menores
+                <span className="mt-0.5 block text-[11.5px] text-steel">
+                  Desligado por padrão: a meta grande tem seu próprio alvo e
+                  fonte de progresso, sem relação com as menores.
+                </span>
+              </span>
+            </label>
+          )}
 
           <div>
             <Label>Período</Label>
@@ -276,7 +318,7 @@ export function DesafioMetaSheet({
             </p>
           </div>
 
-          {precisaAprovacao && (
+          {aprovacaoNecessaria && (
             <div>
               <Label htmlFor="justificativa">Motivo (aparece para o grupo)</Label>
               <Input
@@ -289,7 +331,7 @@ export function DesafioMetaSheet({
           )}
 
           <Button variant="primary" disabled={!valido || pending} onClick={salvar} className="mt-1.5">
-            {precisaAprovacao ? "Enviar pedido ao grupo" : "Salvar"}
+            {aprovacaoNecessaria ? "Enviar pedido ao grupo" : "Salvar"}
           </Button>
         </div>
       </SheetContent>

@@ -32,6 +32,7 @@ function MetaPequenaRow({
   meta,
   souDono,
   precisaAprovacao,
+  souCriador,
   templatesChecklist,
   variaveis,
   desafioId,
@@ -40,6 +41,7 @@ function MetaPequenaRow({
   meta: DesafioMetaView;
   souDono: boolean;
   precisaAprovacao: boolean;
+  souCriador: boolean;
   templatesChecklist: { id: string; nome: string }[];
   variaveis: VariavelView[];
   desafioId: string;
@@ -111,6 +113,7 @@ function MetaPequenaRow({
           tipo="pequena"
           editando={meta}
           precisaAprovacao={precisaAprovacao}
+          souCriador={souCriador}
           templatesChecklist={templatesChecklist}
           variaveis={variaveis}
         />
@@ -142,6 +145,7 @@ function MetaGrandeBlock({
   meta,
   souDono,
   precisaAprovacao,
+  souCriador,
   templatesChecklist,
   variaveis,
   hoje,
@@ -150,6 +154,7 @@ function MetaGrandeBlock({
   meta: DesafioMetaView;
   souDono: boolean;
   precisaAprovacao: boolean;
+  souCriador: boolean;
   templatesChecklist: { id: string; nome: string }[];
   variaveis: VariavelView[];
   hoje: string;
@@ -160,8 +165,9 @@ function MetaGrandeBlock({
   const [editando, setEditando] = useState(false);
   const [ajustando, setAjustando] = useState(false);
   const cor = meta.pct >= 100 ? "var(--color-mint)" : "var(--color-ice)";
-  // Meta com filhas soma o progresso delas — o ajuste tem que ser feito na filha.
-  const podeAjustar = meta.filhas.length === 0;
+  // Só quando "somar filhas" está ligado o progresso vem das metas menores —
+  // aí o ajuste tem que ser feito na filha, não aqui.
+  const podeAjustar = !meta.somaFilhas || meta.filhas.length === 0;
 
   return (
     <div className={cn("rounded-[14px] border border-stroke bg-surface px-4 py-3.5", removendo && "opacity-40")}>
@@ -231,6 +237,7 @@ function MetaGrandeBlock({
           tipo="grande"
           editando={meta}
           precisaAprovacao={precisaAprovacao}
+          souCriador={souCriador}
           templatesChecklist={templatesChecklist}
           variaveis={variaveis}
         />
@@ -281,6 +288,7 @@ function MetaGrandeBlock({
               meta={filha}
               souDono={souDono}
               precisaAprovacao={precisaAprovacao}
+              souCriador={souCriador}
               templatesChecklist={templatesChecklist}
               variaveis={variaveis}
               desafioId={desafioId}
@@ -318,6 +326,7 @@ export function MembroMetasCard({
   souEu,
   metasGrandesLimite,
   precisaAprovacao,
+  souCriador,
   templatesChecklist,
   variaveis,
   hoje,
@@ -328,6 +337,8 @@ export function MembroMetasCard({
   metasGrandesLimite: number;
   /** Desafio com mais de um membro: mudanças viram pedido de aprovação. */
   precisaAprovacao: boolean;
+  /** Criador do desafio: edita a própria meta sem esperar aprovação do grupo. */
+  souCriador: boolean;
   templatesChecklist: { id: string; nome: string }[];
   variaveis: VariavelView[];
   hoje: string;
@@ -373,6 +384,7 @@ export function MembroMetasCard({
             meta={meta}
             souDono={souEu}
             precisaAprovacao={precisaAprovacao}
+            souCriador={souCriador}
             templatesChecklist={templatesChecklist}
             variaveis={variaveis}
             hoje={hoje}

@@ -64,6 +64,7 @@ export function DesafioDetalheClient({
   const streakPorUsuario = new Map(desafio.membros.map((m) => [m.userId, m.streak]));
   // Sozinho no desafio não há o que combinar: as mudanças valem na hora.
   const precisaAprovacao = desafio.membros.length > 1;
+  const souCriador = desafio.criadorId === viewerUserId;
 
   return (
     <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[1fr_360px] lg:items-start lg:gap-6">
@@ -75,6 +76,7 @@ export function DesafioDetalheClient({
             souEu
             metasGrandesLimite={desafio.metasGrandesLimite}
             precisaAprovacao={precisaAprovacao}
+            souCriador={souCriador}
             templatesChecklist={templatesChecklist}
             variaveis={variaveis}
             hoje={hoje}
@@ -89,6 +91,7 @@ export function DesafioDetalheClient({
             souEu={false}
             metasGrandesLimite={desafio.metasGrandesLimite}
             precisaAprovacao={precisaAprovacao}
+            souCriador={souCriador}
             templatesChecklist={templatesChecklist}
             variaveis={variaveis}
             hoje={hoje}

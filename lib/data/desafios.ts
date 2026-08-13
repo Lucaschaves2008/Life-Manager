@@ -99,6 +99,7 @@ type MetaRow = {
   alvo: number;
   periodo: string;
   dificuldade: string;
+  somaFilhas: boolean;
 };
 
 /**
@@ -406,6 +407,8 @@ export type DesafioMetaView = {
   ordem: number;
   serie: number[]; // % nos últimos pontos (mais antigo -> mais recente, último = atual)
   filhas: DesafioMetaView[];
+  /** Só relevante pra meta grande com filhas — ver `somaFilhas` no schema. */
+  somaFilhas: boolean;
 };
 
 export type MembroDesafio = {
@@ -466,7 +469,10 @@ function viewDeMeta(
 
   const unidade = unidadeDaMeta(meta);
 
-  if (filhasView.length > 0) {
+  // "Somar filhas" é opt-in (padrão desligado): a meta grande é independente
+  // por natureza — tem seu próprio alvo e fonte de progresso, sem relação
+  // automática com as menores. Só agrega quando o dono liga somaFilhas.
+  if (meta.somaFilhas && filhasView.length > 0) {
     const atual = filhasView.reduce((s, f) => s + f.atual, 0);
     const alvo = filhasView.reduce((s, f) => s + f.alvo, 0) || meta.alvo;
     const pct = alvo > 0 ? (atual / alvo) * 100 : 0;
@@ -492,6 +498,7 @@ function viewDeMeta(
       ordem: 0,
       serie,
       filhas: filhasView,
+      somaFilhas: true,
     };
   }
 
@@ -524,7 +531,8 @@ function viewDeMeta(
     periodo,
     ordem: 0,
     serie,
-    filhas: [],
+    filhas: filhasView,
+    somaFilhas: meta.somaFilhas,
   };
 }
 

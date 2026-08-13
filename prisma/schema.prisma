@@ -874,6 +874,11 @@ model DesafioMeta {
   // "normal" | "dificil" — dá pontos extras na pontuação diária do desafio
   // (ver PONTOS_DIFICULDADE_MULTIPLICADOR em lib/data/desafios.ts).
   dificuldade      String   @default("normal")
+  // Só importa pra meta grande (metaPaiId nulo) com filhas: quando true, o
+  // progresso mostrado é a SOMA das metas menores; quando false (padrão), a
+  // meta grande é independente — tem seu próprio alvo/fonte de progresso, sem
+  // nenhuma relação automática com as filhas.
+  somaFilhas       Boolean  @default(false)
   ordem            Int      @default(0)
   criadoEm         DateTime @default(now())
 
