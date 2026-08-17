@@ -251,85 +251,11 @@ export function formatTonelagem(kg: number): string {
   })} t`;
 }
 
-// ---------- Semanas / dias (periodização) ----------
-
-export type WeekOverride = {
-  semana: number;
-  series: number;
-  repsAlvo: string;
-  cargaAtual: number;
-};
-
-export type WeekConfig = {
-  series: number;
-  repsAlvo: string;
-  cargaAtual: number;
-  /** true = valor herdado de uma semana anterior (não editado nesta semana). */
-  herdado: boolean;
-  /** semana de onde veio o valor efetivo (1 = base). */
-  origem: number;
-};
-
-/**
- * Config efetiva de um exercício na semana N (regra "repete até editar"):
- * pega o override da MAIOR semana <= N que existir; senão a config base
- * (semana 1). `base`/`overrides` são dados puros — sem I/O.
- */
-export function weekConfig(
-  base: { series: number; repsAlvo: string; cargaAtual: number },
-  overrides: WeekOverride[],
-  semana: number
-): WeekConfig {
-  const alvo = Math.max(1, Math.floor(semana) || 1);
-  const anterior = overrides
-    .filter((w) => w.semana <= alvo)
-    .sort((a, b) => b.semana - a.semana)[0];
-
-  if (!anterior) {
-    return { ...base, herdado: alvo > 1, origem: 1 };
-  }
-  return {
-    series: anterior.series,
-    repsAlvo: anterior.repsAlvo,
-    cargaAtual: anterior.cargaAtual,
-    herdado: anterior.semana < alvo,
-    origem: anterior.semana,
-  };
-}
-
-export type KmWeek = {
-  /** km-alvo efetivo da semana N. */
-  kmAlvo: number;
-  /** true = valor herdado de uma semana anterior (não editado nesta semana). */
-  herdado: boolean;
-  /** semana de onde veio o valor efetivo (1 = base). */
-  origem: number;
-};
-
-/**
- * Km-alvo efetivo de uma sessão de corrida na semana N (mesma regra "repete
- * até editar" de weekConfig, mas para um único float). `base` é o km da
- * semana-1; `overrides` são os RunSessionWeek. Puro — sem I/O.
- */
-export function kmDaSemana(
-  base: number,
-  overrides: { semana: number; kmAlvo: number }[],
-  semana: number
-): KmWeek {
-  const alvo = Math.max(1, Math.floor(semana) || 1);
-  const anterior = overrides
-    .filter((w) => w.semana <= alvo)
-    .sort((a, b) => b.semana - a.semana)[0];
-
-  if (!anterior) {
-    return { kmAlvo: base, herdado: alvo > 1, origem: 1 };
-  }
-  return {
-    kmAlvo: anterior.kmAlvo,
-    herdado: anterior.semana < alvo,
-    origem: anterior.semana,
-  };
-}
+// ---------- Semanas / dias ----------
+// Cada semana do ciclo é independente: RoutineExercise/RunSession têm um
+// campo `semana` próprio, e uma lista pertence à sua semana sem herdar nada
+// de outra. Ver `semanaCicloAtual`/`setSemanaAtual` (Setting compartilhado)
+// pra qual semana está ativa.
 
 /**
  * Km REALIZADOS numa janela (soma de Run.km com data dentro do intervalo).
@@ -359,12 +285,9 @@ export type SessaoCorridaView = {
   id: string;
   nome: string;
   tipo: string;
-  kmAlvoBase: number; // km da semana-1
-  kmAlvoSemana: number; // km efetivo da semana do ciclo atual
-  herdado: boolean; // km herdado de uma semana anterior
-  origemSemana: number;
+  kmAlvo: number;
+  semana: number;
   cumprida: { id: string; km: number; segundos: number } | null;
-  overrides: { semana: number; kmAlvo: number }[]; // p/ o editor de progressão
 };
 
 export type PlanoCorridaView = {
@@ -373,6 +296,8 @@ export type PlanoCorridaView = {
   foco: string | null;
   modalidade: ModalidadeCardio;
   diasSemana: number[];
+  /** Semanas que já têm pelo menos uma sessão cadastrada — pro seletor de semana. */
+  semanasComConteudo: number[];
   sessoes: SessaoCorridaView[];
 };
 

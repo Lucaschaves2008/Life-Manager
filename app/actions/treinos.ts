@@ -111,10 +111,7 @@ export async function duplicateRoutine(id: string) {
   const rotina = await db.routine.findFirst({
     where: { id, userId },
     include: {
-      exercises: {
-        orderBy: { ordem: "asc" },
-        include: { weeks: { orderBy: { semana: "asc" } } },
-      },
+      exercises: { orderBy: { ordem: "asc" } },
     },
   });
   if (!rotina) return;
@@ -139,15 +136,7 @@ export async function duplicateRoutine(id: string) {
           observacao: e.observacao,
           ordem: e.ordem,
           metodo: e.metodo,
-          weeks: {
-            create: e.weeks.map((w) => ({
-              userId,
-              semana: w.semana,
-              series: w.series,
-              repsAlvo: w.repsAlvo,
-              cargaAtual: w.cargaAtual,
-            })),
-          },
+          semana: e.semana,
         })),
       },
     },
@@ -183,14 +172,19 @@ export type ExercicioInput = {
   metodo?: string;
 };
 
-export async function createExercise(routineId: string, input: ExercicioInput) {
+export async function createExercise(
+  routineId: string,
+  semana: number,
+  input: ExercicioInput
+) {
   const { id: userId } = await requireUser();
   const rotina = await db.routine.findFirst({
     where: { id: routineId, userId },
     select: { id: true },
   });
   if (!rotina) throw new Error("Recurso não encontrado.");
-  const total = await db.routineExercise.count({ where: { userId, routineId } });
+  const n = Math.max(1, Math.floor(semana) || 1);
+  const total = await db.routineExercise.count({ where: { userId, routineId, semana: n } });
   await db.routineExercise.create({
     data: {
       ...input,
@@ -198,6 +192,7 @@ export async function createExercise(routineId: string, input: ExercicioInput) {
       tempoAlvoSeg: input.tempoAlvoSeg ?? 60,
       observacao: input.observacao?.trim() || null,
       routineId,
+      semana: n,
       ordem: total,
       userId,
     },
@@ -219,47 +214,19 @@ export async function updateExercise(id: string, input: ExercicioInput) {
   revalidar(userId);
 }
 
-/**
- * Atualiza só os metadados do exercício (que NÃO variam por semana): nome,
- * grupo, método, descanso, observação. Usado ao editar numa semana >= 2, onde
- * series/reps/carga vão para o override (setWeekExercise) e a base fica intacta.
- */
-export async function updateExerciseMeta(
-  id: string,
-  input: Pick<
-    ExercicioInput,
-    "nome" | "grupoMuscular" | "metodo" | "descansoSeg" | "observacao" | "tipoAlvo" | "tempoAlvoSeg"
-  >
-) {
-  const { id: userId } = await requireUser();
-  await db.routineExercise.update({
-    where: { id, userId },
-    data: {
-      nome: input.nome,
-      grupoMuscular: input.grupoMuscular,
-      metodo: input.metodo,
-      descansoSeg: input.descansoSeg,
-      observacao: input.observacao?.trim() || null,
-      tipoAlvo: input.tipoAlvo ?? "series",
-      tempoAlvoSeg: input.tempoAlvoSeg ?? 60,
-    },
-  });
-  revalidar(userId);
-}
-
 export async function deleteExercise(id: string) {
   const { id: userId } = await requireUser();
   await db.routineExercise.delete({ where: { id, userId } });
   revalidar(userId);
 }
 
-/** Troca a ordem do exercício com o vizinho (direcao -1 = sobe, 1 = desce). */
+/** Troca a ordem do exercício com o vizinho na MESMA semana (direcao -1 = sobe, 1 = desce). */
 export async function moveExercise(id: string, direcao: -1 | 1) {
   const { id: userId } = await requireUser();
   const atual = await db.routineExercise.findFirst({ where: { id, userId } });
   if (!atual) return;
   const irmaos = await db.routineExercise.findMany({
-    where: { userId, routineId: atual.routineId },
+    where: { userId, routineId: atual.routineId, semana: atual.semana },
     orderBy: { ordem: "asc" },
   });
   const i = irmaos.findIndex((e) => e.id === id);
@@ -279,6 +246,55 @@ export async function moveExercise(id: string, direcao: -1 | 1) {
   revalidar(userId);
 }
 
+/**
+ * Clona todas as linhas da semana de origem para a semana de destino — atalho
+ * pra não montar do zero uma semana nova. Recusa se o destino já tiver
+ * conteúdo (evita duplicar por engano).
+ */
+export async function duplicarSemanaExercicios(
+  routineId: string,
+  semanaOrigem: number,
+  semanaDestino: number
+) {
+  const { id: userId } = await requireUser();
+  const rotina = await db.routine.findFirst({
+    where: { id: routineId, userId },
+    select: { id: true },
+  });
+  if (!rotina) throw new Error("Recurso não encontrado.");
+
+  const jaTemConteudo = await db.routineExercise.count({
+    where: { userId, routineId, semana: semanaDestino },
+  });
+  if (jaTemConteudo > 0) throw new Error(`A semana ${semanaDestino} já tem exercícios.`);
+
+  const origem = await db.routineExercise.findMany({
+    where: { userId, routineId, semana: semanaOrigem },
+    orderBy: { ordem: "asc" },
+  });
+  if (origem.length === 0) return;
+
+  await db.routineExercise.createMany({
+    data: origem.map((e) => ({
+      userId,
+      nome: e.nome,
+      grupoMuscular: e.grupoMuscular,
+      tipoAlvo: e.tipoAlvo,
+      series: e.series,
+      repsAlvo: e.repsAlvo,
+      cargaAtual: e.cargaAtual,
+      tempoAlvoSeg: e.tempoAlvoSeg,
+      descansoSeg: e.descansoSeg,
+      observacao: e.observacao,
+      ordem: e.ordem,
+      metodo: e.metodo,
+      routineId,
+      semana: semanaDestino,
+    })),
+  });
+  revalidar(userId);
+}
+
 // ---------- Semanas do ciclo (periodização) ----------
 
 /**
@@ -295,52 +311,6 @@ export async function setSemanaAtual(semana: number) {
   });
   revalidatePath("/treinos");
   revalidateTag(tagUsuario(userId, "settings"));
-}
-
-export type SemanaConfigInput = { series: number; repsAlvo: string; cargaAtual: number };
-
-/**
- * Cria/atualiza o override de um exercício numa semana. Editar a semana 1
- * altera a config base (RoutineExercise), pois é a semana-template. Semanas
- * >= 2 gravam em RoutineWeekExercise — as seguintes herdam por resolução.
- */
-export async function setWeekExercise(
-  exerciseId: string,
-  semana: number,
-  input: SemanaConfigInput
-) {
-  const { id: userId } = await requireUser();
-  const n = Math.max(1, Math.floor(semana) || 1);
-  const ex = await db.routineExercise.findFirst({
-    where: { id: exerciseId, userId },
-    select: { id: true },
-  });
-  if (!ex) throw new Error("Recurso não encontrado.");
-
-  const dados = {
-    series: input.series,
-    repsAlvo: input.repsAlvo,
-    cargaAtual: input.cargaAtual,
-  };
-
-  if (n === 1) {
-    await db.routineExercise.update({ where: { id: exerciseId, userId }, data: dados });
-  } else {
-    await db.routineWeekExercise.upsert({
-      where: { exerciseId_semana: { exerciseId, semana: n } },
-      create: { userId, exerciseId, semana: n, ...dados },
-      update: dados,
-    });
-  }
-  revalidar(userId);
-}
-
-/** Remove o override da semana → o exercício volta a herdar a semana anterior. */
-export async function resetWeekExercise(exerciseId: string, semana: number) {
-  const { id: userId } = await requireUser();
-  const n = Math.max(2, Math.floor(semana) || 2); // semana 1 é a base, não reseta
-  await db.routineWeekExercise.deleteMany({ where: { userId, exerciseId, semana: n } });
-  revalidar(userId);
 }
 
 // ---------- Sessões ----------
@@ -418,7 +388,63 @@ export async function saveSession(input: {
 
 export async function deleteSession(id: string) {
   const { id: userId } = await requireUser();
+  const sessao = await db.workoutSession.findFirst({
+    where: { id, userId },
+    include: { setLogs: true },
+  });
+  if (!sessao) return null;
   await db.workoutSession.delete({ where: { id, userId } });
+  revalidar(userId);
+  return sessao;
+}
+
+export async function restoreSession(dados: {
+  data: Date;
+  duracaoMin: number;
+  notas: string | null;
+  routineId: string | null;
+  setLogs: { serie: number; reps: number; cargaKg: number; exerciseId: string }[];
+}) {
+  const { id: userId } = await requireUser();
+  // Whitelist explícita (sem spread do payload do cliente); ficha já excluída
+  // ou alheia degrada para null em vez de falhar o "Desfazer".
+  const rotina = dados.routineId
+    ? await db.routine.findFirst({ where: { id: dados.routineId, userId }, select: { id: true } })
+    : null;
+  const exerciseIds = Array.from(new Set(dados.setLogs.map((s) => s.exerciseId)));
+  const exerciciosValidos =
+    exerciseIds.length > 0
+      ? new Set(
+          (
+            await db.routineExercise.findMany({
+              where: { userId, id: { in: exerciseIds } },
+              select: { id: true },
+            })
+          ).map((e) => e.id)
+        )
+      : new Set<string>();
+
+  await db.workoutSession.create({
+    data: {
+      data: dados.data,
+      duracaoMin: dados.duracaoMin,
+      concluida: true,
+      notas: dados.notas,
+      routineId: rotina?.id ?? null,
+      userId,
+      setLogs: {
+        create: dados.setLogs
+          .filter((s) => exerciciosValidos.has(s.exerciseId))
+          .map((s) => ({
+            serie: s.serie,
+            reps: s.reps,
+            cargaKg: s.cargaKg,
+            exerciseId: s.exerciseId,
+            userId,
+          })),
+      },
+    },
+  });
   revalidar(userId);
 }
 
@@ -461,7 +487,7 @@ export async function createRun(input: CorridaInput) {
   }
 
   const data = dataSP(input.data);
-  await db.run.create({
+  const run = await db.run.create({
     data: {
       data,
       km: input.km,
@@ -483,6 +509,7 @@ export async function createRun(input: CorridaInput) {
   }
   await marcarDiaAtivo(userId, dayKeySP(data)); // conquista o dia
   revalidar(userId);
+  return run.id;
 }
 
 export async function updateRun(id: string, input: CorridaInput) {
@@ -612,10 +639,7 @@ export async function duplicateRunRoutine(id: string) {
   const plano = await db.runRoutine.findFirst({
     where: { id, userId },
     include: {
-      sessions: {
-        orderBy: { ordem: "asc" },
-        include: { weeks: { orderBy: { semana: "asc" } } },
-      },
+      sessions: { orderBy: { ordem: "asc" } },
     },
   });
   if (!plano) return;
@@ -635,13 +659,7 @@ export async function duplicateRunRoutine(id: string) {
           kmAlvo: s.kmAlvo,
           paceAlvoSeg: s.paceAlvoSeg,
           ordem: s.ordem,
-          weeks: {
-            create: s.weeks.map((w) => ({
-              userId,
-              semana: w.semana,
-              kmAlvo: w.kmAlvo,
-            })),
-          },
+          semana: s.semana,
         })),
       },
     },
@@ -670,20 +688,26 @@ export type RunSessionInput = {
   kmAlvo: number;
 };
 
-export async function createRunSession(routineId: string, input: RunSessionInput) {
+export async function createRunSession(
+  routineId: string,
+  semana: number,
+  input: RunSessionInput
+) {
   const { id: userId } = await requireUser();
   const plano = await db.runRoutine.findFirst({
     where: { id: routineId, userId },
     select: { id: true },
   });
   if (!plano) throw new Error("Recurso não encontrado.");
-  const total = await db.runSession.count({ where: { userId, routineId } });
+  const n = Math.max(1, Math.floor(semana) || 1);
+  const total = await db.runSession.count({ where: { userId, routineId, semana: n } });
   await db.runSession.create({
     data: {
       nome: input.nome.trim() || input.tipo,
       tipo: input.tipo,
       kmAlvo: input.kmAlvo,
       routineId,
+      semana: n,
       ordem: total,
       userId,
     },
@@ -704,31 +728,19 @@ export async function updateRunSession(id: string, input: RunSessionInput) {
   revalidar(userId);
 }
 
-/** Metadados que NÃO variam por semana (nome, tipo). O km-alvo vai p/ o override. */
-export async function updateRunSessionMeta(
-  id: string,
-  input: Pick<RunSessionInput, "nome" | "tipo">
-) {
-  const { id: userId } = await requireUser();
-  await db.runSession.update({
-    where: { id, userId },
-    data: { nome: input.nome.trim() || input.tipo, tipo: input.tipo },
-  });
-  revalidar(userId);
-}
-
 export async function deleteRunSession(id: string) {
   const { id: userId } = await requireUser();
   await db.runSession.delete({ where: { id, userId } });
   revalidar(userId);
 }
 
+/** Troca a ordem da sessão com a vizinha na MESMA semana. */
 export async function moveRunSession(id: string, direcao: -1 | 1) {
   const { id: userId } = await requireUser();
   const atual = await db.runSession.findFirst({ where: { id, userId } });
   if (!atual) return;
   const irmaos = await db.runSession.findMany({
-    where: { userId, routineId: atual.routineId },
+    where: { userId, routineId: atual.routineId, semana: atual.semana },
     orderBy: { ordem: "asc" },
   });
   const i = irmaos.findIndex((s) => s.id === id);
@@ -749,39 +761,59 @@ export async function moveRunSession(id: string, direcao: -1 | 1) {
 }
 
 /**
- * Km-alvo de uma sessão numa semana do ciclo. Editar a semana 1 altera a base
- * (RunSession.kmAlvo). Semanas >= 2 gravam em RunSessionWeek; as seguintes
- * herdam por resolução (weekConfig). Espelha setWeekExercise.
+ * Clona as sessões da semana de origem para a semana de destino — atalho pra
+ * não montar do zero. Também reaponta qualquer item do checklist vinculado às
+ * sessões de origem para as cópias novas, senão o auto-check "toda terça, faça
+ * o longão" perderia o vínculo a cada semana nova.
  */
-export async function setRunSessionWeek(
-  sessionId: string,
-  semana: number,
-  kmAlvo: number
+export async function duplicarSemanaSessoes(
+  routineId: string,
+  semanaOrigem: number,
+  semanaDestino: number
 ) {
   const { id: userId } = await requireUser();
-  const n = Math.max(1, Math.floor(semana) || 1);
-  const sessao = await db.runSession.findFirst({
-    where: { id: sessionId, userId },
+  const plano = await db.runRoutine.findFirst({
+    where: { id: routineId, userId },
     select: { id: true },
   });
-  if (!sessao) throw new Error("Recurso não encontrado.");
+  if (!plano) throw new Error("Recurso não encontrado.");
 
-  if (n === 1) {
-    await db.runSession.update({ where: { id: sessionId, userId }, data: { kmAlvo } });
-  } else {
-    await db.runSessionWeek.upsert({
-      where: { sessionId_semana: { sessionId, semana: n } },
-      create: { userId, sessionId, semana: n, kmAlvo },
-      update: { kmAlvo },
-    });
-  }
-  revalidar(userId);
-}
+  const jaTemConteudo = await db.runSession.count({
+    where: { userId, routineId, semana: semanaDestino },
+  });
+  if (jaTemConteudo > 0) throw new Error(`A semana ${semanaDestino} já tem sessões.`);
 
-/** Remove o override da semana → a sessão volta a herdar a semana anterior. */
-export async function resetRunSessionWeek(sessionId: string, semana: number) {
-  const { id: userId } = await requireUser();
-  const n = Math.max(2, Math.floor(semana) || 2); // semana 1 é a base
-  await db.runSessionWeek.deleteMany({ where: { userId, sessionId, semana: n } });
+  const origem = await db.runSession.findMany({
+    where: { userId, routineId, semana: semanaOrigem },
+    orderBy: { ordem: "asc" },
+  });
+  if (origem.length === 0) return;
+
+  const copias = await db.$transaction(
+    origem.map((s) =>
+      db.runSession.create({
+        data: {
+          userId,
+          nome: s.nome,
+          tipo: s.tipo,
+          kmAlvo: s.kmAlvo,
+          paceAlvoSeg: s.paceAlvoSeg,
+          ordem: s.ordem,
+          routineId,
+          semana: semanaDestino,
+        },
+      })
+    )
+  );
+
+  await Promise.all(
+    origem.map((s, i) =>
+      db.rotinaTemplate.updateMany({
+        where: { userId, runSessionId: s.id },
+        data: { runSessionId: copias[i].id },
+      })
+    )
+  );
+
   revalidar(userId);
 }

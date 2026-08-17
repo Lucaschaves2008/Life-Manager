@@ -34,9 +34,6 @@ export type ExercicioExec = {
   tempoAlvoSeg: number;
   descansoSeg: number;
   observacao: string | null;
-  // periodização: config já resolvida p/ a semana atual (ver weekConfig)
-  herdado?: boolean;
-  origem?: number;
 };
 
 type LinhaSerie = { reps: string; carga: string; feita: boolean };

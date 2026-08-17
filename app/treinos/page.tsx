@@ -27,7 +27,6 @@ import {
   resumoTreinos,
   semanaCicloAtual,
   volumeSemanal,
-  weekConfig,
   type ModalidadeCardio,
 } from "@/lib/data/treinos";
 import { ritmoBruto } from "@/lib/data/treinos-format";
@@ -238,43 +237,39 @@ async function Musculacao({ userId }: { userId: string }) {
       where: { userId },
       orderBy: { ordem: "asc" },
       include: {
-        exercises: {
-          orderBy: { ordem: "asc" },
-          include: { weeks: { orderBy: { semana: "asc" } } },
-        },
+        exercises: { orderBy: { ordem: "asc" } },
       },
     }),
     semanaCicloAtual(userId),
   ]);
 
-  const fichas: FichaView[] = rotinas.map((r) => ({
-    id: r.id,
-    nome: r.nome,
-    foco: r.foco,
-    dias: parseJSON<string[]>(r.diasSemana, []).map(Number),
-    exercicios: r.exercises.map((e) => {
-      const cfg = weekConfig(
-        { series: e.series, repsAlvo: e.repsAlvo, cargaAtual: e.cargaAtual },
-        e.weeks,
-        semana
-      );
-      return {
-        id: e.id,
-        nome: e.nome,
-        grupoMuscular: e.grupoMuscular,
-        metodo: e.metodo,
-        tipoAlvo: e.tipoAlvo,
-        series: cfg.series,
-        repsAlvo: cfg.repsAlvo,
-        cargaAtual: cfg.cargaAtual,
-        tempoAlvoSeg: e.tempoAlvoSeg,
-        descansoSeg: e.descansoSeg,
-        observacao: e.observacao,
-        herdado: cfg.herdado,
-        origem: cfg.origem,
-      };
-    }),
-  }));
+  const fichas: FichaView[] = rotinas.map((r) => {
+    const semanasComConteudo = Array.from(new Set(r.exercises.map((e) => e.semana))).sort(
+      (a, b) => a - b
+    );
+    return {
+      id: r.id,
+      nome: r.nome,
+      foco: r.foco,
+      dias: parseJSON<string[]>(r.diasSemana, []).map(Number),
+      semanasComConteudo,
+      exercicios: r.exercises
+        .filter((e) => e.semana === semana)
+        .map((e) => ({
+          id: e.id,
+          nome: e.nome,
+          grupoMuscular: e.grupoMuscular,
+          metodo: e.metodo,
+          tipoAlvo: e.tipoAlvo,
+          series: e.series,
+          repsAlvo: e.repsAlvo,
+          cargaAtual: e.cargaAtual,
+          tempoAlvoSeg: e.tempoAlvoSeg,
+          descansoSeg: e.descansoSeg,
+          observacao: e.observacao,
+        })),
+    };
+  });
 
   return <MusculacaoClient fichas={fichas} semana={semana} />;
 }
@@ -365,7 +360,12 @@ async function Cardio({
           )}
         </div>
         <div className="mt-4">
-          <PlanoCardioClient planos={planos} semana={semanaCiclo} modalidade={modalidade} />
+          <PlanoCardioClient
+            planos={planos}
+            semana={semanaCiclo}
+            modalidade={modalidade}
+            hoje={dayKeySP(hoje)}
+          />
         </div>
       </Card>
 

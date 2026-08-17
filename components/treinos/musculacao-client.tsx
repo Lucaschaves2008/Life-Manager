@@ -5,16 +5,14 @@ import { useAcao } from "@/lib/acao-cliente";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   ChevronUp,
   Copy,
   Dumbbell,
   Eye,
+  Files,
   Pencil,
   Play,
   Plus,
-  RotateCcw,
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -33,19 +31,20 @@ import { DotsMenu } from "@/components/caverna/dots-menu";
 import { EmptyState } from "@/components/caverna/empty-state";
 import { ExecucaoTreino, type ExercicioExec } from "@/components/treinos/execucao";
 import { FichaPlanilha } from "@/components/treinos/ficha-planilha";
+import { TreinoChooser } from "@/components/treinos/treino-chooser";
 import {
   createExercise,
   createRoutine,
   deleteExercise,
   deleteRoutine,
+  deleteSession,
+  duplicarSemanaExercicios,
   duplicateRoutine,
   moveExercise,
-  resetWeekExercise,
+  saveSession,
   setRoutineDias,
   setSemanaAtual,
-  setWeekExercise,
   updateExercise,
-  updateExerciseMeta,
   updateRoutine,
   type ExercicioInput,
 } from "@/app/actions/treinos";
@@ -58,6 +57,8 @@ export type FichaView = {
   foco: string | null;
   dias: number[];
   exercicios: ExercicioExec[];
+  /** Semanas que já têm pelo menos um exercício — pro seletor de semana. */
+  semanasComConteudo: number[];
 };
 
 const grupos = [
@@ -106,6 +107,8 @@ export function MusculacaoClient({
   const [, executar] = useAcao();
   const [pending, startSalvar] = useTransition();
 
+  const [escolhendo, setEscolhendo] = useState<FichaView | null>(null);
+  const [marcandoFeito, setMarcandoFeito] = useState(false);
   const [treinando, setTreinando] = useState<FichaView | null>(null);
   const [visualizando, setVisualizando] = useState<FichaView | null>(null);
   const [sheetFicha, setSheetFicha] = useState(false);
@@ -116,17 +119,12 @@ export function MusculacaoClient({
     dias: number[];
   }>({ nome: "", foco: "", dias: [] });
 
-  const [sheetEx, setSheetEx] = useState<{
-    routineId: string;
-    id: string | null;
-    herdado: boolean;
-    origem: number;
-  } | null>(null);
+  const [sheetEx, setSheetEx] = useState<{ routineId: string; id: string | null } | null>(null);
   const [formEx, setFormEx] = useState<ExercicioInput>(exercicioVazio);
 
   const abrirNovo = params.get("novo") === "1";
   useEffect(() => {
-    if (abrirNovo && fichas.length > 0) setTreinando(fichas[0]);
+    if (abrirNovo && fichas.length > 0) setEscolhendo(fichas[0]);
   }, [abrirNovo, fichas]);
 
   function limparNovo() {
@@ -134,6 +132,25 @@ export function MusculacaoClient({
     const next = new URLSearchParams(params.toString());
     next.delete("novo");
     router.replace(`/treinos?${next.toString()}`);
+  }
+
+  function marcarFeito(ficha: FichaView) {
+    setMarcandoFeito(true);
+    startSalvar(async () => {
+      try {
+        const sessaoId = await saveSession({ routineId: ficha.id, duracaoMin: 0, series: [] });
+        toast.success(`${ficha.nome} marcado como feito`, {
+          action: {
+            label: "Desfazer",
+            onClick: () => executar(() => deleteSession(sessaoId)),
+          },
+        });
+        setEscolhendo(null);
+        limparNovo();
+      } finally {
+        setMarcandoFeito(false);
+      }
+    });
   }
 
   function abrirFicha(ficha: FichaView | null) {
@@ -162,12 +179,7 @@ export function MusculacaoClient({
   }
 
   function abrirExercicio(routineId: string, ex: ExercicioExec | null) {
-    setSheetEx({
-      routineId,
-      id: ex?.id ?? null,
-      herdado: ex?.herdado ?? false,
-      origem: ex?.origem ?? 1,
-    });
+    setSheetEx({ routineId, id: ex?.id ?? null });
     setFormEx(
       ex
         ? {
@@ -186,57 +198,31 @@ export function MusculacaoClient({
     );
   }
 
-  // A partir da semana 2, séries/reps/carga vão para o override daquela semana
-  // (setWeekExercise) e os metadados (nome/grupo/método/descanso/obs), que não
-  // variam por semana, vão por updateExerciseMeta — sem tocar a base da sem. 1.
-  // Exercícios por tempo (aquecimento/alongamento) não têm periodização: sempre
-  // salvam via updateExerciseMeta, mesmo na semana 1.
+  // Cada semana é sua própria linha independente: editar sempre grava direto
+  // no exercício (updateExercise); criar sempre entra na semana ativa.
   function salvarExercicio() {
     if (!sheetEx) return;
-    const porTempo = formEx.tipoAlvo === "tempo";
     startSalvar(async () => {
       if (sheetEx.id) {
-        if (semana > 1 && !porTempo) {
-          await setWeekExercise(sheetEx.id, semana, {
-            series: formEx.series,
-            repsAlvo: formEx.repsAlvo,
-            cargaAtual: formEx.cargaAtual,
-          });
-          await updateExerciseMeta(sheetEx.id, {
-            nome: formEx.nome,
-            grupoMuscular: formEx.grupoMuscular,
-            metodo: formEx.metodo ?? "Nenhum",
-            descansoSeg: formEx.descansoSeg,
-            observacao: formEx.observacao,
-            tipoAlvo: formEx.tipoAlvo,
-            tempoAlvoSeg: formEx.tempoAlvoSeg,
-          });
-          toast.success(`Semana ${semana} atualizada`);
-        } else {
-          await updateExercise(sheetEx.id, formEx);
-          toast.success("Exercício atualizado");
-        }
+        await updateExercise(sheetEx.id, formEx);
+        toast.success("Exercício atualizado");
       } else {
-        await createExercise(sheetEx.routineId, formEx);
+        await createExercise(sheetEx.routineId, semana, formEx);
         toast.success("Exercício adicionado");
       }
       setSheetEx(null);
     });
   }
 
-  function resetarSemana() {
-    if (!sheetEx?.id || semana <= 1) return;
-    startSalvar(async () => {
-      await resetWeekExercise(sheetEx.id!, semana);
-      toast.success(`Semana ${semana} voltou a herdar`);
-      setSheetEx(null);
+  function duplicarSemana(routineId: string, semanaOrigem: number) {
+    executar(() => duplicarSemanaExercicios(routineId, semanaOrigem, semana), {
+      sucesso: `Semana ${semana} criada a partir da semana ${semanaOrigem}`,
     });
   }
 
-  function mudarSemana(delta: number) {
-    const alvo = Math.max(1, semana + delta);
-    if (alvo === semana) return;
-    executar(() => setSemanaAtual(alvo));
+  function irParaSemana(n: number) {
+    if (n === semana) return;
+    executar(() => setSemanaAtual(n));
   }
 
   if (fichas.length === 0) {
@@ -271,7 +257,7 @@ export function MusculacaoClient({
 
   return (
     <>
-      <SeletorSemana semana={semana} onMudar={mudarSemana} />
+      <SeletorSemana semana={semana} fichas={fichas} onIr={irParaSemana} />
 
       <div className="stagger grid grid-cols-12 gap-6">
         {fichas.map((ficha) => (
@@ -288,7 +274,7 @@ export function MusculacaoClient({
                 <Button
                   variant="soft"
                   size="sm"
-                  onClick={() => setTreinando(ficha)}
+                  onClick={() => setEscolhendo(ficha)}
                   disabled={ficha.exercicios.length === 0}
                   className="lg:w-auto"
                 >
@@ -339,9 +325,11 @@ export function MusculacaoClient({
 
             <div className="mt-5 flex flex-col">
               {ficha.exercicios.length === 0 ? (
-                <p className="py-3 text-[13px] text-steel">
-                  Nenhum exercício nesta ficha.
-                </p>
+                <SemanaVaziaExercicios
+                  ficha={ficha}
+                  semana={semana}
+                  onDuplicar={duplicarSemana}
+                />
               ) : (
                 ficha.exercicios.map((ex, i) => (
                   <div
@@ -429,6 +417,32 @@ export function MusculacaoClient({
         </div>
       </div>
 
+      <TreinoChooser
+        aberto={!!escolhendo}
+        onOpenChange={(v) => {
+          if (!v) {
+            setEscolhendo(null);
+            limparNovo();
+          }
+        }}
+        titulo={escolhendo?.nome ?? ""}
+        subtitulo={
+          escolhendo
+            ? `${escolhendo.foco ?? "Musculação"} · ${escolhendo.exercicios.length} ${escolhendo.exercicios.length === 1 ? "exercício" : "exercícios"}`
+            : undefined
+        }
+        marcando={marcandoFeito}
+        onMarcarFeito={() => escolhendo && marcarFeito(escolhendo)}
+        opcaoSecundaria={{
+          label: "Começar treino",
+          icon: Play,
+          onSelect: () => {
+            if (escolhendo) setTreinando(escolhendo);
+            setEscolhendo(null);
+          },
+        }}
+      />
+
       {treinando && (
         <ExecucaoTreino
           key={treinando.id}
@@ -474,29 +488,9 @@ export function MusculacaoClient({
         <SheetContent aria-describedby={undefined}>
           <SheetTitle>
             {sheetEx?.id
-              ? semana > 1
-                ? `Editar exercício · Semana ${semana}`
-                : "Editar exercício"
-              : "Novo exercício"}
+              ? `Editar exercício · Semana ${semana}`
+              : `Novo exercício · Semana ${semana}`}
           </SheetTitle>
-          {sheetEx?.id && semana > 1 && (
-            <div className="mt-4 rounded-[12px] border border-stroke bg-surface-2 px-3.5 py-3">
-              <p className="text-[12px] text-mist">
-                {sheetEx.herdado
-                  ? `Séries, reps e carga estão herdando da semana ${sheetEx.origem}. Editar cria uma versão própria para a semana ${semana} (e as seguintes até você mudar de novo).`
-                  : `Você está editando a versão da semana ${semana}. Nome, grupo e descanso valem para todas as semanas.`}
-              </p>
-              {!sheetEx.herdado && (
-                <button
-                  onClick={resetarSemana}
-                  className="mt-2 inline-flex items-center gap-1.5 text-[12px] text-steel hover:text-ice"
-                >
-                  <RotateCcw className="h-3 w-3" strokeWidth={1.5} />
-                  Resetar semana {semana} (voltar a herdar)
-                </button>
-              )}
-            </div>
-          )}
           <div className="mt-6 flex flex-col gap-5">
             <div>
               <Label htmlFor="ex-nome">Nome</Label>
@@ -798,37 +792,82 @@ function SheetFicha({
   );
 }
 
-/** Navegação entre semanas do ciclo (virada manual). Semana mín. = 1. */
+/**
+ * Salto direto entre semanas — cada pill é uma semana; preenchida quando tem
+ * conteúdo em pelo menos uma ficha, tracejada quando ainda está vazia. Mais
+ * rápido que ficar clicando "próxima" N vezes pra chegar na semana 6.
+ */
 function SeletorSemana({
   semana,
-  onMudar,
+  fichas,
+  onIr,
 }: {
   semana: number;
-  onMudar: (delta: number) => void;
+  fichas: FichaView[];
+  onIr: (n: number) => void;
 }) {
+  const maxComConteudo = Math.max(0, ...fichas.flatMap((f) => f.semanasComConteudo));
+  const maxPill = Math.max(1, maxComConteudo + 1, semana);
+  const pills = Array.from({ length: maxPill }, (_, i) => i + 1);
+  const temConteudo = (n: number) => fichas.some((f) => f.semanasComConteudo.includes(n));
+
   return (
-    <div className="flex items-center justify-between rounded-[14px] border border-stroke bg-surface-2 px-3 py-2.5">
-      <div>
-        <CardLabel>Periodização</CardLabel>
-        <p className="mt-0.5 text-[14px] text-paper">Semana {semana}</p>
+    <div className="rounded-[14px] border border-stroke bg-surface-2 px-3 py-2.5">
+      <CardLabel>Periodização</CardLabel>
+      <div className="mt-2.5 flex items-center gap-1.5 overflow-x-auto pb-0.5">
+        {pills.map((n) => (
+          <button
+            key={n}
+            aria-label={`Semana ${n}`}
+            aria-current={n === semana}
+            onClick={() => onIr(n)}
+            className={cn(
+              "tabular flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-[12.5px] font-medium transition-colors",
+              n === semana
+                ? "border-transparent bg-mint text-[var(--color-bg)]"
+                : temConteudo(n)
+                  ? "border-stroke bg-surface text-ice hover:border-[var(--mint-border)]"
+                  : "border-dashed border-stroke text-steel hover:text-ice"
+            )}
+          >
+            {n}
+          </button>
+        ))}
       </div>
-      <div className="flex items-center gap-1">
-        <button
-          aria-label="Semana anterior"
-          disabled={semana <= 1}
-          onClick={() => onMudar(-1)}
-          className="rounded-[10px] border border-stroke p-2 text-steel transition-colors hover:text-ice disabled:opacity-30"
+    </div>
+  );
+}
+
+/** Semana ainda sem exercícios nesta ficha: duplicar de outra semana ou começar do zero. */
+function SemanaVaziaExercicios({
+  ficha,
+  semana,
+  onDuplicar,
+}: {
+  ficha: FichaView;
+  semana: number;
+  onDuplicar: (routineId: string, semanaOrigem: number) => void;
+}) {
+  const anteriores = ficha.semanasComConteudo.filter((n) => n < semana).sort((a, b) => b - a);
+  const origemSugerida = anteriores[0] ?? ficha.semanasComConteudo[0];
+
+  return (
+    <div className="flex flex-col items-center gap-2.5 py-5 text-center">
+      <p className="text-[13px] text-steel">
+        {ficha.semanasComConteudo.length === 0
+          ? "Nenhum exercício nesta ficha."
+          : `A semana ${semana} ainda não tem exercícios.`}
+      </p>
+      {origemSugerida != null && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onDuplicar(ficha.id, origemSugerida)}
         >
-          <ChevronLeft className="h-4 w-4" strokeWidth={1.5} />
-        </button>
-        <button
-          aria-label="Próxima semana"
-          onClick={() => onMudar(1)}
-          className="rounded-[10px] border border-stroke p-2 text-steel transition-colors hover:text-ice"
-        >
-          <ChevronRight className="h-4 w-4" strokeWidth={1.5} />
-        </button>
-      </div>
+          <Files className="h-3.5 w-3.5" strokeWidth={1.5} />
+          Duplicar da semana {origemSugerida}
+        </Button>
+      )}
     </div>
   );
 }

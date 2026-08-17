@@ -6,14 +6,12 @@ import {
   Bike,
   Check,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   ChevronUp,
   Copy,
+  Files,
   Footprints,
   Pencil,
   Plus,
-  RotateCcw,
   Trash2,
   Waves,
 } from "lucide-react";
@@ -32,19 +30,20 @@ import { CardLabel } from "@/components/caverna/card";
 import { DotsMenu } from "@/components/caverna/dots-menu";
 import { EmptyState } from "@/components/caverna/empty-state";
 import {
+  createRun,
   createRunRoutine,
   createRunSession,
+  deleteRun,
   deleteRunRoutine,
   deleteRunSession,
+  duplicarSemanaSessoes,
   duplicateRunRoutine,
   moveRunSession,
-  resetRunSessionWeek,
+  restoreRun,
   setRunRoutineDias,
-  setRunSessionWeek,
   setSemanaAtual,
   updateRunRoutine,
   updateRunSession,
-  updateRunSessionMeta,
   type RunSessionInput,
 } from "@/app/actions/treinos";
 import type {
@@ -80,10 +79,13 @@ export function PlanoCardioClient({
   planos,
   semana,
   modalidade,
+  hoje,
 }: {
   planos: PlanoCorridaView[];
   semana: number;
   modalidade: ModalidadeCardio;
+  /** Data de hoje (yyyy-MM-dd) — usada ao marcar uma sessão como feita direto pela bolinha. */
+  hoje: string;
 }) {
   const cfg = MODALIDADE[modalidade];
   const Icone = ICONE_MODALIDADE[modalidade];
@@ -104,12 +106,9 @@ export function PlanoCardioClient({
     dias: [],
   });
 
-  const [sheetSessao, setSheetSessao] = useState<{
-    routineId: string;
-    id: string | null;
-    herdado: boolean;
-    origem: number;
-  } | null>(null);
+  const [sheetSessao, setSheetSessao] = useState<{ routineId: string; id: string | null } | null>(
+    null
+  );
   const [formSessao, setFormSessao] = useState<RunSessionInput>(sessaoVazia);
   // Campo de distância como texto: o usuário digita "1500" (m) ou "8,2" (km),
   // e só na hora de salvar isso vira km. Guardar o número já convertido faria
@@ -138,58 +137,82 @@ export function PlanoCardioClient({
   }
 
   function abrirSessao(routineId: string, s: SessaoCorridaView | null) {
-    setSheetSessao({
-      routineId,
-      id: s?.id ?? null,
-      herdado: s?.herdado ?? false,
-      origem: s?.origemSemana ?? 1,
-    });
-    const base = s ? { nome: s.nome, tipo: s.tipo, kmAlvo: s.kmAlvoSemana } : sessaoVazia;
+    setSheetSessao({ routineId, id: s?.id ?? null });
+    const base = s ? { nome: s.nome, tipo: s.tipo, kmAlvo: s.kmAlvo } : sessaoVazia;
     setFormSessao(base);
     setDistancia(campoDistancia(base.kmAlvo, modalidade));
   }
 
-  // Da semana 2 em diante a distância-alvo vira override daquela semana
-  // (setRunSessionWeek) e nome/tipo (que não variam) vão por
-  // updateRunSessionMeta — sem tocar a base.
+  // Cada semana é sua própria linha independente: editar sempre grava direto
+  // na sessão (updateRunSession); criar sempre entra na semana ativa.
   function salvarSessao() {
     if (!sheetSessao) return;
     const kmAlvo = paraKm(numeroDigitado(distancia), modalidade);
     const payload: RunSessionInput = { ...formSessao, kmAlvo };
     startSalvar(async () => {
       if (sheetSessao.id) {
-        if (semana > 1) {
-          await setRunSessionWeek(sheetSessao.id, semana, kmAlvo);
-          await updateRunSessionMeta(sheetSessao.id, {
-            nome: payload.nome,
-            tipo: payload.tipo,
-          });
-          toast.success(`Semana ${semana} atualizada`);
-        } else {
-          await updateRunSession(sheetSessao.id, payload);
-          toast.success("Sessão atualizada");
-        }
+        await updateRunSession(sheetSessao.id, payload);
+        toast.success("Sessão atualizada");
       } else {
-        await createRunSession(sheetSessao.routineId, payload);
+        await createRunSession(sheetSessao.routineId, semana, payload);
         toast.success("Sessão adicionada");
       }
       setSheetSessao(null);
     });
   }
 
-  function resetarSemana() {
-    if (!sheetSessao?.id || semana <= 1) return;
-    startSalvar(async () => {
-      await resetRunSessionWeek(sheetSessao.id!, semana);
-      toast.success(`Semana ${semana} voltou a herdar`);
-      setSheetSessao(null);
+  function duplicarSemana(routineId: string, semanaOrigem: number) {
+    executar(() => duplicarSemanaSessoes(routineId, semanaOrigem, semana), {
+      sucesso: `Semana ${semana} criada a partir da semana ${semanaOrigem}`,
     });
   }
 
-  function mudarSemana(delta: number) {
-    const alvo = Math.max(1, semana + delta);
-    if (alvo === semana) return;
-    executar(() => setSemanaAtual(alvo));
+  function irParaSemana(n: number) {
+    if (n === semana) return;
+    executar(() => setSemanaAtual(n));
+  }
+
+  /** Bolinha: marca feito com o alvo da sessão. Já feita → desfaz (com "Desfazer"). */
+  function alternarCumprida(s: SessaoCorridaView) {
+    if (s.cumprida) {
+      executar(async () => {
+        const removida = await deleteRun(s.cumprida!.id);
+        if (!removida) return;
+        toast(`${s.nome} desmarcada`, {
+          action: {
+            label: "Desfazer",
+            onClick: () =>
+              restoreRun({
+                data: removida.data,
+                km: removida.km,
+                segundos: removida.segundos,
+                tipo: removida.tipo,
+                modalidade: removida.modalidade,
+                sensacao: removida.sensacao,
+                notas: removida.notas,
+                stravaLink: removida.stravaLink,
+                runSessionId: removida.runSessionId,
+                quantificar: removida.quantificar,
+              }),
+          },
+        });
+      });
+      return;
+    }
+    executar(async () => {
+      await createRun({
+        data: hoje,
+        km: s.kmAlvo,
+        segundos: 0,
+        tipo: s.tipo,
+        modalidade,
+        sensacao: 3,
+        notas: null,
+        runSessionId: s.id,
+        quantificar: true,
+      });
+      toast.success(`${s.nome} marcada como feita`);
+    });
   }
 
   if (planos.length === 0) {
@@ -223,7 +246,7 @@ export function PlanoCardioClient({
 
   return (
     <>
-      <SeletorSemana semana={semana} modalidade={modalidade} onMudar={mudarSemana} />
+      <SeletorSemana semana={semana} modalidade={modalidade} planos={planos} onIr={irParaSemana} />
 
       <div className="mt-4 flex flex-col gap-4">
         {planos.map((plano) => (
@@ -264,34 +287,35 @@ export function PlanoCardioClient({
 
             <div className="mt-4 flex flex-col">
               {plano.sessoes.length === 0 ? (
-                <p className="py-2 text-[13px] text-steel">Nenhuma sessão neste plano.</p>
+                <SemanaVaziaSessoes plano={plano} semana={semana} onDuplicar={duplicarSemana} />
               ) : (
                 plano.sessoes.map((s, i) => (
                   <div
                     key={s.id}
                     className="group flex items-center gap-3 border-b border-stroke py-2.5 last:border-0"
                   >
-                    {s.cumprida ? (
-                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-mint text-[var(--color-bg)]">
-                        <Check className="h-3 w-3" strokeWidth={3} />
-                      </span>
-                    ) : (
-                      <span className="h-5 w-5 shrink-0 rounded-full border border-stroke" />
-                    )}
+                    <button
+                      onClick={() => alternarCumprida(s)}
+                      aria-label={s.cumprida ? "Desmarcar sessão feita" : "Marcar sessão como feita"}
+                      aria-pressed={!!s.cumprida}
+                      className={cn(
+                        "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-colors",
+                        s.cumprida
+                          ? "border-transparent bg-mint text-[var(--color-bg)]"
+                          : "border-stroke hover:border-mint"
+                      )}
+                    >
+                      {s.cumprida && <Check className="h-3 w-3" strokeWidth={3} />}
+                    </button>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <p className="truncate text-[13.5px] text-ice">{s.nome}</p>
                         <span className="shrink-0 rounded-full bg-surface px-2 py-0.5 text-[10.5px] text-mist">
                           {s.tipo}
                         </span>
-                        {s.herdado && semana > 1 && (
-                          <span className="shrink-0 text-[10.5px] text-steel">
-                            herda sem. {s.origemSemana}
-                          </span>
-                        )}
                       </div>
                       <p className="tabular text-[11.5px] text-steel">
-                        alvo {formatDistanciaMod(s.kmAlvoSemana, modalidade)}
+                        alvo {formatDistanciaMod(s.kmAlvo, modalidade)}
                         {s.cumprida &&
                           ` · feito ${formatDistanciaMod(s.cumprida.km, modalidade)}`}
                       </p>
@@ -373,29 +397,9 @@ export function PlanoCardioClient({
         <SheetContent aria-describedby={undefined}>
           <SheetTitle>
             {sheetSessao?.id
-              ? semana > 1
-                ? `Editar sessão · Semana ${semana}`
-                : "Editar sessão"
-              : "Nova sessão"}
+              ? `Editar sessão · Semana ${semana}`
+              : `Nova sessão · Semana ${semana}`}
           </SheetTitle>
-          {sheetSessao?.id && semana > 1 && (
-            <div className="mt-4 rounded-[12px] border border-stroke bg-surface-2 px-3.5 py-3">
-              <p className="text-[12px] text-mist">
-                {sheetSessao.herdado
-                  ? `A distância-alvo está herdando da semana ${sheetSessao.origem}. Editar cria uma versão própria para a semana ${semana} (e as seguintes até você mudar de novo).`
-                  : `Você está editando a versão da semana ${semana}. Nome e tipo valem para todas as semanas.`}
-              </p>
-              {!sheetSessao.herdado && (
-                <button
-                  onClick={resetarSemana}
-                  className="mt-2 inline-flex items-center gap-1.5 text-[12px] text-steel hover:text-ice"
-                >
-                  <RotateCcw className="h-3 w-3" strokeWidth={1.5} />
-                  Resetar semana {semana} (voltar a herdar)
-                </button>
-              )}
-            </div>
-          )}
           <div className="mt-6 flex flex-col gap-5">
             <div>
               <Label htmlFor="sess-nome">Nome</Label>
@@ -564,40 +568,76 @@ function SheetPlano({
   );
 }
 
+/** Salto direto entre semanas — espelha o seletor de musculação. */
 function SeletorSemana({
   semana,
   modalidade,
-  onMudar,
+  planos,
+  onIr,
 }: {
   semana: number;
   modalidade: ModalidadeCardio;
-  onMudar: (delta: number) => void;
+  planos: PlanoCorridaView[];
+  onIr: (n: number) => void;
 }) {
+  const maxComConteudo = Math.max(0, ...planos.flatMap((p) => p.semanasComConteudo));
+  const maxPill = Math.max(1, maxComConteudo + 1, semana);
+  const pills = Array.from({ length: maxPill }, (_, i) => i + 1);
+  const temConteudo = (n: number) => planos.some((p) => p.semanasComConteudo.includes(n));
+
   return (
-    <div className="flex items-center justify-between rounded-[14px] border border-stroke bg-surface-2 px-3 py-2.5">
-      <div>
-        <CardLabel>
-          Periodização · {MODALIDADE[modalidade].label.toLowerCase()}
-        </CardLabel>
-        <p className="mt-0.5 text-[14px] text-paper">Semana {semana}</p>
+    <div className="rounded-[14px] border border-stroke bg-surface-2 px-3 py-2.5">
+      <CardLabel>Periodização · {MODALIDADE[modalidade].label.toLowerCase()}</CardLabel>
+      <div className="mt-2.5 flex items-center gap-1.5 overflow-x-auto pb-0.5">
+        {pills.map((n) => (
+          <button
+            key={n}
+            aria-label={`Semana ${n}`}
+            aria-current={n === semana}
+            onClick={() => onIr(n)}
+            className={cn(
+              "tabular flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-[12.5px] font-medium transition-colors",
+              n === semana
+                ? "border-transparent bg-mint text-[var(--color-bg)]"
+                : temConteudo(n)
+                  ? "border-stroke bg-surface text-ice hover:border-[var(--mint-border)]"
+                  : "border-dashed border-stroke text-steel hover:text-ice"
+            )}
+          >
+            {n}
+          </button>
+        ))}
       </div>
-      <div className="flex items-center gap-1">
-        <button
-          aria-label="Semana anterior"
-          disabled={semana <= 1}
-          onClick={() => onMudar(-1)}
-          className="rounded-[10px] border border-stroke p-2 text-steel transition-colors hover:text-ice disabled:opacity-30"
-        >
-          <ChevronLeft className="h-4 w-4" strokeWidth={1.5} />
-        </button>
-        <button
-          aria-label="Próxima semana"
-          onClick={() => onMudar(1)}
-          className="rounded-[10px] border border-stroke p-2 text-steel transition-colors hover:text-ice"
-        >
-          <ChevronRight className="h-4 w-4" strokeWidth={1.5} />
-        </button>
-      </div>
+    </div>
+  );
+}
+
+/** Semana ainda sem sessões neste plano: duplicar de outra semana ou começar do zero. */
+function SemanaVaziaSessoes({
+  plano,
+  semana,
+  onDuplicar,
+}: {
+  plano: PlanoCorridaView;
+  semana: number;
+  onDuplicar: (routineId: string, semanaOrigem: number) => void;
+}) {
+  const anteriores = plano.semanasComConteudo.filter((n) => n < semana).sort((a, b) => b - a);
+  const origemSugerida = anteriores[0] ?? plano.semanasComConteudo[0];
+
+  return (
+    <div className="flex flex-col items-center gap-2.5 py-4 text-center">
+      <p className="text-[13px] text-steel">
+        {plano.semanasComConteudo.length === 0
+          ? "Nenhuma sessão neste plano."
+          : `A semana ${semana} ainda não tem sessões.`}
+      </p>
+      {origemSugerida != null && (
+        <Button variant="outline" size="sm" onClick={() => onDuplicar(plano.id, origemSugerida)}>
+          <Files className="h-3.5 w-3.5" strokeWidth={1.5} />
+          Duplicar da semana {origemSugerida}
+        </Button>
+      )}
     </div>
   );
 }

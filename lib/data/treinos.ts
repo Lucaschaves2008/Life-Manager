@@ -15,11 +15,9 @@ import { tagUsuario } from "@/lib/cache-tags";
 import {
   MODALIDADE,
   MODALIDADES_CARDIO,
-  kmDaSemana,
   modalidadeDe,
   paraKm,
   somarKmNoPeriodo,
-  weekConfig,
   type ModalidadeCardio,
   type PlanoCorridaView,
   type SessaoCorridaOpcao,
@@ -51,7 +49,6 @@ export {
   formatDiasSemana,
   formatDistanciaMod,
   formatRitmo,
-  weekConfig,
   MODALIDADE,
   MODALIDADES_CARDIO,
 } from "./treinos-format";
@@ -61,10 +58,7 @@ export type {
   SessaoCorridaView,
   SessaoCorridaOpcao,
 } from "./treinos-format";
-// kmDaSemana é usado internamente (import direto acima); client components que
-// precisarem dele importam de "@/lib/data/treinos-format".
-
-/** Semana atual do ciclo de periodização (Setting; virada manual). Mín. 1. */
+/** Semana atual do ciclo (Setting; virada manual). Mín. 1. */
 export async function semanaCicloAtual(userId: string): Promise<number> {
   "use cache";
   cacheTag(tagUsuario(userId, "settings"));
@@ -402,11 +396,10 @@ async function diasDesdeUltimoTreinoDoDia(
   return differenceInCalendarDays(toSP(ref), toSP(ultima.data));
 }
 
-// ---------- Planos de cardio (nomeados, com progressão semanal) ----------
-// Espelha a estrutura da musculação: plano → sessões → km efetivo da semana do
-// ciclo (kmDaSemana, mesma regra "repete até editar"). Cruza com as sessões da
-// semana para marcar o que já foi cumprido. Vale igual para corrida, natação e
-// ciclismo — só o filtro de modalidade muda.
+// ---------- Planos de cardio (nomeados, com semanas independentes) ----------
+// Espelha a estrutura da musculação: plano → sessões da semana ativa. Cruza
+// com as corridas da semana para marcar o que já foi cumprido. Vale igual
+// para corrida, natação e ciclismo — só o filtro de modalidade muda.
 
 /** Planos de uma modalidade, resolvidos para a semana do ciclo atual. */
 export async function planosCorrida(
@@ -437,10 +430,7 @@ async function planosCorridaDoDia(
       where: { userId, modalidade },
       orderBy: { ordem: "asc" },
       include: {
-        sessions: {
-          orderBy: { ordem: "asc" },
-          include: { weeks: { orderBy: { semana: "asc" } } },
-        },
+        sessions: { orderBy: { ordem: "asc" } },
       },
     }),
     db.run.findMany({
@@ -457,28 +447,32 @@ async function planosCorridaDoDia(
     }
   }
 
-  return planos.map((p) => ({
-    id: p.id,
-    nome: p.nome,
-    foco: p.foco,
-    modalidade: modalidadeDe(p.modalidade),
-    diasSemana: parseDias(p.diasSemana),
-    sessoes: p.sessions.map((s) => {
-      const km = kmDaSemana(s.kmAlvo, s.weeks, semana);
-      const run = runPorSessao.get(s.id) ?? null;
-      return {
-        id: s.id,
-        nome: s.nome,
-        tipo: s.tipo,
-        kmAlvoBase: s.kmAlvo,
-        kmAlvoSemana: km.kmAlvo,
-        herdado: km.herdado,
-        origemSemana: km.origem,
-        cumprida: run ? { id: run.id, km: run.km, segundos: run.segundos } : null,
-        overrides: s.weeks.map((w) => ({ semana: w.semana, kmAlvo: w.kmAlvo })),
-      };
-    }),
-  }));
+  return planos.map((p) => {
+    const semanasComConteudo = Array.from(new Set(p.sessions.map((s) => s.semana))).sort(
+      (a, b) => a - b
+    );
+    return {
+      id: p.id,
+      nome: p.nome,
+      foco: p.foco,
+      modalidade: modalidadeDe(p.modalidade),
+      diasSemana: parseDias(p.diasSemana),
+      semanasComConteudo,
+      sessoes: p.sessions
+        .filter((s) => s.semana === semana)
+        .map((s) => {
+          const run = runPorSessao.get(s.id) ?? null;
+          return {
+            id: s.id,
+            nome: s.nome,
+            tipo: s.tipo,
+            kmAlvo: s.kmAlvo,
+            semana: s.semana,
+            cumprida: run ? { id: run.id, km: run.km, segundos: run.segundos } : null,
+          };
+        }),
+    };
+  });
 }
 
 function parseDias(raw: string): number[] {
@@ -511,6 +505,9 @@ export type FichaHojeView = {
   foco: string | null;
   semana: number;
   exercicios: ExercicioHojeView[];
+  feito: boolean;
+  /** WorkoutSession.id que marcou feito hoje — usado pra "Desfazer". */
+  registroId: string | null;
 };
 
 export type SessaoCorridaHojeView = {
@@ -524,7 +521,9 @@ export type SessaoCorridaHojeView = {
   tipoSessao: string;
   kmAlvo: number;
   semana: number;
-  cumprida: boolean;
+  feito: boolean;
+  /** Run.id que marcou feito hoje — usado pra "Desfazer". */
+  registroId: string | null;
 };
 
 export type TreinoHojeView = FichaHojeView | SessaoCorridaHojeView;
@@ -549,89 +548,103 @@ async function treinosDeHojeDoDia(
 
   const ref = refDoDiaSP(dia);
   const diaSemana = toSP(ref).getDay();
-  const inicioSemana = spStartOfWeek(ref);
-  const fimSemana = spEndOfWeek(ref);
+  const inicioDia = spStartOfDay(ref);
+  const fimDia = spEndOfDay(ref);
 
-  const [rotinas, planos, runs] = await Promise.all([
+  const [rotinas, planos] = await Promise.all([
     db.routine.findMany({
       where: { userId },
       orderBy: { ordem: "asc" },
       include: {
-        exercises: {
-          orderBy: { ordem: "asc" },
-          include: { weeks: { orderBy: { semana: "asc" } } },
-        },
+        exercises: { where: { semana }, orderBy: { ordem: "asc" } },
       },
     }),
     db.runRoutine.findMany({
       where: { userId },
       orderBy: { ordem: "asc" },
       include: {
-        sessions: {
-          orderBy: { ordem: "asc" },
-          include: { weeks: { orderBy: { semana: "asc" } } },
-        },
+        sessions: { where: { semana }, orderBy: { ordem: "asc" } },
       },
-    }),
-    db.run.findMany({
-      where: { userId, data: { gte: inicioSemana, lte: fimSemana } },
-      select: { runSessionId: true },
     }),
   ]);
 
-  const sessoesCumpridas = new Set(
-    runs.flatMap((r) => (r.runSessionId ? [r.runSessionId] : []))
-  );
+  const rotinasHoje = rotinas.filter((r) => parseDias(r.diasSemana).includes(diaSemana));
+  const planosHoje = planos.filter((p) => parseDias(p.diasSemana).includes(diaSemana));
+  const routineIds = rotinasHoje.map((r) => r.id);
+  const sessionIds = planosHoje.flatMap((p) => p.sessions.map((s) => s.id));
 
-  const fichas: FichaHojeView[] = rotinas
-    .filter((r) => parseDias(r.diasSemana).includes(diaSemana))
-    .map((r) => ({
-      tipo: "musculacao" as const,
-      id: r.id,
-      nome: r.nome,
-      foco: r.foco,
+  // "Feito hoje" é por DIA, não por semana — uma ficha recorrente seg/qua
+  // marcada na segunda não pode sumir da lista de quarta.
+  const [sessoesFeitas, runsFeitos] = await Promise.all([
+    routineIds.length > 0
+      ? db.workoutSession.findMany({
+          where: { userId, routineId: { in: routineIds }, data: { gte: inicioDia, lte: fimDia } },
+          select: { id: true, routineId: true },
+        })
+      : Promise.resolve([]),
+    sessionIds.length > 0
+      ? db.run.findMany({
+          where: {
+            userId,
+            runSessionId: { in: sessionIds },
+            data: { gte: inicioDia, lte: fimDia },
+          },
+          select: { id: true, runSessionId: true },
+        })
+      : Promise.resolve([]),
+  ]);
+
+  const sessaoFeitaPorRotina = new Map<string, string>();
+  for (const s of sessoesFeitas) {
+    if (s.routineId && !sessaoFeitaPorRotina.has(s.routineId)) {
+      sessaoFeitaPorRotina.set(s.routineId, s.id);
+    }
+  }
+  const runFeitoPorSessao = new Map<string, string>();
+  for (const r of runsFeitos) {
+    if (r.runSessionId && !runFeitoPorSessao.has(r.runSessionId)) {
+      runFeitoPorSessao.set(r.runSessionId, r.id);
+    }
+  }
+
+  const fichas: FichaHojeView[] = rotinasHoje.map((r) => ({
+    tipo: "musculacao" as const,
+    id: r.id,
+    nome: r.nome,
+    foco: r.foco,
+    semana,
+    exercicios: r.exercises.map((e) => ({
+      id: e.id,
+      nome: e.nome,
+      grupoMuscular: e.grupoMuscular,
+      metodo: e.metodo,
+      tipoAlvo: e.tipoAlvo,
+      series: e.series,
+      repsAlvo: e.repsAlvo,
+      cargaAtual: e.cargaAtual,
+      tempoAlvoSeg: e.tempoAlvoSeg,
+      descansoSeg: e.descansoSeg,
+      observacao: e.observacao,
+    })),
+    feito: sessaoFeitaPorRotina.has(r.id),
+    registroId: sessaoFeitaPorRotina.get(r.id) ?? null,
+  }));
+
+  const sessoesCardio: SessaoCorridaHojeView[] = planosHoje.flatMap((p) =>
+    p.sessions.map((s) => ({
+      tipo: "cardio" as const,
+      modalidade: modalidadeDe(p.modalidade),
+      id: s.id,
+      planoId: p.id,
+      planoNome: p.nome,
+      nome: s.nome,
+      tipoSessao: s.tipo,
+      kmAlvo: s.kmAlvo,
       semana,
-      exercicios: r.exercises.map((e) => {
-        const cfg = weekConfig(
-          { series: e.series, repsAlvo: e.repsAlvo, cargaAtual: e.cargaAtual },
-          e.weeks,
-          semana
-        );
-        return {
-          id: e.id,
-          nome: e.nome,
-          grupoMuscular: e.grupoMuscular,
-          metodo: e.metodo,
-          tipoAlvo: e.tipoAlvo,
-          series: cfg.series,
-          repsAlvo: cfg.repsAlvo,
-          cargaAtual: cfg.cargaAtual,
-          tempoAlvoSeg: e.tempoAlvoSeg,
-          descansoSeg: e.descansoSeg,
-          observacao: e.observacao,
-        };
-      }),
-    }));
-
-  const sessoesCardio: SessaoCorridaHojeView[] = planos
-    .filter((p) => parseDias(p.diasSemana).includes(diaSemana))
-    .flatMap((p) =>
-      p.sessions.map((s) => {
-        const km = kmDaSemana(s.kmAlvo, s.weeks, semana);
-        return {
-          tipo: "cardio" as const,
-          modalidade: modalidadeDe(p.modalidade),
-          id: s.id,
-          planoId: p.id,
-          planoNome: p.nome,
-          nome: s.nome,
-          tipoSessao: s.tipo,
-          kmAlvo: km.kmAlvo,
-          semana,
-          cumprida: sessoesCumpridas.has(s.id),
-        };
-      })
-    );
+      feito: runFeitoPorSessao.has(s.id),
+      registroId: runFeitoPorSessao.get(s.id) ?? null,
+    }))
+  );
 
   return [...fichas, ...sessoesCardio];
 }
@@ -641,8 +654,15 @@ async function treinosDeHojeDoDia(
  * as TRÊS modalidades numa lista só, com `modalidade` em cada linha — quem
  * monta o seletor filtra pelo tipo de item escolhido (corrida/natação/ciclismo).
  */
-export async function sessoesCorridaParaPlano(
-  userId: string
+/** Sessões da semana ATIVA do ciclo — é a que o auto-check do checklist segue. */
+export async function sessoesCorridaParaPlano(userId: string): Promise<SessaoCorridaOpcao[]> {
+  const semana = await semanaCicloAtual(userId);
+  return sessoesCorridaParaPlanoDaSemana(userId, semana);
+}
+
+async function sessoesCorridaParaPlanoDaSemana(
+  userId: string,
+  semana: number
 ): Promise<SessaoCorridaOpcao[]> {
   "use cache";
   cacheTag(tagUsuario(userId, "treinos"));
@@ -650,7 +670,7 @@ export async function sessoesCorridaParaPlano(
   const planos = await db.runRoutine.findMany({
     where: { userId },
     orderBy: { ordem: "asc" },
-    include: { sessions: { orderBy: { ordem: "asc" } } },
+    include: { sessions: { where: { semana }, orderBy: { ordem: "asc" } } },
   });
   return planos.flatMap((p) =>
     p.sessions.map((s) => ({

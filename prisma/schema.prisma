@@ -409,9 +409,7 @@ model RoutineExercise {
   grupoMuscular String
   // tipoAlvo="series" (padrão): usa series/repsAlvo/cargaAtual abaixo.
   // tipoAlvo="tempo": bloco cronometrado (aquecimento/alongamento), sem
-  // séries/reps/carga — usa tempoAlvoSeg. series/repsAlvo/cargaAtual = config
-  // da SEMANA-BASE (semana 1). As semanas seguintes herdam a última editada;
-  // overrides vivem em RoutineWeekExercise.
+  // séries/reps/carga — usa tempoAlvoSeg.
   tipoAlvo      String                @default("series")
   series        Int
   repsAlvo      String
@@ -422,17 +420,23 @@ model RoutineExercise {
   ordem         Int                   @default(0)
   routineId     String
   metodo        String                @default("Nenhum")
+  // Semana do ciclo a que esta linha pertence (1, 2, 3...) — cada semana tem
+  // sua própria lista independente de exercícios; adicionar/editar/remover
+  // numa semana não afeta as outras. Ver weekConfig/RoutineWeekExercise
+  // (legado) para o modelo antigo de override por sobrescrita.
+  semana        Int                   @default(1)
   routine       Routine               @relation(fields: [routineId], references: [id], onDelete: Cascade)
   setLogs       SetLog[]
   weeks         RoutineWeekExercise[]
 
   @@index([userId])
   @@index([routineId])
+  @@index([routineId, semana])
 }
 
-// Override de um exercício numa semana específica do ciclo. Só existe linha nas
-// semanas que o usuário editou; a config efetiva da semana N é o override da
-// maior semana <= N que existir, senão o valor base do RoutineExercise.
+// LEGADO — superado pelo campo `semana` em RoutineExercise (cada semana agora
+// é sua própria linha, independente). Mantido só para o `prisma db push` não
+// dropar a tabela; não referenciar em código novo.
 model RoutineWeekExercise {
   id         String          @id @default(cuid())
   userId     String
@@ -530,8 +534,8 @@ model RunRoutine {
 }
 
 // Sessão de um plano de cardio (espelha RoutineExercise): "Longão de domingo",
-// tipo + km-alvo da SEMANA-BASE. Semanas seguintes herdam via RunSessionWeek.
-// A modalidade vem do plano (RunRoutine.modalidade) — nunca duplicada aqui.
+// tipo + km-alvo. A modalidade vem do plano (RunRoutine.modalidade) — nunca
+// duplicada aqui.
 model RunSession {
   id              String           @id @default(cuid())
   userId          String
@@ -541,6 +545,10 @@ model RunSession {
   paceAlvoSeg     Int? // opcional, seg/km — reservado p/ futuro
   ordem           Int              @default(0)
   routineId       String
+  // Semana do ciclo a que esta linha pertence — mesma lógica de
+  // RoutineExercise.semana: cada semana tem sua própria lista independente
+  // de sessões.
+  semana          Int              @default(1)
   routine         RunRoutine       @relation(fields: [routineId], references: [id], onDelete: Cascade)
   weeks           RunSessionWeek[]
   runs            Run[]
@@ -548,10 +556,11 @@ model RunSession {
 
   @@index([userId])
   @@index([routineId])
+  @@index([routineId, semana])
 }
 
-// Override de km numa semana do ciclo (espelha RoutineWeekExercise). Só existe
-// linha nas semanas editadas; a config efetiva da semana N segue weekConfig().
+// LEGADO — superado pelo campo `semana` em RunSession. Mantido só para o
+// `prisma db push` não dropar a tabela; não referenciar em código novo.
 model RunSessionWeek {
   id        String     @id @default(cuid())
   userId    String
