@@ -352,9 +352,10 @@ async function membrosDoDesafio(desafioId: string): Promise<string[]> {
  * Coração da regra: sozinho no desafio, aplica na hora; com outras pessoas,
  * vira solicitação pendente com o voto de aprovação do próprio autor.
  *
- * Exceção: o criador do desafio EDITANDO a própria meta (autoAprovar) aplica
- * na hora igual — mas ainda registra a solicitação já resolvida, pra ficar
- * no histórico e o resto do grupo ver o que mudou.
+ * Exceção: o criador do desafio (autoAprovar) aplica QUALQUER mudança nas
+ * próprias metas na hora — criar, editar, excluir, ajuste de progresso —
+ * sem esperar o resto do grupo votar. Ainda registra a solicitação já
+ * resolvida, pra ficar no histórico e o resto do grupo ver o que mudou.
  */
 async function registrarMudanca(params: {
   userId: string;
@@ -426,7 +427,7 @@ export async function criarMetaGrande(
 
   const desafio = await db.desafio.findUnique({
     where: { id: desafioId },
-    select: { metasGrandesLimite: true },
+    select: { metasGrandesLimite: true, criadorId: true },
   });
   if (!desafio) throw new Error("Desafio não encontrado.");
   const count = await db.desafioMeta.count({ where: { desafioId, userId, metaPaiId: null } });
@@ -443,6 +444,7 @@ export async function criarMetaGrande(
     payload: { meta: input, metaPaiId: null },
     resumo: `Criar a meta grande "${input.titulo.trim()}" — ${descricaoDaMeta(input)}`,
     justificativa,
+    autoAprovar: desafio.criadorId === userId,
     aplicar: () => aplicarCriarMeta(userId, desafioId, input, null),
   });
 }
@@ -463,6 +465,9 @@ export async function criarMetaPequena(
   });
   if (!pai) throw new Error("Meta grande não encontrada.");
 
+  const desafio = await db.desafio.findUnique({ where: { id: desafioId }, select: { criadorId: true } });
+  const ehCriador = desafio?.criadorId === userId;
+
   return registrarMudanca({
     userId,
     desafioId,
@@ -472,6 +477,7 @@ export async function criarMetaPequena(
     payload: { meta: input, metaPaiId },
     resumo: `Criar a meta menor "${input.titulo.trim()}" dentro de "${pai.titulo}" — ${descricaoDaMeta(input)}`,
     justificativa,
+    autoAprovar: ehCriador,
     aplicar: () => aplicarCriarMeta(userId, desafioId, input, metaPaiId),
   });
 }
@@ -489,8 +495,7 @@ export async function editarMeta(
   await validarOrigemInput(userId, input);
 
   // O criador do desafio edita a própria meta sem esperar o resto do grupo
-  // aprovar — só criar/excluir meta e ajuste de progresso continuam exigindo
-  // unanimidade, mesmo pra ele.
+  // aprovar.
   const desafio = await db.desafio.findUnique({
     where: { id: meta.desafioId },
     select: { criadorId: true },
@@ -521,6 +526,8 @@ export async function excluirMeta(
   await requireMembro(meta.desafioId, userId);
 
   const filhas = await db.desafioMeta.count({ where: { metaPaiId: metaId } });
+  const desafio = await db.desafio.findUnique({ where: { id: meta.desafioId }, select: { criadorId: true } });
+  const ehCriador = desafio?.criadorId === userId;
 
   return registrarMudanca({
     userId,
@@ -533,6 +540,7 @@ export async function excluirMeta(
       `Excluir a meta "${meta.titulo}" (${numero(meta.alvo)} · ${rotuloPeriodo(meta.periodo)})` +
       (filhas > 0 ? ` e as ${filhas} metas menores dentro dela` : ""),
     justificativa,
+    autoAprovar: ehCriador,
     aplicar: () => aplicarExcluirMeta(userId, metaId),
   });
 }
@@ -574,6 +582,8 @@ export async function solicitarAjusteProgresso(
 
   const limpo: AjusteInput = { quantidade, data: ajuste.data, motivo };
   const sinal = quantidade > 0 ? "+" : "−";
+  const desafio = await db.desafio.findUnique({ where: { id: meta.desafioId }, select: { criadorId: true } });
+  const ehCriador = desafio?.criadorId === userId;
 
   return registrarMudanca({
     userId,
@@ -584,6 +594,7 @@ export async function solicitarAjusteProgresso(
     payload: { ajuste: limpo },
     resumo: `${sinal}${numero(Math.abs(quantidade))} em "${meta.titulo}" no dia ${shortDate(dataSP(ajuste.data))}`,
     justificativa: motivo,
+    autoAprovar: ehCriador,
     aplicar: () => aplicarAjuste(userId, meta.desafioId, metaId, limpo, null),
   });
 }

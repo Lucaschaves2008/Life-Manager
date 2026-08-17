@@ -9,13 +9,15 @@ import type { DiaSemanaMontado, RotinaPlanoView } from "@/lib/data/rotinas";
 import { cn } from "@/lib/utils";
 
 /**
- * A semana montada, de segunda a domingo, lado a lado.
+ * A semana montada, de segunda a domingo.
  *
  * O checklist do dia mostra só hoje — e com plano alternativo, recorrência por
  * dia da semana e fim de semana diferente, era impossível conferir se a semana
- * inteira ficou como o planejado sem navegar dia a dia. Aqui cada coluna é um
- * dia real (com a data), ordenada por horário, e o seletor troca de plano sem
- * ida ao servidor: os itens de todos os planos já vêm carregados.
+ * inteira ficou como o planejado sem navegar dia a dia. Aqui uma tira com os 7
+ * dias (data + quantos itens) fica sempre visível — dá pra ver a semana
+ * inteira de relance — e o dia escolhido abre embaixo com a mesma lista
+ * legível do checklist de hoje. Antes disso era um grid de 7 colunas
+ * espremendo cada nome em ~3 caracteres truncados; ficava ilegível.
  */
 export function SemanaMontada({
   dias,
@@ -40,6 +42,9 @@ export function SemanaMontada({
   );
 
   const total = diasFiltrados.reduce((s, d) => s + d.itens.length, 0);
+  const hojeKey = diasFiltrados.find((d) => d.hoje)?.dayKey ?? diasFiltrados[0]?.dayKey ?? null;
+  const [diaKey, setDiaKey] = useState<string | null>(hojeKey);
+  const diaAtivo = diasFiltrados.find((d) => d.dayKey === diaKey) ?? diasFiltrados[0];
 
   return (
     <div className="flex flex-col gap-4">
@@ -79,52 +84,90 @@ export function SemanaMontada({
           />
         </Card>
       ) : (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
-          {diasFiltrados.map((d) => (
-            <Card
-              key={d.dayKey}
-              destaque={d.hoje}
-              className={cn("min-w-0", d.fimDeSemana && !d.hoje && "opacity-90")}
-            >
-              <div className="flex items-baseline justify-between gap-2">
-                <CardLabel>{d.diaSemana}</CardLabel>
-                <span className="tabular text-[11px] text-steel">{d.dataLabel}</span>
-              </div>
+        <>
+          <div className="grid grid-cols-7 gap-2">
+            {diasFiltrados.map((d) => {
+              const selecionado = d.dayKey === diaAtivo?.dayKey;
+              return (
+                <button
+                  key={d.dayKey}
+                  type="button"
+                  onClick={() => setDiaKey(d.dayKey)}
+                  aria-current={d.hoje ? "date" : undefined}
+                  aria-pressed={selecionado}
+                  className={cn(
+                    "flex flex-col items-center gap-1.5 rounded-[14px] border py-2.5 text-center transition-colors",
+                    selecionado
+                      ? "border-[rgba(13,110,253,.4)] bg-mint-soft"
+                      : "border-stroke bg-surface-2 hover:border-[rgba(143,169,205,.25)]"
+                  )}
+                >
+                  <span className={cn("microlabel", selecionado ? "text-mint" : "text-steel")}>
+                    {d.diaSemana.slice(0, 3)}
+                  </span>
+                  <span
+                    className={cn(
+                      "tabular text-[17px] leading-none",
+                      selecionado ? "text-ice" : "text-mist"
+                    )}
+                  >
+                    {d.dataLabel.slice(0, 2)}
+                  </span>
+                  <span
+                    className={cn(
+                      "h-1 w-1 rounded-full",
+                      d.hoje ? "bg-mint" : "bg-transparent"
+                    )}
+                    aria-hidden="true"
+                  />
+                  <span className="text-[10.5px] text-steel">
+                    {d.itens.length > 0 ? d.itens.length : "livre"}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
 
-              {d.itens.length === 0 ? (
-                <p className="mt-3 text-[12px] text-steel/70">Dia livre</p>
-              ) : (
-                <ul className="mt-3 flex flex-col gap-1.5">
-                  {d.itens.map((i, idx) => (
-                    <li
-                      key={`${i.id}-${idx}`}
-                      className="flex items-start gap-2 rounded-[10px] bg-surface-2 px-2.5 py-2"
-                    >
-                      <span className="tabular w-[38px] shrink-0 pt-[1px] text-[11px] text-steel">
-                        {i.horaInicio ?? "—"}
-                      </span>
-                      <span className="shrink-0 text-[12px] leading-[1.35]">
-                        {(TIPO_META[i.tipo] ?? TIPO_META.livre).emoji}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-[12.5px] leading-[1.35] text-mist">{i.nome}</p>
-                        {i.opcoes.length > 0 && (
-                          <p className="truncate text-[10.5px] text-steel">
-                            {i.opcoes.join(" ou ")}
-                          </p>
-                        )}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
+          <Card destaque={diaAtivo.hoje}>
+            <div className="flex items-baseline justify-between gap-2">
+              <CardLabel>
+                {diaAtivo.diaSemana} · {diaAtivo.dataLabel}
+                {diaAtivo.hoje ? " · hoje" : ""}
+              </CardLabel>
+              <span className="tabular text-[11px] text-steel">
+                {diaAtivo.itens.length} {diaAtivo.itens.length === 1 ? "item" : "itens"}
+              </span>
+            </div>
 
-              <p className="mt-3 text-[11px] text-steel/70">
-                {d.itens.length} {d.itens.length === 1 ? "item" : "itens"}
-              </p>
-            </Card>
-          ))}
-        </div>
+            {diaAtivo.itens.length === 0 ? (
+              <p className="mt-4 text-[13px] text-steel">Dia livre — nada montado.</p>
+            ) : (
+              <ul className="mt-4 flex flex-col gap-2">
+                {diaAtivo.itens.map((i, idx) => (
+                  <li
+                    key={`${i.id}-${idx}`}
+                    className="flex items-center gap-3 rounded-[14px] border border-stroke bg-surface-2 px-4 py-3"
+                  >
+                    <span className="tabular w-11 shrink-0 text-[12.5px] text-steel">
+                      {i.horaInicio ?? "—"}
+                    </span>
+                    <span className="text-[15px] leading-none">
+                      {(TIPO_META[i.tipo] ?? TIPO_META.livre).emoji}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[13.5px] text-mist">{i.nome}</p>
+                      {i.opcoes.length > 0 && (
+                        <p className="mt-1 truncate text-[11px] text-steel">
+                          {i.opcoes.join(" ou ")}
+                        </p>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+        </>
       )}
     </div>
   );
