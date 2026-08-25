@@ -14,6 +14,7 @@ import {
   ehTipoCardio,
   type TipoRotina,
 } from "@/lib/data/rotinas-constantes";
+import type { RotinaTemplateView } from "@/lib/data/rotinas";
 
 function revalidar(userId: string) {
   revalidateTag(tagUsuario(userId, "checklist"));
@@ -319,6 +320,67 @@ async function sincronizarOpcoes(userId: string, rotinaId: string, nomes: string
         : db.rotinaTemplateOpcao.create({ data: { rotinaId, userId, nome, ordem } });
     }),
   ]);
+}
+
+/**
+ * Duplica o item (horário, recorrência, vínculos e opções inclusos) com
+ * "(cópia)" no nome, e devolve o template pronto para o form de edição — o
+ * fluxo é sempre duplicar e já deixar o usuário ajustar o que for diferente.
+ */
+export async function duplicarRotinaTemplate(id: string): Promise<RotinaTemplateView> {
+  const { id: userId } = await requireUser();
+  const original = await db.rotinaTemplate.findFirst({
+    where: { id, userId, ativo: true },
+    include: { opcoes: { orderBy: { ordem: "asc" } } },
+  });
+  if (!original) throw new Error("Item não encontrado — recarregue a página.");
+
+  const total = await db.rotinaTemplate.count({ where: { userId, ativo: true } });
+  const copia = await db.rotinaTemplate.create({
+    data: {
+      nome: `${original.nome} (cópia)`,
+      nota: original.nota,
+      local: original.local,
+      horaInicio: original.horaInicio,
+      horaFim: original.horaFim,
+      dataInicio: original.dataInicio,
+      rrule: original.rrule,
+      ordem: total,
+      tipo: original.tipo,
+      studyCategoryId: original.studyCategoryId,
+      routineId: original.routineId,
+      runSessionId: original.runSessionId,
+      mealId: original.mealId,
+      metaMinutos: original.metaMinutos,
+      planoId: original.planoId,
+      userId,
+      opcoes: {
+        create: original.opcoes.map((o) => ({ nome: o.nome, ordem: o.ordem, userId })),
+      },
+    },
+    include: { opcoes: { orderBy: { ordem: "asc" } } },
+  });
+  revalidar(userId);
+
+  return {
+    id: copia.id,
+    nome: copia.nome,
+    nota: copia.nota,
+    local: copia.local === "habitos" ? "habitos" : "checklist",
+    horaInicio: copia.horaInicio,
+    horaFim: copia.horaFim,
+    rrule: copia.rrule,
+    exdates: [],
+    ordem: copia.ordem,
+    tipo: copia.tipo as TipoRotina,
+    studyCategoryId: copia.studyCategoryId,
+    routineId: copia.routineId,
+    runSessionId: copia.runSessionId,
+    mealId: copia.mealId,
+    metaMinutos: copia.metaMinutos,
+    planoId: copia.planoId,
+    opcoes: copia.opcoes.map((o) => ({ id: o.id, nome: o.nome })),
+  };
 }
 
 export async function excluirRotinaTemplate(id: string) {

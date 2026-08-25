@@ -6,6 +6,7 @@ import { requireUser } from "@/lib/auth";
 import { tagUsuario } from "@/lib/cache-tags";
 import { spEndOfDay, spStartOfDay } from "@/lib/dates";
 import { parseJSON } from "@/lib/utils";
+import type { HabitoView } from "@/lib/data/checklist";
 
 function revalidar(userId: string) {
   revalidateTag(tagUsuario(userId, "checklist"));
@@ -39,6 +40,20 @@ export async function deleteHabit(id: string) {
   const { id: userId } = await requireUser();
   await db.habit.update({ where: { id, userId }, data: { ativo: false } });
   revalidar(userId);
+}
+
+/** Duplica o hábito com "(cópia)" no nome — devolve pronto para editar. */
+export async function duplicarHabit(id: string): Promise<HabitoView> {
+  const { id: userId } = await requireUser();
+  const original = await db.habit.findFirst({ where: { id, userId, ativo: true } });
+  if (!original) throw new Error("Hábito não encontrado — recarregue a página.");
+
+  const total = await db.habit.count({ where: { userId, ativo: true } });
+  const copia = await db.habit.create({
+    data: { nome: `${original.nome} (cópia)`, nota: original.nota, ordem: total, userId },
+  });
+  revalidar(userId);
+  return { id: copia.id, nome: copia.nome, nota: copia.nota, ordem: copia.ordem };
 }
 
 /** Troca a ordem do hábito com o vizinho (direcao -1 = sobe, 1 = desce). */

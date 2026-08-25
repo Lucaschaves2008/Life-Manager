@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { tagUsuario } from "@/lib/cache-tags";
 import { spStartOfDay } from "@/lib/dates";
+import type { VariavelView } from "@/lib/data/variaveis";
 
 function revalidar(userId: string) {
   revalidateTag(tagUsuario(userId, "checklist"));
@@ -95,6 +96,40 @@ export async function atualizarVariavel(id: string, input: VariavelInput) {
     },
   });
   revalidar(userId);
+}
+
+/** Duplica a variável com "(cópia)" no nome — devolve pronta para editar. */
+export async function duplicarVariavel(id: string): Promise<VariavelView> {
+  const { id: userId } = await requireUser();
+  const original = await db.variavel.findFirst({ where: { id, userId, ativo: true } });
+  if (!original) throw new Error("Variável não encontrada — recarregue a página.");
+
+  const total = await db.variavel.count({ where: { userId, ativo: true } });
+  const copia = await db.variavel.create({
+    data: {
+      nome: `${original.nome} (cópia)`,
+      nota: original.nota,
+      local: original.local,
+      emoji: original.emoji,
+      cor: original.cor,
+      medeStreak: original.medeStreak,
+      medeContagem: original.medeContagem,
+      ordem: total,
+      userId,
+    },
+  });
+  revalidar(userId);
+  return {
+    id: copia.id,
+    nome: copia.nome,
+    nota: copia.nota,
+    local: copia.local === "habitos" ? "habitos" : "checklist",
+    emoji: copia.emoji,
+    cor: copia.cor,
+    medeStreak: copia.medeStreak,
+    medeContagem: copia.medeContagem,
+    ordem: copia.ordem,
+  };
 }
 
 export async function excluirVariavel(id: string) {

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowDown, ArrowUp, GlassWater, Heart, Pencil, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Copy, GlassWater, Heart, Pencil, Plus, Trash2 } from "lucide-react";
 import { useAcao } from "@/lib/acao-cliente";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
@@ -11,12 +11,17 @@ import { DotsMenu } from "@/components/caverna/dots-menu";
 import { EmptyState } from "@/components/caverna/empty-state";
 import {
   deleteHabit,
+  duplicarHabit,
   moveHabit,
   toggleHabitDia,
   updateHabit,
 } from "@/app/actions/checklist";
-import { excluirRotinaTemplate, toggleRotinaCheckDia } from "@/app/actions/rotinas";
-import { excluirVariavel, toggleVariavelCheckDia } from "@/app/actions/variaveis";
+import {
+  duplicarRotinaTemplate,
+  excluirRotinaTemplate,
+  toggleRotinaCheckDia,
+} from "@/app/actions/rotinas";
+import { duplicarVariavel, excluirVariavel, toggleVariavelCheckDia } from "@/app/actions/variaveis";
 import {
   ItemFormSheet,
   TIPO_META,
@@ -59,6 +64,7 @@ type CardHabito = {
   rodape: string | null;
   onToggle: () => void;
   onEditar: () => void;
+  onDuplicar: () => void;
   onExcluir: () => void;
 };
 
@@ -166,6 +172,31 @@ export function ChecklistHoje({
     );
   }
 
+  /** Duplica o hábito simples e já abre a edição da cópia. */
+  function duplicarHabitoItem(id: string) {
+    executar(async () => {
+      const novo = await duplicarHabit(id);
+      setGerenciar(true);
+      setEditandoId(novo.id);
+      setEditandoNome(novo.nome);
+      setEditandoNota(novo.nota ?? "");
+    });
+  }
+
+  function duplicarVariavelItem(id: string) {
+    executar(async () => {
+      const novo = await duplicarVariavel(id);
+      setForm(formDaVariavel({ ...novo, feito: false, streakAtual: null }));
+    });
+  }
+
+  function duplicarTemplateItem(templateId: string) {
+    executar(async () => {
+      const novo = await duplicarRotinaTemplate(templateId);
+      setForm(formDoTemplate(novo));
+    });
+  }
+
   const cards: CardHabito[] = useMemo(() => {
     const deVariaveis = variaveisOtimista.map((v) => ({
       chave: `variavel:${v.id}`,
@@ -179,6 +210,7 @@ export function ChecklistHoje({
           : null,
       onToggle: () => toggleVariavel(v.id),
       onEditar: () => setForm(formDaVariavel(v)),
+      onDuplicar: () => duplicarVariavelItem(v.id),
       onExcluir: () => executar(() => excluirVariavel(v.id), { sucesso: "Removido dos hábitos" }),
     }));
 
@@ -196,6 +228,7 @@ export function ChecklistHoje({
           const t = templatesHabito.find((tt) => tt.id === oc.templateId);
           if (t) setForm(formDoTemplate(t));
         },
+        onDuplicar: () => duplicarTemplateItem(oc.templateId),
         onExcluir: () =>
           executar(() => excluirRotinaTemplate(oc.templateId), { sucesso: "Removido dos hábitos" }),
       };
@@ -217,6 +250,7 @@ export function ChecklistHoje({
           setEditandoNome(h.nome);
           setEditandoNota(h.nota ?? "");
         },
+        onDuplicar: () => duplicarHabitoItem(h.id),
         onExcluir: () => executar(() => deleteHabit(h.id), { sucesso: "Hábito removido" }),
       };
     });
@@ -348,6 +382,18 @@ export function ChecklistHoje({
                     onClick={() => {
                       const alvo = aberto;
                       setAberto(null);
+                      alvo.onDuplicar();
+                    }}
+                  >
+                    <Copy className="h-3.5 w-3.5" strokeWidth={1.5} />
+                    Duplicar
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => {
+                      const alvo = aberto;
+                      setAberto(null);
                       alvo.onExcluir();
                     }}
                   >
@@ -416,6 +462,11 @@ export function ChecklistHoje({
                               setEditandoNome(h.nome);
                               setEditandoNota(h.nota ?? "");
                             },
+                          },
+                          {
+                            label: "Duplicar",
+                            icon: Copy,
+                            onSelect: () => duplicarHabitoItem(h.id),
                           },
                           {
                             label: "Excluir",

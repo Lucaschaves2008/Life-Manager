@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, CalendarDays, Check, Clock, Flame, GripVertical, Pencil, Plus, SkipForward, Star, Trash2, Undo2 } from "lucide-react";
+import { ArrowDown, ArrowUp, CalendarDays, Check, Clock, Copy, Flame, GripVertical, Pencil, Plus, SkipForward, Star, Trash2, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAcao } from "@/lib/acao-cliente";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,7 @@ import { EmptyState } from "@/components/caverna/empty-state";
 import {
   criarRotinaPlano,
   definirRotinaPlanoPadrao,
+  duplicarRotinaTemplate,
   escolherRotinaPlanoDoDia,
   excluirRotinaPlano,
   excluirRotinaTemplate,
@@ -28,7 +29,12 @@ import {
   reordenarRotinaTemplates,
   toggleRotinaCheckDia,
 } from "@/app/actions/rotinas";
-import { excluirVariavel, moverVariavel, toggleVariavelCheckDia } from "@/app/actions/variaveis";
+import {
+  duplicarVariavel,
+  excluirVariavel,
+  moverVariavel,
+  toggleVariavelCheckDia,
+} from "@/app/actions/variaveis";
 import {
   deleteRefeicao,
   escolherOpcao,
@@ -330,6 +336,21 @@ export function MinhaRotina({
     executar(() => excluirRotinaTemplate(id), { sucesso: "Item removido" });
   }
 
+  /** Duplica o item e já abre a edição da cópia para ajustar o que mudar. */
+  function duplicarItem(id: string) {
+    executar(async () => {
+      const novo = await duplicarRotinaTemplate(id);
+      setForm(formDoTemplate(novo));
+    });
+  }
+
+  function duplicarVariavelItem(id: string) {
+    executar(async () => {
+      const novo = await duplicarVariavel(id);
+      setForm(formDaVariavel({ ...novo, feito: false, streakAtual: null }));
+    });
+  }
+
   function escolherPlano(planoId: string) {
     const alvo = planos.find((p) => p.id === planoId);
     executar(() => escolherRotinaPlanoDoDia(dia, planoId), {
@@ -503,6 +524,7 @@ export function MinhaRotina({
                       const t = templates.find((tt) => tt.id === item.templateId);
                       if (t) setForm(formDoTemplate(t));
                     }}
+                    onDuplicar={() => duplicarItem(item.templateId)}
                     onPular={() => pular(item.templateId)}
                   />
                 );
@@ -513,6 +535,7 @@ export function MinhaRotina({
                     item={item}
                     onToggle={() => toggleVariavel(item.id)}
                     onEditar={() => setForm(formDaVariavel(item))}
+                    onDuplicar={() => duplicarVariavelItem(item.id)}
                     onExcluir={() => excluirVariavelItem(item.id)}
                   />
                 );
@@ -604,6 +627,7 @@ export function MinhaRotina({
                     <DotsMenu
                       items={[
                         { label: "Editar", icon: Pencil, onSelect: () => setForm(formDoTemplate(t)) },
+                        { label: "Duplicar", icon: Copy, onSelect: () => duplicarItem(t.id) },
                         {
                           label: "Excluir",
                           icon: Trash2,
@@ -758,6 +782,7 @@ function ItemLinha({
   categoria,
   onToggle,
   onEditar,
+  onDuplicar,
   onPular,
 }: {
   item: RotinaOcorrenciaView;
@@ -766,6 +791,7 @@ function ItemLinha({
   categoria?: CategoriaView;
   onToggle: (opcaoId?: string) => void;
   onEditar: () => void;
+  onDuplicar: () => void;
   onPular: () => void;
 }) {
   const [escolhendo, setEscolhendo] = useState(false);
@@ -877,6 +903,7 @@ function ItemLinha({
       <DotsMenu
         items={[
           { label: "Editar", icon: Pencil, onSelect: onEditar },
+          { label: "Duplicar", icon: Copy, onSelect: onDuplicar },
           { label: "Não fazer hoje", icon: SkipForward, onSelect: onPular },
         ]}
       />
@@ -912,11 +939,13 @@ function ItemLinhaVariavel({
   item,
   onToggle,
   onEditar,
+  onDuplicar,
   onExcluir,
 }: {
   item: VariavelChecklistItem;
   onToggle: () => void;
   onEditar: () => void;
+  onDuplicar: () => void;
   onExcluir: () => void;
 }) {
   return (
@@ -971,6 +1000,7 @@ function ItemLinhaVariavel({
       <DotsMenu
         items={[
           { label: "Editar", icon: Pencil, onSelect: onEditar },
+          { label: "Duplicar", icon: Copy, onSelect: onDuplicar },
           { label: "Excluir", icon: Trash2, destructive: true, onSelect: onExcluir },
         ]}
       />
