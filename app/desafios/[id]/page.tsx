@@ -13,6 +13,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { dayKeySP, nowSP } from "@/lib/dates";
 import { initials } from "@/lib/utils";
+import { shortDate } from "@/lib/dates";
 
 export const dynamic = "force-dynamic";
 
@@ -57,6 +58,20 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
           </h1>
           {desafio.descricao && (
             <p className="mt-2 max-w-xl text-[13.5px] text-mist">{desafio.descricao}</p>
+          )}
+          {desafio.inicioEm && desafio.fimEm && (
+            <p className="mt-2 text-[12px] text-steel">
+              {shortDate(new Date(desafio.inicioEm))} → {shortDate(new Date(desafio.fimEm))}
+              {desafio.encerrado ? (
+                <span className="ml-2 rounded-full bg-surface-2 px-2 py-0.5 text-[10.5px] uppercase tracking-wider text-mist">
+                  Encerrado · somente leitura
+                </span>
+              ) : (
+                <span className="ml-2 text-mist">
+                  · {Math.max(1, Math.ceil((new Date(desafio.fimEm).getTime() - Date.now()) / 86_400_000))}d restantes
+                </span>
+              )}
+            </p>
           )}
 
           <div className="mt-4 flex -space-x-2.5">

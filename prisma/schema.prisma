@@ -833,6 +833,13 @@ model Desafio {
   metasGrandesLimite Int      @default(4)
   ativo              Boolean  @default(true)
   criadoEm           DateTime @default(now())
+  // Janela real do desafio (ex.: 01/08 → 31/10). Metas de período longo
+  // ("trimestre"/"semestre") valem pela janela inteira, não pelo trimestre do
+  // calendário — senão o progresso "zera" quando o calendário vira. Passada a
+  // `fimEm` o desafio fica encerrado: só leitura, dados preservados. Null =
+  // desafio legado (sem janela), segue o calendário como antes.
+  inicioEm           DateTime?
+  fimEm              DateTime?
 
   membros      DesafioMembro[]
   metas        DesafioMeta[]

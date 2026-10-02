@@ -12,7 +12,8 @@ import {
   type SolicitacaoTipo,
   type SolicitacaoView,
 } from "@/lib/data/desafios-solicitacoes";
-import { shortDate } from "@/lib/dates";
+import { shortDate, spEndOfDay, spStartOfDay } from "@/lib/dates";
+import { addDays } from "date-fns";
 import { mensagensDoDesafio, type MensagemView } from "@/lib/data/desafios-chat";
 import { documentoDoDesafio, type DesafioDocumentoView } from "@/lib/data/desafios-documento";
 import { uploadDesafioDocumento, removeDesafioDocumento } from "@/lib/supabase/storage";
@@ -58,15 +59,37 @@ async function requireCriador(desafioId: string, userId: string) {
   return desafio;
 }
 
-export async function criarDesafio(input: { nome: string; descricao?: string; metasGrandesLimite: number }) {
+/** Desafio com janela vencida é só leitura: os dados ficam, mas nada novo entra. */
+async function requireAberto(desafioId: string) {
+  const d = await db.desafio.findUnique({ where: { id: desafioId }, select: { fimEm: true } });
+  if (d?.fimEm && new Date() > d.fimEm) {
+    throw new Error("Este desafio já foi encerrado — não dá mais para alterar metas ou progresso.");
+  }
+}
+
+const DURACAO_PADRAO_DIAS = 90;
+
+export async function criarDesafio(input: {
+  nome: string;
+  descricao?: string;
+  metasGrandesLimite: number;
+  /** Duração em dias a partir de hoje (padrão 90). */
+  duracaoDias?: number;
+}) {
   const { id: userId } = await requireUser();
   const nome = input.nome.trim();
   if (!nome) throw new Error("Dê um nome ao desafio.");
   const limite = Math.min(10, Math.max(1, Math.round(input.metasGrandesLimite)));
 
+  const duracao = Math.min(730, Math.max(7, Math.round(input.duracaoDias ?? DURACAO_PADRAO_DIAS)));
+  const inicioEm = spStartOfDay(new Date());
+  const fimEm = spEndOfDay(addDays(inicioEm, duracao - 1));
+
   const codigo = await codigoUnico();
   const desafio = await db.desafio.create({
     data: {
+      inicioEm,
+      fimEm,
       nome,
       descricao: input.descricao?.trim() || null,
       codigo,
@@ -84,6 +107,7 @@ export async function entrarNoDesafio(codigoInput: string) {
   const codigo = codigoInput.trim().toUpperCase();
   const desafio = await db.desafio.findUnique({ where: { codigo }, select: { id: true, ativo: true } });
   if (!desafio || !desafio.ativo) throw new Error("Código inválido.");
+  await requireAberto(desafio.id);
 
   const jaMembro = await db.desafioMembro.findUnique({
     where: { desafioId_userId: { desafioId: desafio.id, userId } },
@@ -369,6 +393,7 @@ async function registrarMudanca(params: {
   autoAprovar?: boolean;
   aplicar: () => Promise<void>;
 }): Promise<ResultadoMudanca> {
+  await requireAberto(params.desafioId);
   const membros = await membrosDoDesafio(params.desafioId);
 
   if (membros.length <= 1) {
@@ -654,6 +679,7 @@ export async function votarSolicitacao(
   if (!solicitacao) throw new Error("Solicitação não encontrada.");
   if (solicitacao.status !== "pendente") throw new Error("Esta solicitação já foi encerrada.");
   await requireMembro(solicitacao.desafioId, userId);
+  await requireAberto(solicitacao.desafioId);
 
   await db.desafioSolicitacaoVoto.upsert({
     where: { solicitacaoId_userId: { solicitacaoId, userId } },
@@ -692,6 +718,7 @@ async function concluirSeUnanime(solicitacaoId: string): Promise<boolean> {
   if (membros.length === 0 || !membros.every((id) => aprovadores.has(id))) return false;
 
   try {
+    await requireAberto(solicitacao.desafioId);
     await aplicarSolicitacao(solicitacao);
   } catch (e) {
     await db.desafioSolicitacao.update({

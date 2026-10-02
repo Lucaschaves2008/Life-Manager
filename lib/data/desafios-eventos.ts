@@ -36,6 +36,7 @@ function nomeOu(nome: string | null, fallback: string): string {
  * novo no período seguinte virar um evento novo em vez de ser descartada
  * pela idempotência. */
 function chavePeriodoAtual(periodo: string, agora: Date): string {
+  if (periodo === "janela") return "janela";
   if (periodo === "semana") return weekKeySP(agora);
   if (periodo === "mes") return monthKeySP(agora);
   if (periodo === "trimestre") return quarterKeySP(agora);

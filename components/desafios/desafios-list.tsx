@@ -18,12 +18,13 @@ function CriarDesafioDialog({ open, onOpenChange }: { open: boolean; onOpenChang
   const [nome, setNome] = useState("");
   const [descricao, setDescricao] = useState("");
   const [metasGrandesLimite, setMetasGrandesLimite] = useState(4);
+  const [duracaoDias, setDuracaoDias] = useState(90);
 
   function salvar() {
     if (!nome.trim()) return;
     executar(async () => {
       try {
-        const desafio = await criarDesafio({ nome, descricao, metasGrandesLimite });
+        const desafio = await criarDesafio({ nome, descricao, metasGrandesLimite, duracaoDias });
         toast.success("Desafio criado");
         onOpenChange(false);
         setNome("");
@@ -58,6 +59,20 @@ function CriarDesafioDialog({ open, onOpenChange }: { open: boolean; onOpenChang
               onChange={(e) => setDescricao(e.target.value)}
               placeholder="Ex.: Desafio de treino e alimentação do 2º semestre"
             />
+          </div>
+          <div>
+            <Label htmlFor="duracao">Duração (dias)</Label>
+            <Input
+              id="duracao"
+              type="number"
+              min={7}
+              max={730}
+              value={duracaoDias}
+              onChange={(e) => setDuracaoDias(Number(e.target.value))}
+            />
+            <p className="mt-1.5 text-[11.5px] text-steel">
+              Começa hoje. Depois do último dia o desafio vira somente leitura — nada é apagado.
+            </p>
           </div>
           <div>
             <Label htmlFor="limite">Metas grandes por participante</Label>

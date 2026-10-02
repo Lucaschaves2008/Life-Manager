@@ -1,4 +1,4 @@
-import { addDays, subMonths, subQuarters, subWeeks } from "date-fns";
+import { addDays } from "date-fns";
 import { db } from "@/lib/db";
 import {
   monthKeySP,
@@ -79,13 +79,30 @@ function chaveDoPeriodo(periodo: DesafioPeriodo, data: Date): string {
   return semesterKeySP(data);
 }
 
-/** Desloca `agora` N períodos pra trás — usado pra montar a série histórica. */
-function deslocarPeriodo(periodo: DesafioPeriodo, data: Date, n: number): Date {
-  const sp = toSP(data);
-  if (periodo === "semana") return subWeeks(sp, n);
-  if (periodo === "mes") return subMonths(sp, n);
-  if (periodo === "trimestre") return subQuarters(sp, n);
-  return subMonths(sp, n * 6); // semestre = 6 meses
+export type JanelaDesafio = { inicio: Date; fim: Date };
+
+/** Trimestre/semestre valem pela janela inteira do desafio, não pelo calendário. */
+function ehPeriodoLongo(periodo: DesafioPeriodo): boolean {
+  return periodo === "trimestre" || periodo === "semestre";
+}
+
+/**
+ * Range efetivo de uma meta em `ref`. Com janela: metas de período longo
+ * cobrem a janela toda (01/08 → 31/10, por ex.) e as de semana/mês seguem o
+ * calendário recortado pela janela. Sem janela (desafio legado): calendário.
+ */
+function rangeDaMeta(
+  periodo: DesafioPeriodo,
+  janela: JanelaDesafio | null,
+  ref: Date
+): { inicio: Date; fim: Date } {
+  if (janela && ehPeriodoLongo(periodo)) return janela;
+  const r = rangeDoPeriodo(periodo, chaveDoPeriodo(periodo, ref));
+  if (!janela) return r;
+  return {
+    inicio: r.inicio < janela.inicio ? janela.inicio : r.inicio,
+    fim: r.fim > janela.fim ? janela.fim : r.fim,
+  };
 }
 
 type MetaRow = {
@@ -405,7 +422,10 @@ export type DesafioMetaView = {
   pontos: number;
   periodo: DesafioPeriodo;
   ordem: number;
-  serie: number[]; // % nos últimos pontos (mais antigo -> mais recente, último = atual)
+  /** % ACUMULADO ao longo do período da meta (0 → hoje); último ponto = pct atual. */
+  serie: number[];
+  /** Fração (0–1) do período já decorrida — onde a série termina no eixo do tempo. */
+  decorrido: number;
   filhas: DesafioMetaView[];
   /** Só relevante pra meta grande com filhas — ver `somaFilhas` no schema. */
   somaFilhas: boolean;
@@ -428,11 +448,16 @@ export type DesafioDetalhe = {
   codigo: string;
   criadorId: string;
   metasGrandesLimite: number;
+  /** Janela do desafio (ISO). Null em desafio legado sem janela. */
+  inicioEm: string | null;
+  fimEm: string | null;
+  /** Passou do fim: só leitura, dados preservados. */
+  encerrado: boolean;
   membros: MembroDesafio[];
   eventos: DesafioEventoView[];
 };
 
-const PONTOS_SERIE = 8;
+const PONTOS_SERIE = 12;
 
 function unidadeDaMeta(meta: MetaRow): string {
   if (meta.origem === "metrica" && meta.metrica) {
@@ -444,12 +469,31 @@ function unidadeDaMeta(meta: MetaRow): string {
 
 type MetaRowComPai = MetaRow & { metaPaiId: string | null };
 
-/** Range de datas que cobre "agora" + todos os PONTOS_SERIE pontos históricos de um período. */
-function rangeTotalDoPeriodo(periodo: DesafioPeriodo, agora: Date): { inicio: Date; fim: Date } {
-  const dataMaisAntiga = deslocarPeriodo(periodo, agora, PONTOS_SERIE - 1);
-  const inicio = rangeDoPeriodo(periodo, chaveDoPeriodo(periodo, dataMaisAntiga)).inicio;
-  const fim = rangeDoPeriodo(periodo, chaveDoPeriodo(periodo, agora)).fim;
-  return { inicio, fim };
+/**
+ * Série de % ACUMULADO da meta no período: PONTOS_SERIE pontos igualmente
+ * espaçados entre o início do período e `agora`, mais o ponto zero. Sempre
+ * não-decrescente (salvo ajustes negativos) e termina em `pctAtual`.
+ */
+function serieAcumulada(
+  meta: MetaRow,
+  dados: DadosBrutosUsuario,
+  inicio: Date,
+  fim: Date,
+  agora: Date,
+  pctAtual: number
+): { serie: number[]; decorrido: number } {
+  const total = fim.getTime() - inicio.getTime();
+  const limite = agora < fim ? agora : fim;
+  const andado = limite.getTime() - inicio.getTime();
+  if (total <= 0 || andado <= 0 || meta.alvo <= 0) return { serie: [0, pctAtual], decorrido: 0 };
+
+  const serie = [0];
+  for (let i = 1; i < PONTOS_SERIE; i++) {
+    const ate = new Date(inicio.getTime() + (andado * i) / PONTOS_SERIE);
+    serie.push((calcularAtualMeta(meta, dados, inicio, ate) / meta.alvo) * 100);
+  }
+  serie.push(pctAtual);
+  return { serie, decorrido: Math.min(1, andado / total) };
 }
 
 /**
@@ -461,11 +505,12 @@ function viewDeMeta(
   meta: MetaRowComPai,
   filhas: MetaRowComPai[],
   agora: Date,
-  dados: DadosBrutosUsuario
+  dados: DadosBrutosUsuario,
+  janela: JanelaDesafio | null
 ): DesafioMetaView {
   const periodo = meta.periodo as DesafioPeriodo;
 
-  const filhasView = filhas.map((f) => viewDeMeta(f, [], agora, dados));
+  const filhasView = filhas.map((f) => viewDeMeta(f, [], agora, dados, janela));
 
   const unidade = unidadeDaMeta(meta);
 
@@ -477,10 +522,15 @@ function viewDeMeta(
     const alvo = filhasView.reduce((s, f) => s + f.alvo, 0) || meta.alvo;
     const pct = alvo > 0 ? (atual / alvo) * 100 : 0;
     const pontos = filhasView.reduce((s, f) => s + f.pontos, 0);
-    const serie = Array.from({ length: PONTOS_SERIE }, (_, i) => i).map((i) => {
-      const pesos = filhasView.map((f) => f.serie[i] ?? 0);
-      return pesos.length > 0 ? pesos.reduce((s, v) => s + v, 0) / pesos.length : 0;
-    });
+    // Média das séries das filhas ponderada pelo alvo de cada uma — mesmo
+    // critério do pct agregado acima.
+    const pesoTotal = filhasView.reduce((s, f) => s + f.alvo, 0);
+    const serie = Array.from({ length: PONTOS_SERIE + 2 }, (_, i) =>
+      pesoTotal > 0
+        ? filhasView.reduce((s, f) => s + (f.serie[Math.min(i, f.serie.length - 1)] ?? 0) * f.alvo, 0) / pesoTotal
+        : 0
+    );
+    const decorrido = Math.max(...filhasView.map((f) => f.decorrido));
     return {
       id: meta.id,
       titulo: meta.titulo,
@@ -497,23 +547,17 @@ function viewDeMeta(
       periodo,
       ordem: 0,
       serie,
+      decorrido,
       filhas: filhasView,
       somaFilhas: true,
     };
   }
 
-  const { inicio, fim } = rangeDoPeriodo(periodo, chaveDoPeriodo(periodo, agora));
+  const { inicio, fim } = rangeDaMeta(periodo, janela, agora);
   const atual = calcularAtualMeta(meta, dados, inicio, fim);
   const pct = meta.alvo > 0 ? (atual / meta.alvo) * 100 : 0;
   const pontos = pontosDaMetaFolha(meta, dados, inicio, fim, agora);
-
-  const serie = Array.from({ length: PONTOS_SERIE }, (_, i) => PONTOS_SERIE - 1 - i).map((n) => {
-    const dataDeslocada = deslocarPeriodo(periodo, agora, n);
-    const chave = chaveDoPeriodo(periodo, dataDeslocada);
-    const { inicio: ini, fim: f } = rangeDoPeriodo(periodo, chave);
-    const valor = calcularAtualMeta(meta, dados, ini, f);
-    return meta.alvo > 0 ? (valor / meta.alvo) * 100 : 0;
-  });
+  const { serie, decorrido } = serieAcumulada(meta, dados, inicio, fim, agora, pct);
 
   return {
     id: meta.id,
@@ -531,6 +575,7 @@ function viewDeMeta(
     periodo,
     ordem: 0,
     serie,
+    decorrido,
     filhas: filhasView,
     somaFilhas: meta.somaFilhas,
   };
@@ -540,7 +585,7 @@ function viewDeMeta(
 export async function desafioDetalhe(
   desafioId: string,
   viewerUserId: string,
-  agora: Date = new Date()
+  agoraReal: Date = new Date()
 ): Promise<DesafioDetalhe | null> {
   const desafio = await db.desafio.findUnique({
     where: { id: desafioId },
@@ -550,6 +595,14 @@ export async function desafioDetalhe(
     },
   });
   if (!desafio) return null;
+
+  const janela: JanelaDesafio | null =
+    desafio.inicioEm && desafio.fimEm ? { inicio: desafio.inicioEm, fim: desafio.fimEm } : null;
+  const encerrado = janela !== null && agoraReal > janela.fim;
+  // Encerrado: tudo é calculado como se "agora" fosse o último instante da
+  // janela — os números ficam congelados no resultado final em vez de zerar
+  // quando o calendário vira.
+  const agora = encerrado && janela ? janela.fim : agoraReal;
 
   const perfis = await db.profile.findMany({
     where: { id: { in: desafio.membros.map((m) => m.userId) } },
@@ -564,12 +617,10 @@ export async function desafioDetalhe(
     metasPorMembro.set(m.userId, lista);
   }
 
-  // Range total por membro = união do range necessário (agora + série histórica)
-  // de cada período distinto usado pelas metas dele — calculado sem I/O.
+  // Range por membro = união do range efetivo de cada meta dele — sem I/O.
   const rangesPorMembro = desafio.membros.map((dm) => {
     const minhasMetas = metasPorMembro.get(dm.userId) ?? [];
-    const periodosUsados = [...new Set(minhasMetas.map((m) => m.periodo as DesafioPeriodo))];
-    const ranges = periodosUsados.map((p) => rangeTotalDoPeriodo(p, agora));
+    const ranges = minhasMetas.map((m) => rangeDaMeta(m.periodo as DesafioPeriodo, janela, agora));
     const inicio =
       ranges.length > 0 ? new Date(Math.min(...ranges.map((r) => r.inicio.getTime()))) : agora;
     const fim =
@@ -587,7 +638,7 @@ export async function desafioDetalhe(
   // desafio, em vez de 1 leva por membro — custo fixo independente do tamanho do grupo.
   const [dadosPorUsuario, streaksPorUsuario] = await Promise.all([
     carregarDadosBrutosMultiUsuario(rangesPorMembro),
-    Promise.all(desafio.membros.map((dm) => streakLC(dm.userId, agora))),
+    Promise.all(desafio.membros.map((dm) => streakLC(dm.userId, agoraReal))),
   ]);
   const streakPorUsuario = new Map(
     desafio.membros.map((dm, i) => [dm.userId, streaksPorUsuario[i].streak])
@@ -603,7 +654,7 @@ export async function desafioDetalhe(
 
     const metasGrandes = grandes.map((g, idx) => {
       const filhas = minhasMetas.filter((m) => m.metaPaiId === g.id);
-      const view = viewDeMeta(g, filhas, agora, dados);
+      const view = viewDeMeta(g, filhas, agora, dados, janela);
       return { ...view, ordem: idx };
     });
 
@@ -620,7 +671,18 @@ export async function desafioDetalhe(
   // Detecta e persiste (idempotente) os eventos novos do feed — meta
   // concluída no período, streak batendo marco, líder da semana — e devolve
   // o feed completo já com as reações de cada evento.
-  const candidatos = gerarCandidatosEventos(membros, agora);
+  // Metas de período longo viram "janela" na chave do evento: estável durante
+  // todo o desafio, mesmo cruzando a virada de trimestre do calendário.
+  const candidatos = gerarCandidatosEventos(
+    membros.map((m) => ({
+      ...m,
+      metasGrandes: m.metasGrandes.map((g) => ({
+        ...g,
+        periodo: janela && ehPeriodoLongo(g.periodo) ? "janela" : g.periodo,
+      })),
+    })),
+    agora
+  );
   if (candidatos.length > 0) await sincronizarEventos(desafioId, candidatos);
   const eventos = await eventosDoDesafio(desafioId, viewerUserId, perfilPorId);
 
@@ -631,6 +693,9 @@ export async function desafioDetalhe(
     codigo: desafio.codigo,
     criadorId: desafio.criadorId,
     metasGrandesLimite: desafio.metasGrandesLimite,
+    inicioEm: janela ? janela.inicio.toISOString() : null,
+    fimEm: janela ? janela.fim.toISOString() : null,
+    encerrado,
     membros,
     eventos,
   };

@@ -6,7 +6,7 @@ import { Pencil, Plus, SlidersHorizontal, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardLabel } from "@/components/caverna/card";
 import { LancarDinheiro } from "@/components/caverna/lancar-dinheiro";
-import { Sparkline } from "@/components/caverna/sparkline";
+import { ProgressoChart } from "@/components/desafios/progresso-chart";
 import { Button } from "@/components/ui/button";
 import { AjusteProgressoSheet } from "@/components/desafios/ajuste-progresso-sheet";
 import { DesafioMetaSheet } from "@/components/desafios/desafio-meta-sheet";
@@ -149,6 +149,7 @@ function MetaGrandeBlock({
   templatesChecklist,
   variaveis,
   hoje,
+  encerrado,
 }: {
   desafioId: string;
   meta: DesafioMetaView;
@@ -158,6 +159,7 @@ function MetaGrandeBlock({
   templatesChecklist: { id: string; nome: string }[];
   variaveis: VariavelView[];
   hoje: string;
+  encerrado: boolean;
 }) {
   const [, executar] = useAcao();
   const [removendo, setRemovendo] = useState(false);
@@ -253,7 +255,7 @@ function MetaGrandeBlock({
       )}
 
       <div className="mt-3">
-        <Sparkline serie={meta.serie} cor={cor} />
+        <ProgressoChart serie={meta.serie} decorrido={meta.decorrido} pct={meta.pct} cor={cor} encerrado={encerrado} />
       </div>
 
       {souDono && meta.metrica === "dinheiro" && (
@@ -330,10 +332,13 @@ export function MembroMetasCard({
   templatesChecklist,
   variaveis,
   hoje,
+  encerrado,
 }: {
   desafioId: string;
   membro: MembroDesafio;
   souEu: boolean;
+  /** Desafio encerrado: só leitura (sem editar, ajustar nem criar metas). */
+  encerrado: boolean;
   metasGrandesLimite: number;
   /** Desafio com mais de um membro: mudanças viram pedido de aprovação. */
   precisaAprovacao: boolean;
@@ -345,6 +350,7 @@ export function MembroMetasCard({
 }) {
   const [sheetAberto, setSheetAberto] = useState(false);
   const atingiuLimite = membro.metasGrandes.length >= metasGrandesLimite;
+  const podeEditar = souEu && !encerrado;
 
   return (
     <Card>
@@ -382,17 +388,18 @@ export function MembroMetasCard({
             key={meta.id}
             desafioId={desafioId}
             meta={meta}
-            souDono={souEu}
+            souDono={podeEditar}
             precisaAprovacao={precisaAprovacao}
             souCriador={souCriador}
             templatesChecklist={templatesChecklist}
             variaveis={variaveis}
             hoje={hoje}
+            encerrado={encerrado}
           />
         ))}
       </div>
 
-      {souEu && !atingiuLimite && (
+      {podeEditar && !atingiuLimite && (
         <>
           <Button variant="dashed" size="sm" onClick={() => setSheetAberto(true)} className="mt-3 w-full">
             <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />

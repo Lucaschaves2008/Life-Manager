@@ -80,6 +80,7 @@ export function DesafioDetalheClient({
             templatesChecklist={templatesChecklist}
             variaveis={variaveis}
             hoje={hoje}
+            encerrado={desafio.encerrado}
           />
         )}
 
@@ -95,6 +96,7 @@ export function DesafioDetalheClient({
             templatesChecklist={templatesChecklist}
             variaveis={variaveis}
             hoje={hoje}
+            encerrado={desafio.encerrado}
           />
         ))}
       </div>
