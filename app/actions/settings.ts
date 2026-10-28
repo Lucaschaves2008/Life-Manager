@@ -6,6 +6,7 @@ import { requireUser, revalidateProfile } from "@/lib/auth";
 import { tagUsuario } from "@/lib/cache-tags";
 import { createClient } from "@/lib/supabase/server";
 import { removeAvatar, uploadAvatar } from "@/lib/supabase/storage";
+import { consumirLimite, MSG_MUITAS_TENTATIVAS } from "@/lib/rate-limit";
 import type { HomeCardConfig } from "@/lib/data/home-metricas";
 
 /** Troca a métrica/período de um dos 4 cards principais da Home (slots "home_card_1".."home_card_4"). */
@@ -23,8 +24,15 @@ export async function updateHomeCard(slot: string, config: HomeCardConfig) {
 /** Grava as configurações do usuário (chave/valor) numa tacada só. */
 export async function saveSettings(entries: Record<string, string>) {
   const { id: userId } = await requireUser();
+  const pares = Object.entries(entries);
+  if (
+    pares.length > 50 ||
+    pares.some(([k, v]) => typeof v !== "string" || k.length > 64 || v.length > 10_000)
+  ) {
+    throw new Error("Configurações inválidas.");
+  }
   await Promise.all(
-    Object.entries(entries).map(([key, value]) =>
+    pares.map(([key, value]) =>
       db.setting.upsert({
         where: { userId_key: { userId, key } },
         update: { value },
@@ -46,8 +54,8 @@ export async function updateProfile(data: { nome: string; telefone: string }) {
   await db.profile.update({
     where: { id: userId },
     data: {
-      nome: data.nome.trim() || null,
-      telefone: data.telefone.trim() || null,
+      nome: data.nome.trim().slice(0, 80) || null,
+      telefone: data.telefone.trim().slice(0, 30) || null,
     },
   });
   revalidateProfile(userId);
@@ -88,9 +96,17 @@ export async function clearAvatar() {
 
 /** Troca a senha do usuário logado, reautenticando com a senha atual antes. */
 export async function changePassword(currentPassword: string, newPassword: string) {
-  const { email } = await requireUser();
+  const { id: userId, email } = await requireUser();
   if (newPassword.length < 8) {
     throw new Error("A nova senha deve ter no mínimo 8 caracteres.");
+  }
+  if (new TextEncoder().encode(newPassword).length > 72) {
+    throw new Error("A nova senha pode ter no máximo 72 caracteres.");
+  }
+  // A checagem da senha atual é um oráculo de senha: sem limite, uma sessão
+  // roubada serviria pra descobrir a senha por força bruta.
+  if (!(await consumirLimite(`senha:user:${userId}`, 5, 15 * 60))) {
+    throw new Error(MSG_MUITAS_TENTATIVAS);
   }
 
   const supabase = await createClient();
@@ -102,4 +118,8 @@ export async function changePassword(currentPassword: string, newPassword: strin
 
   const { error } = await supabase.auth.updateUser({ password: newPassword });
   if (error) throw new Error(error.message);
+
+  // Derruba as outras sessões: se a troca foi motivada por suspeita de acesso
+  // indevido, quem estava logado em outro lugar perde o acesso na hora.
+  await supabase.auth.signOut({ scope: "others" });
 }

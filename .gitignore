@@ -32,6 +32,22 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+
+# credenciais, chaves e backups — repositório é PÚBLICO (ver SECURITY.md)
+*.pem
+*.key
+*.p12
+*.pfx
+*.dump
+*.backup
+*.bak
+/backups/
+/exports/
+credenciais*
+credentials*
+secrets*
+service-account*.json
 
 # vercel
 .vercel

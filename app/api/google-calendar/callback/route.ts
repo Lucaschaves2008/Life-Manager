@@ -1,37 +1,40 @@
-import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
-import { handleOAuthCallback } from "@/lib/google-calendar/client";
+import { NextResponse, type NextRequest } from "next/server";
+import { getCurrentUser } from "@/lib/auth";
+import {
+  GOOGLE_STATE_COOKIE,
+  GOOGLE_STATE_COOKIE_OPTIONS,
+  handleOAuthCallback,
+} from "@/lib/google-calendar/client";
 
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const code = searchParams.get("code");
-  const state = searchParams.get("state");
-  const error = searchParams.get("error");
+export async function GET(request: NextRequest) {
+  // getCurrentUser redireciona sem sessão e barra conta bloqueada.
+  const user = await getCurrentUser();
 
-  // Erro do Google
-  if (error) {
-    return redirect(`/configuracoes?google_error=${error}`);
-  }
+  const code = request.nextUrl.searchParams.get("code");
+  const state = request.nextUrl.searchParams.get("state");
+  const erro = request.nextUrl.searchParams.get("error");
+  const stateCookie = request.cookies.get(GOOGLE_STATE_COOKIE)?.value;
 
-  if (!code) {
-    return redirect("/configuracoes?google_error=no_code");
+  // NextResponse.redirect em vez de redirect(): o redirect() lança
+  // NEXT_REDIRECT, e dentro de try/catch o sucesso caía no catch.
+  const destino = (params: string) => {
+    const res = NextResponse.redirect(new URL(`/configuracoes?${params}`, request.url));
+    res.cookies.set(GOOGLE_STATE_COOKIE, "", { ...GOOGLE_STATE_COOKIE_OPTIONS, maxAge: 0 });
+    return res;
+  };
+
+  if (erro) return destino(`google_error=${encodeURIComponent(erro)}`);
+  if (!code) return destino("google_error=no_code");
+  // segurança: o state deve bater com o cookie gerado no início do fluxo (anti-CSRF)
+  if (!state || !stateCookie || state !== stateCookie) {
+    return destino("google_error=state_invalido");
   }
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return redirect("/login");
-    }
-
     await handleOAuthCallback(code, user.id);
-    return redirect("/configuracoes?google_connected=true");
+    return destino("google_connected=true");
   } catch (error) {
     console.error("[Google Calendar] Erro no callback:", error);
-    return redirect("/configuracoes?google_error=callback_failed");
+    return destino("google_error=callback_failed");
   }
 }

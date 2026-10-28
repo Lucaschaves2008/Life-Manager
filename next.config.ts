@@ -31,6 +31,20 @@ const securityHeaders = [
   { key: "X-Frame-Options", value: "DENY" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+  { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+  // CSP só com diretivas que não dependem de nonce (script-src com nonce
+  // obrigaria toda página a ser dinâmica). Mesmo assim fecha: <base> injetado,
+  // <object>/<embed>, formulário postando pra fora e o app dentro de iframe.
+  {
+    key: "Content-Security-Policy",
+    value: [
+      "base-uri 'self'",
+      "object-src 'none'",
+      "form-action 'self'",
+      "frame-ancestors 'none'",
+      "upgrade-insecure-requests",
+    ].join("; "),
+  },
 ];
 
 const nextConfig: NextConfig = {

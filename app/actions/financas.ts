@@ -41,6 +41,19 @@ function dataSP(dia: string): Date {
   return new Date(`${dia}T12:00:00-03:00`);
 }
 
+/**
+ * Teto de parcelas aceito pelo servidor. A UI já limita, mas a action é um
+ * endpoint público: sem teto, `parcelas: 1e7` criaria milhões de linhas numa
+ * chamada só.
+ */
+const MAX_PARCELAS = 120;
+
+function normalizarParcelas(n: number | undefined): number {
+  const v = Math.floor(Number(n ?? 1));
+  if (!Number.isFinite(v) || v < 1) return 1;
+  return Math.min(MAX_PARCELAS, v);
+}
+
 /** Garante que os FKs vindos do cliente pertencem à conta financeira ativa. */
 async function validarPosse(
   contaFinanceiraId: string,
@@ -169,7 +182,7 @@ export async function createTransacao(input: TransacaoInput) {
   };
   if (!transferencia) await validarPosse(contaFinanceiraId, base);
 
-  const parcelas = Math.max(1, Math.floor(input.parcelas ?? 1));
+  const parcelas = normalizarParcelas(input.parcelas);
 
   if (parcelas > 1) {
     const grupo = `pg_${Date.now().toString(36)}`;
@@ -355,7 +368,7 @@ export type ParcelamentoInput = {
 export async function updateParcelamento(grupo: string, input: ParcelamentoInput) {
   const { id: userId } = await requireUser();
   const { id: contaFinanceiraId } = await getContaAtiva(userId);
-  const parcelas = Math.max(1, Math.floor(input.parcelas));
+  const parcelas = normalizarParcelas(input.parcelas);
   const inicio = dataSP(input.data);
   await validarPosse(contaFinanceiraId, {
     accountId: input.accountId,

@@ -41,7 +41,21 @@ export function getOAuthClient(): OAuth2Client {
   );
 }
 
-export function getAuthUrl(): string {
+/** Cookie httpOnly que carrega o state anti-CSRF entre o início do OAuth e o callback. */
+export const GOOGLE_STATE_COOKIE = "google_oauth_state";
+export const GOOGLE_STATE_COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: "lax",
+  path: "/api/google-calendar",
+} as const;
+
+/**
+ * `state` é obrigatório: sem ele, um atacante manda à vítima o link de
+ * callback com o code DA CONTA GOOGLE DELE, e a agenda da vítima passa a
+ * sincronizar com a conta do atacante (OAuth login CSRF).
+ */
+export function getAuthUrl(state: string): string {
   const oauth2Client = getOAuthClient();
   return oauth2Client.generateAuthUrl({
     access_type: "offline",
@@ -50,6 +64,7 @@ export function getAuthUrl(): string {
       "https://www.googleapis.com/auth/userinfo.email",
     ],
     prompt: "consent",
+    state,
   });
 }
 

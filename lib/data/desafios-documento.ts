@@ -1,4 +1,6 @@
+import "server-only";
 import { db } from "@/lib/db";
+import { urlAssinadaDocumento } from "@/lib/supabase/storage";
 
 /**
  * Documento fixado do desafio ("contrato do grupo") — um por desafio,
@@ -20,15 +22,21 @@ export async function documentoDoDesafio(desafioId: string): Promise<DesafioDocu
   const doc = await db.desafioDocumento.findUnique({ where: { desafioId } });
   if (!doc) return null;
 
-  const perfil = await db.profile.findUnique({
-    where: { id: doc.enviadoPorId },
-    select: { nome: true },
-  });
+  const [perfil, urlAssinada] = await Promise.all([
+    db.profile.findUnique({
+      where: { id: doc.enviadoPorId },
+      select: { nome: true },
+    }),
+    urlAssinadaDocumento(doc.arquivoUrl),
+  ]);
+  // Sem URL assinada não há como abrir o arquivo — melhor sumir com o card
+  // do que mostrar um link quebrado.
+  if (!urlAssinada) return null;
 
   return {
     id: doc.id,
     nome: doc.nome,
-    arquivoUrl: doc.arquivoUrl,
+    arquivoUrl: urlAssinada,
     arquivoTipo: doc.arquivoTipo,
     enviadoPorId: doc.enviadoPorId,
     enviadoPorNome: perfil?.nome ?? null,

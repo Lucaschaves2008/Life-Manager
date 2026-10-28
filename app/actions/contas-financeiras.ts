@@ -8,26 +8,8 @@ import {
   LIMITE_CONTAS_FINANCEIRAS,
   EMAIL_SUPORTE_LIMITE,
   COOKIE_CONTA_ATIVA,
-  type ContaFinanceiraView,
 } from "@/lib/contas-financeiras-shared";
 import { garantirPadroesFinanceiros } from "@/lib/financas-padroes";
-
-/** Lista as contas financeiras do usuário; garante que "Pessoal" sempre exista. */
-export async function listarContasFinanceiras(
-  userId: string
-): Promise<ContaFinanceiraView[]> {
-  const contas = await db.contaFinanceira.findMany({
-    where: { userId },
-    orderBy: [{ padrao: "desc" }, { criadoEm: "asc" }],
-  });
-  if (contas.length > 0) return contas;
-
-  const pessoal = await db.contaFinanceira.create({
-    data: { userId, nome: "Pessoal", padrao: true },
-  });
-  await garantirPadroesFinanceiros(userId, pessoal.id);
-  return [pessoal];
-}
 
 export async function criarContaFinanceira(nome: string, cor: string) {
   const { id: userId } = await requireUser();

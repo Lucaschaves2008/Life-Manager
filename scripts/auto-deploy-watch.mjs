@@ -36,6 +36,14 @@ function hasChanges() {
 function commitAndPush() {
   if (!hasChanges()) return;
   const stamp = new Date().toLocaleString("pt-BR");
+  // O repositório é público: antes de qualquer `git add -A` automático, o
+  // guardião confere segredos e server actions sem auth. Falhou → não sobe.
+  try {
+    execSync("node scripts/checar-seguranca.mjs", { cwd: ROOT, stdio: "inherit" });
+  } catch {
+    console.error("[auto-deploy] BLOQUEADO pelo checar-seguranca — nada foi commitado.");
+    return;
+  }
   try {
     execSync("git add -A", { cwd: ROOT, stdio: "inherit" });
     execSync(`git commit -m "auto: atualização automática (${stamp})"`, {

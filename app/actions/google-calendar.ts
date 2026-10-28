@@ -1,15 +1,25 @@
 "use server";
 
+import { cookies } from "next/headers";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { getAuthUrl, isGoogleCalendarConfigured } from "@/lib/google-calendar/client";
+import {
+  getAuthUrl,
+  GOOGLE_STATE_COOKIE,
+  GOOGLE_STATE_COOKIE_OPTIONS,
+  isGoogleCalendarConfigured,
+} from "@/lib/google-calendar/client";
 
 export async function getGoogleAuthUrl(): Promise<string> {
   await requireUser();
   if (!isGoogleCalendarConfigured()) {
     throw new Error("GOOGLE_CALENDAR_NOT_CONFIGURED");
   }
-  return getAuthUrl();
+  // state aleatório gravado em cookie httpOnly para o callback validar (anti-CSRF)
+  const state = crypto.randomUUID();
+  const cookieStore = await cookies();
+  cookieStore.set(GOOGLE_STATE_COOKIE, state, { ...GOOGLE_STATE_COOKIE_OPTIONS, maxAge: 600 });
+  return getAuthUrl(state);
 }
 
 export async function isGoogleCalendarAvailable(): Promise<boolean> {

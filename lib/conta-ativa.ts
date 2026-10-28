@@ -1,6 +1,6 @@
 import "server-only";
 import { cookies } from "next/headers";
-import { listarContasFinanceiras } from "@/app/actions/contas-financeiras";
+import { listarContasFinanceiras } from "@/lib/data/contas-financeiras";
 import {
   COOKIE_CONTA_ATIVA,
   type ContaFinanceiraView,

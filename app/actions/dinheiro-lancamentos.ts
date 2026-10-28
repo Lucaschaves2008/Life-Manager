@@ -46,27 +46,3 @@ export async function excluirDinheiroLancamento(id: string) {
   await db.dinheiroLancamento.delete({ where: { id, userId } });
   revalidar(userId);
 }
-
-export type DinheiroLancamentoView = {
-  id: string;
-  valor: number; // em reais
-  descricao: string | null;
-  data: string;
-};
-
-export async function dinheiroLancamentosRecentes(
-  userId: string,
-  limite = 20
-): Promise<DinheiroLancamentoView[]> {
-  const registros = await db.dinheiroLancamento.findMany({
-    where: { userId },
-    orderBy: { data: "desc" },
-    take: limite,
-  });
-  return registros.map((r) => ({
-    id: r.id,
-    valor: r.valor / 100,
-    descricao: r.descricao,
-    data: r.data.toISOString().slice(0, 10),
-  }));
-}

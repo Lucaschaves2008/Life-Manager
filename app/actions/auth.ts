@@ -4,6 +4,9 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { db } from "@/lib/db";
+import { consumirLimite, ipDaRequisicao, MSG_MUITAS_TENTATIVAS } from "@/lib/rate-limit";
+
+const EMAIL_VALIDO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function signUp(formData: FormData) {
   const nome = String(formData.get("nome") ?? "").trim();
@@ -11,11 +14,25 @@ export async function signUp(formData: FormData) {
   const password = String(formData.get("password") ?? "");
   const confirmarSenha = String(formData.get("confirmarSenha") ?? "");
 
+  // O cadastro usa a service_role (createUser), que não passa pelos limites
+  // nativos do Supabase Auth — sem isto daria pra criar contas em massa.
+  const ip = await ipDaRequisicao();
+  if (!(await consumirLimite(`cadastro:ip:${ip}`, 5, 60 * 60))) {
+    redirect(`/cadastro?erro=${encodeURIComponent(MSG_MUITAS_TENTATIVAS)}`);
+  }
+
   if (!nome || !email || !password) {
     redirect(`/cadastro?erro=${encodeURIComponent("Preencha todos os campos.")}`);
   }
+  if (nome.length > 80 || email.length > 254 || !EMAIL_VALIDO.test(email)) {
+    redirect(`/cadastro?erro=${encodeURIComponent("Confira o nome e o email.")}`);
+  }
   if (password.length < 8) {
     redirect(`/cadastro?erro=${encodeURIComponent("A senha precisa ter no mínimo 8 caracteres.")}`);
+  }
+  // bcrypt (Supabase Auth) ignora tudo depois de 72 bytes.
+  if (new TextEncoder().encode(password).length > 72) {
+    redirect(`/cadastro?erro=${encodeURIComponent("A senha pode ter no máximo 72 caracteres.")}`);
   }
   if (password !== confirmarSenha) {
     redirect(`/cadastro?erro=${encodeURIComponent("As senhas não coincidem.")}`);
@@ -90,6 +107,20 @@ export async function signIn(formData: FormData) {
 
   if (!email || !password) {
     redirect(`/login?erro=${encodeURIComponent("Preencha email e senha.")}`);
+  }
+
+  // Anti força bruta. O Supabase Auth só enxerga o IP do servidor da Vercel
+  // (a chamada sai daqui, não do navegador), então o limite nativo dele não
+  // distingue atacante de usuário legítimo — o controle precisa ser nosso.
+  // Por email: protege uma conta de tentativas distribuídas em vários IPs.
+  // Por IP: protege contra um IP testando muitas contas (credential stuffing).
+  const ip = await ipDaRequisicao();
+  const [porEmail, porIp] = await Promise.all([
+    consumirLimite(`login:email:${email.toLowerCase()}`, 8, 15 * 60),
+    consumirLimite(`login:ip:${ip}`, 30, 15 * 60),
+  ]);
+  if (!porEmail || !porIp) {
+    redirect(`/login?erro=${encodeURIComponent(MSG_MUITAS_TENTATIVAS)}`);
   }
 
   const supabase = await createClient();

@@ -1,6 +1,8 @@
 "use server";
 
+import { randomInt } from "node:crypto";
 import { revalidatePath } from "@/lib/cache-revalidate";
+import { consumirLimite, MSG_MUITAS_TENTATIVAS } from "@/lib/rate-limit";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { desafioDetalhe, type DesafioDetalhe, type DesafioOrigem, type DesafioPeriodo } from "@/lib/data/desafios";
@@ -28,10 +30,12 @@ function revalidar(desafioId?: string) {
 
 const ALFABETO_CODIGO = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // sem 0/O/1/I (ambíguos)
 
+// O código é a única barreira para entrar num desafio (e ver o progresso dos
+// membros) — precisa de fonte criptográfica, não Math.random().
 function gerarCodigo(): string {
   let codigo = "";
   for (let i = 0; i < 6; i++) {
-    codigo += ALFABETO_CODIGO[Math.floor(Math.random() * ALFABETO_CODIGO.length)];
+    codigo += ALFABETO_CODIGO[randomInt(ALFABETO_CODIGO.length)];
   }
   return codigo;
 }
@@ -104,6 +108,10 @@ export async function criarDesafio(input: {
 
 export async function entrarNoDesafio(codigoInput: string) {
   const { id: userId } = await requireUser();
+  // Anti enumeração de códigos de convite.
+  if (!(await consumirLimite(`desafio-entrar:user:${userId}`, 10, 60 * 60))) {
+    throw new Error(MSG_MUITAS_TENTATIVAS);
+  }
   const codigo = codigoInput.trim().toUpperCase();
   const desafio = await db.desafio.findUnique({ where: { codigo }, select: { id: true, ativo: true } });
   if (!desafio || !desafio.ativo) throw new Error("Código inválido.");

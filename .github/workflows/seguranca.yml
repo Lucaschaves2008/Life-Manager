@@ -1,0 +1,36 @@
+# Repositório PÚBLICO: todo push passa por aqui. Ver SECURITY.md.
+name: seguranca
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 9 * * 1" # segunda 06h BRT — pega CVE nova em dependência parada
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  guardiao:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # gitleaks varre o histórico inteiro, não só o último commit
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Server actions sem auth / segredos / fronteira cliente-servidor
+        run: node scripts/checar-seguranca.mjs
+
+      - name: Varredura de segredos no histórico (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Dependências de produção sem CVE crítica
+        run: npm audit --omit=dev --audit-level=critical
