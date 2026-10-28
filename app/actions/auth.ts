@@ -1,5 +1,6 @@
 "use server";
 
+import { createHash } from "node:crypto";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -112,11 +113,14 @@ export async function signIn(formData: FormData) {
   // Anti força bruta. O Supabase Auth só enxerga o IP do servidor da Vercel
   // (a chamada sai daqui, não do navegador), então o limite nativo dele não
   // distingue atacante de usuário legítimo — o controle precisa ser nosso.
-  // Por email: protege uma conta de tentativas distribuídas em vários IPs.
+  // Por email+IP (não só email): limitar só por email deixaria qualquer um
+  // trancar a conta de outra pessoa mandando 8 senhas erradas com o email dela.
   // Por IP: protege contra um IP testando muitas contas (credential stuffing).
+  // Email vai em hash: a tabela de limite não precisa guardar dado pessoal.
   const ip = await ipDaRequisicao();
+  const emailHash = createHash("sha256").update(email.toLowerCase()).digest("hex").slice(0, 32);
   const [porEmail, porIp] = await Promise.all([
-    consumirLimite(`login:email:${email.toLowerCase()}`, 8, 15 * 60),
+    consumirLimite(`login:email-ip:${emailHash}:${ip}`, 8, 15 * 60),
     consumirLimite(`login:ip:${ip}`, 30, 15 * 60),
   ]);
   if (!porEmail || !porIp) {

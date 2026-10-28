@@ -725,6 +725,15 @@ async function concluirSeUnanime(solicitacaoId: string): Promise<boolean> {
   const aprovadores = new Set(votos.filter((v) => v.aprovado).map((v) => v.userId));
   if (membros.length === 0 || !membros.every((id) => aprovadores.has(id))) return false;
 
+  // Reserva atômica ANTES de aplicar: dois últimos votos simultâneos passam
+  // juntos pela checagem acima, mas só um consegue tirar o pedido de
+  // "pendente" — o outro sai aqui e a mudança é aplicada uma vez só.
+  const { count } = await db.desafioSolicitacao.updateMany({
+    where: { id: solicitacaoId, status: "pendente" },
+    data: { status: "aprovada", resolvidoEm: new Date() },
+  });
+  if (count === 0) return false;
+
   try {
     await requireAberto(solicitacao.desafioId);
     await aplicarSolicitacao(solicitacao);
@@ -738,11 +747,6 @@ async function concluirSeUnanime(solicitacaoId: string): Promise<boolean> {
       `Todos aprovaram, mas a mudança não pôde ser aplicada: ${motivo} O pedido foi encerrado.`
     );
   }
-
-  await db.desafioSolicitacao.update({
-    where: { id: solicitacaoId },
-    data: { status: "aprovada", resolvidoEm: new Date() },
-  });
   return true;
 }
 

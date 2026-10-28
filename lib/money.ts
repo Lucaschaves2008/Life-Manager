@@ -68,3 +68,15 @@ export function formatPercent(pct: number, signed = true): string {
   const sign = signed && pct > 0 ? "+" : "";
   return `${sign}${fmt.format(pct)}%`;
 }
+
+/**
+ * Valor em centavos vindo do cliente (server action = endpoint público):
+ * inteiro, finito e ≥ mínimo. Sem isso NaN vira erro 500 e um valor negativo
+ * numa despesa diminuiria o total de gastos do mês.
+ */
+export function exigirCentavos(v: unknown, minimo = 1): number {
+  if (typeof v !== "number" || !Number.isSafeInteger(v) || v < minimo) {
+    throw new Error("Valor inválido.");
+  }
+  return v;
+}

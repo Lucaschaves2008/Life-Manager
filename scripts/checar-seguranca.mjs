@@ -11,11 +11,14 @@
 //   3. Nenhum segredo em arquivo versionável.
 //   4. Nada de NEXT_PUBLIC_ com cara de segredo (vai pro bundle do navegador).
 //   5. Client component não importa módulo de servidor (db, admin, rate-limit).
+//   6. Server action não grava o objeto do cliente inteiro (`...input`,
+//      `data: input`) — o cliente escolheria as colunas, inclusive userId.
 import { execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
-const ROOT = path.resolve(import.meta.dirname, "..");
+// CHECAR_ROOT: só para o teste do próprio guardião apontar para uma pasta de exemplo
+const ROOT = path.resolve(process.env.CHECAR_ROOT ?? path.resolve(import.meta.dirname, ".."));
 const erros = [];
 const erro = (arquivo, msg) => erros.push(`  ✗ ${arquivo}: ${msg}`);
 
@@ -46,7 +49,8 @@ function arquivosVersionaveis() {
   return lista;
 }
 
-const arquivos = arquivosVersionaveis();
+// __fixtures__ são exemplos INSEGUROS de propósito (teste do guardião)
+const arquivos = arquivosVersionaveis().filter((f) => !f.includes("__fixtures__/"));
 const ehCodigo = (f) => /\.(m?[jt]sx?)$/.test(f) && !f.startsWith("node_modules/");
 const ler = (f) => fs.readFileSync(path.join(ROOT, f), "utf8");
 
@@ -80,6 +84,13 @@ for (const f of arquivos.filter(ehCodigo)) {
       erro(f, `${nome}() é server action sem requireUser()/requireSuperAdmin() — qualquer pessoa na internet pode chamá-la.`);
     }
   }
+
+  // regra 6: mass assignment
+  src.split("\n").forEach((linha, i) => {
+    if (/\.\.\.(input|dados)\s*[,}]|\bdata:\s*(input|dados)\s*[,}]/.test(linha)) {
+      erro(`${f}:${i + 1}`, "grava o objeto do cliente inteiro — use apenas(input, { campo: true, ... }) de @/lib/utils.");
+    }
+  });
 }
 
 // ---------- 3: segredos ----------

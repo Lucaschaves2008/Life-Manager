@@ -27,14 +27,19 @@ export async function uploadAvatar(userId: string, file: File): Promise<string> 
   const ext = extensaoSegura(file);
   const path = `${userId}/avatar.${ext}`;
 
-  // trocar de png pra jpg deixaria o arquivo antigo órfão no bucket
-  await removeAvatar(userId);
-
   const { error } = await supabase.storage.from(BUCKET).upload(path, file, {
     upsert: true,
     contentType: file.type,
   });
   if (error) throw new Error(`Falha ao enviar imagem: ${error.message}`);
+
+  // Só depois do upload: trocar de png pra jpg deixaria o antigo órfão, mas
+  // apagar ANTES faria um upload que falhou deixar o perfil sem foto.
+  const { data: antigos } = await supabase.storage.from(BUCKET).list(userId);
+  const sobras = (antigos ?? []).filter((f) => f.name !== `avatar.${ext}`);
+  if (sobras.length > 0) {
+    await supabase.storage.from(BUCKET).remove(sobras.map((f) => `${userId}/${f.name}`));
+  }
 
   const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
   return `${data.publicUrl}?t=${Date.now()}`;
@@ -79,7 +84,7 @@ export async function uploadDesafioDocumento(desafioId: string, file: File): Pro
 }
 
 /**
- * URL temporária (1h) para ler o documento do desafio. O bucket é privado:
+ * URL temporária (24h) para ler o documento do desafio. O bucket é privado:
  * o documento só é entregue a quem passou pelo requireMembro da página/action,
  * e um link vazado expira sozinho.
  */
@@ -89,7 +94,7 @@ export async function urlAssinadaDocumento(arquivoUrl: string): Promise<string |
   const supabase = createAdminClient();
   const { data, error } = await supabase.storage
     .from(BUCKET_DOCUMENTOS)
-    .createSignedUrl(decodeURIComponent(caminho), 60 * 60);
+    .createSignedUrl(decodeURIComponent(caminho), 60 * 60 * 24);
   if (error) return null;
   return data.signedUrl;
 }

@@ -11,7 +11,7 @@ por `userId`. O Prisma conecta como `postgres` e ignora RLS, então **a
 autorização é do código** — e a Data API do Supabase fica fechada para
 `anon`/`authenticated` (ver `supabase/seguranca.sql`).
 
-## Regras (o build falha se 1–5 forem violadas — `scripts/checar-seguranca.mjs`)
+## Regras (o build falha se 1–5 ou 12 forem violadas — `scripts/checar-seguranca.mjs`)
 
 1. **Todo export de arquivo `"use server"` é um endpoint HTTP público.** A
    primeira linha é `const { id: userId } = await requireUser()` (ou
@@ -39,6 +39,13 @@ autorização é do código** — e a Data API do Supabase fica fechada para
 10. **OAuth sempre com `state`** em cookie httpOnly, validado no callback.
 11. **Tabela nova no Prisma**: depois do `prisma db push`, rode
     `supabase/seguranca.sql` de novo e `scripts/verificar-banco.mjs`.
+12. **Nunca grave o objeto do cliente inteiro** (`data: { ...input }`,
+    `data: input`): o cliente escolheria as colunas — inclusive `userId`,
+    movendo o registro para a conta de outra pessoa. Use
+    `apenas(input, { campo: true, ... })` de `@/lib/utils`; o tipo obriga a
+    listar todo campo do input. Valor em centavos passa por `exigirCentavos`.
+13. **Excluir usuário apaga tudo** (`lib/apagar-dados-usuario.ts`): a ordem
+    sai do schema, então modelo novo com `userId` entra sozinho.
 
 ## Camadas automáticas
 

@@ -6,7 +6,7 @@ import { requireUser } from "@/lib/auth";
 import { tagUsuario } from "@/lib/cache-tags";
 import { spEndOfDay, spStartOfDay } from "@/lib/dates";
 import { marcarDiaAtivo } from "@/lib/streak";
-import { parseJSON } from "@/lib/utils";
+import { apenas, parseJSON } from "@/lib/utils";
 import { erroCoerenciaMacros } from "@/lib/data/dieta-calc";
 import type { EscolhaLog, ExtraLog } from "@/lib/data/dieta";
 import {
@@ -239,17 +239,19 @@ function validarMetasDieta(input: DietaInput) {
   }
 }
 
+const CAMPOS_DIETA = { nome: true, metaKcal: true, metaProt: true, metaCarb: true, metaGord: true } as const;
+
 export async function createDieta(input: DietaInput) {
   const { id: userId } = await requireUser();
   validarMetasDieta(input);
-  await db.diet.create({ data: { ...input, userId } });
+  await db.diet.create({ data: { ...apenas(input, CAMPOS_DIETA), userId } });
   revalidar(userId);
 }
 
 export async function updateDieta(id: string, input: DietaInput) {
   const { id: userId } = await requireUser();
   validarMetasDieta(input);
-  await db.diet.update({ where: { id, userId }, data: input });
+  await db.diet.update({ where: { id, userId }, data: apenas(input, CAMPOS_DIETA) });
   revalidar(userId);
 }
 
@@ -531,10 +533,14 @@ function validarAlimento(input: AlimentoInput) {
 
 /** Devolve o id — é ele que a tela de refeição usa pra já pôr o alimento
  * recém-criado como ingrediente, sem uma segunda ida ao servidor. */
+const CAMPOS_ALIMENTO = {
+  nome: true, kcal100: true, prot100: true, carb100: true, gord100: true, porcaoNome: true, porcaoG: true,
+} as const;
+
 export async function createAlimento(input: AlimentoInput) {
   validarAlimento(input);
   const { id: userId } = await requireUser();
-  const food = await db.food.create({ data: { ...input, userId } });
+  const food = await db.food.create({ data: { ...apenas(input, CAMPOS_ALIMENTO), userId } });
   revalidar(userId);
   return food.id;
 }
@@ -542,7 +548,7 @@ export async function createAlimento(input: AlimentoInput) {
 export async function updateAlimento(id: string, input: AlimentoInput) {
   validarAlimento(input);
   const { id: userId } = await requireUser();
-  await db.food.update({ where: { id, userId }, data: input });
+  await db.food.update({ where: { id, userId }, data: apenas(input, CAMPOS_ALIMENTO) });
   revalidar(userId);
 }
 
@@ -556,7 +562,7 @@ export async function deleteAlimento(id: string) {
 
 export async function restoreAlimento(dados: AlimentoInput) {
   const { id: userId } = await requireUser();
-  await db.food.create({ data: { ...dados, userId } });
+  await db.food.create({ data: { ...apenas(dados, CAMPOS_ALIMENTO), userId } });
   revalidar(userId);
 }
 
@@ -674,6 +680,10 @@ export async function restorePeso(dados: {
   tmb?: number | null;
 }) {
   const { id: userId } = await requireUser();
-  await db.weightLog.create({ data: { ...dados, userId } });
+  const campos = apenas(dados, {
+    data: true, pesoKg: true, cintura: true, braco: true, percentualGordura: true, massaMuscular: true,
+    aguaCorporal: true, massaOssea: true, gorduraVisceral: true, tmb: true,
+  });
+  await db.weightLog.create({ data: { ...campos, userId } });
   revalidar(userId);
 }

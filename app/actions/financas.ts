@@ -3,15 +3,19 @@
 import { addMonths } from "date-fns";
 import { revalidatePath, revalidateTag } from "@/lib/cache-revalidate";
 import { db } from "@/lib/db";
+import { apenas } from "@/lib/utils";
+import { exigirCentavos } from "@/lib/money";
 import { requireUser } from "@/lib/auth";
 import { tagUsuario } from "@/lib/cache-tags";
 import { getContaAtiva } from "@/lib/conta-ativa";
 
 /** Revalida as rotas e derruba o cache "use cache" do módulo finanças. */
-function revalidar(contaFinanceiraId: string) {
+function revalidar(userId: string, contaFinanceiraId: string) {
   revalidatePath("/financas");
   revalidatePath("/");
   revalidateTag(tagUsuario(contaFinanceiraId, "financas"));
+  // leituras por usuário (sino, /metas, insights) usam a tag do userId
+  revalidateTag(tagUsuario(userId, "financas"));
 }
 
 export type TipoPonta = "conta" | "cartao" | "ativo";
@@ -168,7 +172,7 @@ export async function createTransacao(input: TransacaoInput) {
     contaFinanceiraId,
     tipo: input.tipo,
     natureza: transferencia ? "despesa" : input.natureza ?? "despesa",
-    valor: input.valor,
+    valor: exigirCentavos(input.valor),
     descricao: input.descricao,
     tags: JSON.stringify(input.tags ?? []),
     recorrente: input.recorrente ?? false,
@@ -211,7 +215,7 @@ export async function createTransacao(input: TransacaoInput) {
     }
   }
 
-  revalidar(contaFinanceiraId);
+  revalidar(userId, contaFinanceiraId);
 }
 
 export async function updateTransacao(id: string, input: TransacaoInput) {
@@ -225,7 +229,7 @@ export async function updateTransacao(id: string, input: TransacaoInput) {
   const data = {
     tipo: input.tipo,
     natureza: transferencia ? "despesa" : input.natureza ?? "despesa",
-    valor: input.valor,
+    valor: exigirCentavos(input.valor),
     data: dataSP(input.data),
     descricao: input.descricao,
     tags: JSON.stringify(input.tags ?? []),
@@ -254,7 +258,7 @@ export async function updateTransacao(id: string, input: TransacaoInput) {
     await db.assetMovement.deleteMany({ where: { userId, transactionId: id } });
   }
 
-  revalidar(contaFinanceiraId);
+  revalidar(userId, contaFinanceiraId);
 }
 
 export async function duplicateTransacao(id: string) {
@@ -277,7 +281,7 @@ export async function duplicateTransacao(id: string) {
       tx.data.toISOString().slice(0, 10)
     );
   }
-  revalidar(contaFinanceiraId);
+  revalidar(userId, contaFinanceiraId);
 }
 
 /** Exclui e devolve os dados (+ movimentos de ativo espelho) para o "Desfazer" recriar a transação. */
@@ -291,7 +295,7 @@ export async function deleteTransacao(id: string) {
   });
   await db.assetMovement.deleteMany({ where: { userId, transactionId: id } });
   await db.transaction.delete({ where: { id, userId } });
-  revalidar(contaFinanceiraId);
+  revalidar(userId, contaFinanceiraId);
   return { ...tx, movimentosAtivo };
 }
 
@@ -325,14 +329,32 @@ export async function restoreTransacao(dados: {
 }) {
   const { id: userId } = await requireUser();
   const { id: contaFinanceiraId } = await getContaAtiva(userId);
-  const { movimentosAtivo, ...dadosTx } = dados;
+  const { movimentosAtivo, ...resto } = dados;
+  const dadosTx = apenas(resto, {
+    tipo: true, natureza: true, valor: true, data: true, descricao: true, tags: true, recorrente: true,
+    parcelaGrupo: true, parcelaNum: true, parcelaTotal: true, paga: true, accountId: true, categoryId: true,
+    cardId: true, contraAccountId: true, origemTipo: true, origemId: true, destinoTipo: true, destinoId: true,
+  });
+  exigirCentavos(dadosTx.valor);
   await validarPosse(contaFinanceiraId, dadosTx);
+
+  const movimentos = (movimentosAtivo ?? []).map((m) => {
+    exigirCentavos(m.valor, 0);
+    return apenas(m, { tipo: true, valor: true, data: true, nota: true, assetId: true });
+  });
+  // assetId vem do cliente: sem esta conferência, daria pra criar movimento
+  // no ativo de outra pessoa e alterar o patrimônio dela
+  const assetIds = [...new Set(movimentos.map((m) => m.assetId))];
+  if (assetIds.length > 0) {
+    const meus = await db.asset.count({ where: { id: { in: assetIds }, contaFinanceiraId } });
+    if (meus !== assetIds.length) throw new Error("Recurso não encontrado.");
+  }
   const nova = await db.transaction.create({
     data: { ...dadosTx, userId, contaFinanceiraId },
   });
-  if (movimentosAtivo && movimentosAtivo.length > 0) {
+  if (movimentos.length > 0) {
     await db.assetMovement.createMany({
-      data: movimentosAtivo.map((m) => ({
+      data: movimentos.map((m) => ({
         ...m,
         userId,
         contaFinanceiraId,
@@ -340,7 +362,7 @@ export async function restoreTransacao(dados: {
       })),
     });
   }
-  revalidar(contaFinanceiraId);
+  revalidar(userId, contaFinanceiraId);
 }
 
 /** Exclui todas as parcelas de um parcelamento. */
@@ -348,7 +370,7 @@ export async function deleteParcelamento(grupo: string) {
   const { id: userId } = await requireUser();
   const { id: contaFinanceiraId } = await getContaAtiva(userId);
   await db.transaction.deleteMany({ where: { userId, contaFinanceiraId, parcelaGrupo: grupo } });
-  revalidar(contaFinanceiraId);
+  revalidar(userId, contaFinanceiraId);
 }
 
 export type ParcelamentoInput = {
@@ -384,7 +406,7 @@ export async function updateParcelamento(grupo: string, input: ParcelamentoInput
         contaFinanceiraId,
         tipo: "despesa",
         natureza: input.natureza ?? "despesa",
-        valor: input.valorParcela,
+        valor: exigirCentavos(input.valorParcela),
         descricao: input.descricao,
         tags: JSON.stringify(input.tags ?? []),
         recorrente: false,
@@ -399,7 +421,7 @@ export async function updateParcelamento(grupo: string, input: ParcelamentoInput
     }),
   ]);
 
-  revalidar(contaFinanceiraId);
+  revalidar(userId, contaFinanceiraId);
 }
 
 // ---------- Contas ----------
@@ -428,7 +450,7 @@ export async function createConta(input: ContaInput) {
   await db.account.create({
     data: { ...normalizarConta(input), userId, contaFinanceiraId },
   });
-  revalidar(contaFinanceiraId);
+  revalidar(userId, contaFinanceiraId);
 }
 
 export async function updateConta(id: string, input: ContaInput) {
@@ -441,7 +463,7 @@ export async function updateConta(id: string, input: ContaInput) {
   if (!conta) throw new Error("Conta não encontrada.");
 
   await db.account.update({ where: { id }, data: normalizarConta(input) });
-  revalidar(contaFinanceiraId);
+  revalidar(userId, contaFinanceiraId);
 }
 
 /**
@@ -466,10 +488,12 @@ export async function deleteConta(id: string) {
   }
 
   await db.account.delete({ where: { id } });
-  revalidar(contaFinanceiraId);
+  revalidar(userId, contaFinanceiraId);
 }
 
 // ---------- Categorias ----------
+
+const CAMPOS_CATEGORIA = { nome: true, emoji: true, cor: true, tipo: true, orcamentoMensal: true } as const;
 
 export type CategoriaInput = {
   nome: string;
@@ -483,9 +507,14 @@ export async function createCategoria(input: CategoriaInput) {
   const { id: userId } = await requireUser();
   const { id: contaFinanceiraId } = await getContaAtiva(userId);
   const cat = await db.category.create({
-    data: { ...input, orcamentoMensal: input.orcamentoMensal ?? null, userId, contaFinanceiraId },
+    data: {
+      ...apenas(input, CAMPOS_CATEGORIA),
+      orcamentoMensal: input.orcamentoMensal ?? null,
+      userId,
+      contaFinanceiraId,
+    },
   });
-  revalidar(contaFinanceiraId);
+  revalidar(userId, contaFinanceiraId);
   return cat;
 }
 
@@ -494,16 +523,16 @@ export async function updateCategoria(id: string, input: CategoriaInput) {
   const { id: contaFinanceiraId } = await getContaAtiva(userId);
   await db.category.update({
     where: { id, userId, contaFinanceiraId },
-    data: { ...input, orcamentoMensal: input.orcamentoMensal ?? null },
+    data: { ...apenas(input, CAMPOS_CATEGORIA), orcamentoMensal: input.orcamentoMensal ?? null },
   });
-  revalidar(contaFinanceiraId);
+  revalidar(userId, contaFinanceiraId);
 }
 
 export async function deleteCategoria(id: string) {
   const { id: userId } = await requireUser();
   const { id: contaFinanceiraId } = await getContaAtiva(userId);
   await db.category.delete({ where: { id, userId, contaFinanceiraId } });
-  revalidar(contaFinanceiraId);
+  revalidar(userId, contaFinanceiraId);
 }
 
 // ---------- Cartões ----------
@@ -537,7 +566,7 @@ export async function createCartao(input: CartaoInput) {
   const { id: userId } = await requireUser();
   const { id: contaFinanceiraId } = await getContaAtiva(userId);
   await db.card.create({ data: { ...normalizarCartao(input), userId, contaFinanceiraId } });
-  revalidar(contaFinanceiraId);
+  revalidar(userId, contaFinanceiraId);
 }
 
 export async function updateCartao(id: string, input: CartaoInput) {
@@ -547,14 +576,14 @@ export async function updateCartao(id: string, input: CartaoInput) {
     where: { id, userId, contaFinanceiraId },
     data: normalizarCartao(input),
   });
-  revalidar(contaFinanceiraId);
+  revalidar(userId, contaFinanceiraId);
 }
 
 export async function deleteCartao(id: string) {
   const { id: userId } = await requireUser();
   const { id: contaFinanceiraId } = await getContaAtiva(userId);
   await db.card.delete({ where: { id, userId, contaFinanceiraId } });
-  revalidar(contaFinanceiraId);
+  revalidar(userId, contaFinanceiraId);
 }
 
 // ---------- Assinaturas ----------
@@ -567,11 +596,19 @@ export type AssinaturaInput = {
   status: "ativa" | "pausada";
 };
 
+/** Só as colunas da assinatura, com valor e dia de cobrança válidos. */
+function camposAssinatura(input: AssinaturaInput) {
+  const dia = Math.floor(Number(input.diaCobranca));
+  if (!Number.isFinite(dia) || dia < 1 || dia > 31) throw new Error("Dia de cobrança inválido.");
+  exigirCentavos(input.valor);
+  return { ...apenas(input, { nome: true, emoji: true, valor: true, diaCobranca: true, status: true }), diaCobranca: dia };
+}
+
 export async function createAssinatura(input: AssinaturaInput) {
   const { id: userId } = await requireUser();
   const { id: contaFinanceiraId } = await getContaAtiva(userId);
-  await db.subscription.create({ data: { ...input, userId, contaFinanceiraId } });
-  revalidar(contaFinanceiraId);
+  await db.subscription.create({ data: { ...camposAssinatura(input), userId, contaFinanceiraId } });
+  revalidar(userId, contaFinanceiraId);
 }
 
 export async function updateAssinatura(id: string, input: AssinaturaInput) {
@@ -581,12 +618,12 @@ export async function updateAssinatura(id: string, input: AssinaturaInput) {
   await db.subscription.update({
     where: { id, userId, contaFinanceiraId },
     data: {
-      ...input,
+      ...camposAssinatura(input),
       valorAnterior:
         atual && atual.valor !== input.valor ? atual.valor : atual?.valorAnterior,
     },
   });
-  revalidar(contaFinanceiraId);
+  revalidar(userId, contaFinanceiraId);
 }
 
 export async function deleteAssinatura(id: string) {
@@ -594,15 +631,15 @@ export async function deleteAssinatura(id: string) {
   const { id: contaFinanceiraId } = await getContaAtiva(userId);
   const s = await db.subscription.findFirst({ where: { id, userId, contaFinanceiraId } });
   await db.subscription.delete({ where: { id, userId, contaFinanceiraId } });
-  revalidar(contaFinanceiraId);
+  revalidar(userId, contaFinanceiraId);
   return s;
 }
 
 export async function restoreAssinatura(dados: AssinaturaInput) {
   const { id: userId } = await requireUser();
   const { id: contaFinanceiraId } = await getContaAtiva(userId);
-  await db.subscription.create({ data: { ...dados, userId, contaFinanceiraId } });
-  revalidar(contaFinanceiraId);
+  await db.subscription.create({ data: { ...camposAssinatura(dados), userId, contaFinanceiraId } });
+  revalidar(userId, contaFinanceiraId);
 }
 
 // ---------- Transferências entre contas ----------
@@ -673,8 +710,8 @@ export async function transferirEntreContas(input: TransferenciaEntreContasInput
   }
 
   // Revalidar ambas as contas
-  revalidar(input.contaOrigemId);
-  revalidar(input.contaDestinoId);
+  revalidar(userId, input.contaOrigemId);
+  revalidar(userId, input.contaDestinoId);
 }
 
 /** Lista todos os recursos (contas/cartões/ativos) de uma conta financeira. */

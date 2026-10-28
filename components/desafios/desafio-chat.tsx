@@ -36,9 +36,14 @@ export function DesafioChat({
   useEffect(() => {
     let cancelado = false;
     const intervalo = setInterval(async () => {
-      const atualizadas = await buscarMensagens(desafioId);
-      if (cancelado) return;
-      setMensagens(atualizadas);
+      if (document.hidden) return;
+      try {
+        const atualizadas = await buscarMensagens(desafioId);
+        if (cancelado) return;
+        setMensagens(atualizadas);
+      } catch {
+        // falha pontual (rede, sessão expirada): tenta de novo no próximo ciclo
+      }
     }, INTERVALO_POLL_MS);
     return () => {
       cancelado = true;

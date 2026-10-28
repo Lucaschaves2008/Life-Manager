@@ -2,6 +2,7 @@
 
 import { revalidatePath, revalidateTag } from "@/lib/cache-revalidate";
 import { db } from "@/lib/db";
+import { apenas } from "@/lib/utils";
 import { requireUser } from "@/lib/auth";
 import { tagUsuario } from "@/lib/cache-tags";
 import { dayKeySP, spStartOfDay } from "@/lib/dates";
@@ -159,6 +160,11 @@ export async function setRoutineDias(routineId: string, dias: number[]) {
 
 // ---------- Exercícios ----------
 
+const CAMPOS_EXERCICIO = {
+  nome: true, grupoMuscular: true, tipoAlvo: true, series: true, repsAlvo: true, cargaAtual: true,
+  tempoAlvoSeg: true, descansoSeg: true, observacao: true, metodo: true,
+} as const;
+
 export type ExercicioInput = {
   nome: string;
   grupoMuscular: string;
@@ -187,7 +193,7 @@ export async function createExercise(
   const total = await db.routineExercise.count({ where: { userId, routineId, semana: n } });
   await db.routineExercise.create({
     data: {
-      ...input,
+      ...apenas(input, CAMPOS_EXERCICIO),
       tipoAlvo: input.tipoAlvo ?? "series",
       tempoAlvoSeg: input.tempoAlvoSeg ?? 60,
       observacao: input.observacao?.trim() || null,
@@ -205,7 +211,7 @@ export async function updateExercise(id: string, input: ExercicioInput) {
   await db.routineExercise.update({
     where: { id, userId },
     data: {
-      ...input,
+      ...apenas(input, CAMPOS_EXERCICIO),
       tipoAlvo: input.tipoAlvo ?? "series",
       tempoAlvoSeg: input.tempoAlvoSeg ?? 60,
       observacao: input.observacao?.trim() || null,

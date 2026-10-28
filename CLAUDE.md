@@ -9,6 +9,8 @@ App **em produção com usuários reais**, repositório **público** no GitHub.
   `await requireUser()` / `requireSuperAdmin()`. Nunca recebe `userId` por
   parâmetro — o usuário vem da sessão. Helper que recebe `userId` vai pra
   `lib/` com `import "server-only"`.
+- Nunca `data: { ...input }` / `data: input` em action: use
+  `apenas(input, { campo: true, ... })` (`@/lib/utils`); centavos via `exigirCentavos` (`@/lib/money`).
 - Toda query por id filtra por dono: `where: { id, userId }`. FK vinda do
   cliente é validada como do usuário antes de gravar. Desafios: `requireMembro`/`requireCriador`.
 - Nenhum segredo em arquivo versionado; `NEXT_PUBLIC_` nunca é segredo.

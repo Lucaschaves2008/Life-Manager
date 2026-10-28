@@ -113,6 +113,9 @@ type StravaActivity = {
   sport_type: string;
   distance: number; // metros
   moving_time: number; // segundos
+  /** UTC de verdade. */
+  start_date: string;
+  /** Hora LOCAL do atleta, mas com "Z" no fim — new Date() leria como UTC (3h de erro). */
   start_date_local: string;
 };
 
@@ -172,7 +175,7 @@ export async function sincronizarCorridas(userId: string): Promise<number> {
     await db.run.create({
       data: {
         userId,
-        data: new Date(a.start_date_local),
+        data: new Date(a.start_date),
         km: Math.round((a.distance / 1000) * 100) / 100,
         segundos: a.moving_time,
         tipo: TIPO_PADRAO[modalidade],

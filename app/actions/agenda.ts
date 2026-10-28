@@ -5,7 +5,7 @@ import { revalidatePath, revalidateTag } from "@/lib/cache-revalidate";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { tagUsuario } from "@/lib/cache-tags";
-import { parseJSON } from "@/lib/utils";
+import { apenas, parseJSON } from "@/lib/utils";
 import { syncToGoogle, updateOnGoogle, deleteFromGoogle } from "@/lib/google-calendar/sync";
 
 function revalidar(userId: string) {
@@ -233,7 +233,11 @@ export async function restoreEvent(dados: {
 }) {
   const { id: userId } = await requireUser();
   await validarCalendario(dados.calendarId, userId);
-  await db.event.create({ data: { ...dados, userId } });
+  const campos = apenas(dados, {
+    titulo: true, inicio: true, fim: true, diaInteiro: true, rrule: true, exdates: true, local: true,
+    descricao: true, tags: true, lembreteMin: true, calendarId: true,
+  });
+  await db.event.create({ data: { ...campos, userId } });
   revalidar(userId);
 }
 

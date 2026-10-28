@@ -25,3 +25,18 @@ export function initials(nome: string | null | undefined, email: string): string
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[1][0]).toUpperCase();
 }
+
+/**
+ * Copia do objeto só as chaves listadas. Entrada de server action é endpoint
+ * público: `data: { ...input }` deixaria o cliente gravar QUALQUER coluna —
+ * inclusive `userId`, movendo o registro para a conta de outra pessoa.
+ * O tipo de `chaves` exige TODA chave de T: campo novo no input sem entrar
+ * aqui quebra o build em vez de sumir calado.
+ */
+export function apenas<T extends object>(obj: T, chaves: { [K in keyof Required<T>]: true }): T {
+  const out = {} as T;
+  for (const k of Object.keys(chaves) as (keyof T)[]) {
+    if (k in obj) out[k] = obj[k];
+  }
+  return out;
+}

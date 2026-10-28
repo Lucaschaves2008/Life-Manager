@@ -44,13 +44,19 @@ export function DesafioDetalheClient({
   useEffect(() => {
     let cancelado = false;
     const intervalo = setInterval(async () => {
-      const [desafioNovo, solicitacoesNovas] = await Promise.all([
-        buscarDesafioDetalhe(desafio.id),
-        buscarSolicitacoes(desafio.id),
-      ]);
-      if (cancelado) return;
-      if (desafioNovo) setDesafio(desafioNovo);
-      setSolicitacoes(solicitacoesNovas);
+      // aba em segundo plano não consulta: o detalhe é a leitura mais pesada do app
+      if (document.hidden) return;
+      try {
+        const [desafioNovo, solicitacoesNovas] = await Promise.all([
+          buscarDesafioDetalhe(desafio.id),
+          buscarSolicitacoes(desafio.id),
+        ]);
+        if (cancelado) return;
+        if (desafioNovo) setDesafio(desafioNovo);
+        setSolicitacoes(solicitacoesNovas);
+      } catch {
+        // falha pontual (rede, sessão expirada): tenta de novo no próximo ciclo
+      }
     }, INTERVALO_POLL_MS);
     return () => {
       cancelado = true;
