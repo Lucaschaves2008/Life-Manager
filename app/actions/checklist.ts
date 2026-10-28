@@ -97,3 +97,53 @@ export async function toggleHabitDia(habitId: string, dia: string) {
   });
   revalidar(userId);
 }
+
+// ── Metas do dia ─────────────────────────────────────────────────────────────
+
+const PRIORIDADES_META = [1, 2, 3];
+
+export async function criarMetaDia(dia: string, titulo: string, prioridade: number) {
+  const { id: userId } = await requireUser();
+  const texto = titulo.trim();
+  if (!texto) throw new Error("Escreva a meta.");
+  await db.metaDia.create({
+    data: {
+      userId,
+      data: spStartOfDay(dataSP(dia)),
+      titulo: texto.slice(0, 200),
+      prioridade: PRIORIDADES_META.includes(prioridade) ? prioridade : 2,
+    },
+  });
+  revalidar(userId);
+}
+
+export async function toggleMetaDia(id: string) {
+  const { id: userId } = await requireUser();
+  const meta = await db.metaDia.findFirst({ where: { id, userId } });
+  if (!meta) return;
+  await db.metaDia.update({
+    where: { id, userId },
+    data: { feita: !meta.feita, feitaEm: meta.feita ? null : new Date() },
+  });
+  revalidar(userId);
+}
+
+export async function atualizarMetaDia(id: string, titulo: string, prioridade: number) {
+  const { id: userId } = await requireUser();
+  const texto = titulo.trim();
+  if (!texto) throw new Error("Escreva a meta.");
+  await db.metaDia.update({
+    where: { id, userId },
+    data: {
+      titulo: texto.slice(0, 200),
+      prioridade: PRIORIDADES_META.includes(prioridade) ? prioridade : 2,
+    },
+  });
+  revalidar(userId);
+}
+
+export async function excluirMetaDia(id: string) {
+  const { id: userId } = await requireUser();
+  await db.metaDia.deleteMany({ where: { id, userId } });
+  revalidar(userId);
+}

@@ -94,3 +94,66 @@ async function percentualMensalHabitosDoMes(
     };
   });
 }
+
+export type MetaDiaView = { id: string; titulo: string; prioridade: number; feita: boolean };
+
+export type ResumoMetasDia = {
+  /** Total de metas e cumpridas nos últimos `dias` dias (hoje incluso). */
+  total: number;
+  feitas: number;
+  pct: number | null;
+  /** Dias em que havia ao menos uma meta e todas foram cumpridas. */
+  diasPerfeitos: number;
+  diasComMetas: number;
+};
+
+/** Metas do dia, da mais importante para a menos; dentro da prioridade, por ordem de criação. */
+export async function metasDoDia(userId: string, dia: Date): Promise<MetaDiaView[]> {
+  const metas = await db.metaDia.findMany({
+    where: { userId, data: spStartOfDay(dia) },
+    orderBy: [{ prioridade: "asc" }, { criadoEm: "asc" }],
+  });
+  return metas.map((m) => ({
+    id: m.id,
+    titulo: m.titulo,
+    prioridade: m.prioridade,
+    feita: m.feita,
+  }));
+}
+
+/** Métrica das metas diárias: quantas foram cumpridas nos últimos N dias. */
+export async function resumoMetasDia(
+  userId: string,
+  hoje: Date,
+  dias = 7
+): Promise<ResumoMetasDia> {
+  const fim = spStartOfDay(hoje);
+  const inicio = new Date(fim.getTime() - (dias - 1) * 24 * 60 * 60 * 1000);
+  const metas = await db.metaDia.findMany({
+    where: { userId, data: { gte: new Date(inicio.getTime() - 12 * 60 * 60 * 1000), lte: fim } },
+    select: { data: true, feita: true },
+  });
+  const porDia = new Map<string, { total: number; feitas: number }>();
+  for (const m of metas) {
+    const k = dayKeySP(m.data);
+    const acc = porDia.get(k) ?? { total: 0, feitas: 0 };
+    acc.total += 1;
+    if (m.feita) acc.feitas += 1;
+    porDia.set(k, acc);
+  }
+  let total = 0;
+  let feitas = 0;
+  let diasPerfeitos = 0;
+  for (const v of porDia.values()) {
+    total += v.total;
+    feitas += v.feitas;
+    if (v.total > 0 && v.feitas === v.total) diasPerfeitos += 1;
+  }
+  return {
+    total,
+    feitas,
+    pct: total > 0 ? Math.round((feitas / total) * 100) : null,
+    diasPerfeitos,
+    diasComMetas: porDia.size,
+  };
+}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, CalendarDays, Check, Clock, Copy, Flame, GripVertical, Pencil, Plus, SkipForward, Star, Trash2, Undo2 } from "lucide-react";
+import { CalendarDays, Check, Clock, Copy, Flame, GripVertical, Pencil, Plus, SkipForward, Star, Trash2, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAcao } from "@/lib/acao-cliente";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { GerenciarChecklist } from "@/components/checklist/gerenciar-checklist";
 import { DotsMenu } from "@/components/caverna/dots-menu";
 import { EmptyState } from "@/components/caverna/empty-state";
 import {
@@ -22,8 +23,6 @@ import {
   duplicarRotinaTemplate,
   escolherRotinaPlanoDoDia,
   excluirRotinaPlano,
-  excluirRotinaTemplate,
-  moverRotinaTemplate,
   pularRotinaHoje,
   renomearRotinaPlano,
   reordenarRotinaTemplates,
@@ -332,10 +331,6 @@ export function MinhaRotina({
     executar(() => excluirVariavel(id), { sucesso: "Variável removida" });
   }
 
-  function excluir(id: string) {
-    executar(() => excluirRotinaTemplate(id), { sucesso: "Item removido" });
-  }
-
   /** Duplica o item e já abre a edição da cópia para ajustar o que mudar. */
   function duplicarItem(id: string) {
     executar(async () => {
@@ -585,67 +580,13 @@ export function MinhaRotina({
       <Sheet open={gerenciar} onOpenChange={setGerenciar}>
         <SheetContent aria-describedby={undefined}>
           <SheetTitle>Gerenciar checklist</SheetTitle>
-          <div className="mt-6 flex flex-col gap-5">
-            <div className="flex flex-col gap-2">
-              {meusTemplates.length === 0 && (
-                <p className="text-[12.5px] text-steel">Nenhum item cadastrado ainda.</p>
-              )}
-              {meusTemplates.map((t, i) => (
-                <div
-                  key={t.id}
-                  className="flex items-center gap-2 rounded-[14px] border border-stroke bg-surface-2 px-3 py-2.5"
-                >
-                  <span className="text-[14px]">{(TIPO_META[t.tipo] ?? TIPO_META.livre).emoji}</span>
-                  <span className="tabular w-24 shrink-0 text-[12px] text-steel">
-                    {t.horaInicio ? `${t.horaInicio}${t.horaFim ? `–${t.horaFim}` : ""}` : "–"}
-                  </span>
-                  <span className="flex-1 truncate text-[13px] text-ice">{t.nome}</span>
-                  {planos.length > 0 && (
-                    <span className="shrink-0 text-[11px] text-steel">
-                      {t.planoId ? planos.find((p) => p.id === t.planoId)?.nome ?? "" : "comum"}
-                    </span>
-                  )}
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      aria-label="Subir"
-                      disabled={i === 0}
-                      onClick={() => executar(() => moverRotinaTemplate(t.id, -1))}
-                      className="rounded-full p-1.5 text-steel transition-colors hover:bg-surface hover:text-ice disabled:opacity-30"
-                    >
-                      <ArrowUp className="h-3.5 w-3.5" strokeWidth={1.5} />
-                    </button>
-                    <button
-                      type="button"
-                      aria-label="Descer"
-                      disabled={i === meusTemplates.length - 1}
-                      onClick={() => executar(() => moverRotinaTemplate(t.id, 1))}
-                      className="rounded-full p-1.5 text-steel transition-colors hover:bg-surface hover:text-ice disabled:opacity-30"
-                    >
-                      <ArrowDown className="h-3.5 w-3.5" strokeWidth={1.5} />
-                    </button>
-                    <DotsMenu
-                      items={[
-                        { label: "Editar", icon: Pencil, onSelect: () => setForm(formDoTemplate(t)) },
-                        { label: "Duplicar", icon: Copy, onSelect: () => duplicarItem(t.id) },
-                        {
-                          label: "Excluir",
-                          icon: Trash2,
-                          destructive: true,
-                          onSelect: () => excluir(t.id),
-                        },
-                      ]}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <Button variant="outline" onClick={abrirNovo}>
-              <Plus className="h-3.5 w-3.5" strokeWidth={2} />
-              Novo item
-            </Button>
-          </div>
+          <GerenciarChecklist
+            templates={meusTemplates}
+            planos={planos}
+            onEditar={(t) => setForm(formDoTemplate(t))}
+            onDuplicar={duplicarItem}
+            onNovo={abrirNovo}
+          />
         </SheetContent>
       </Sheet>
 

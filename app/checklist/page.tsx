@@ -3,9 +3,17 @@ import { Card, CardLabel } from "@/components/caverna/card";
 import { ChecklistHoje } from "@/components/checklist/checklist-client";
 import { DiaRegistroCard } from "@/components/checklist/dia-registro-client";
 import { HistoricoChecklist } from "@/components/checklist/historico-checklist";
+import { UltimosDias } from "@/components/checklist/ultimos-dias";
 import { MinhaRotina } from "@/components/checklist/rotina-client";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { habitosAtivos, itensFeitosNoDia, percentualMensalHabitos } from "@/lib/data/checklist";
+import {
+  habitosAtivos,
+  itensFeitosNoDia,
+  metasDoDia,
+  percentualMensalHabitos,
+  resumoMetasDia,
+} from "@/lib/data/checklist";
+import { MetasDoDia } from "@/components/checklist/metas-dia-client";
 import {
   aguaDoDiaChecklist,
   refeicoesDoDiaChecklist,
@@ -59,11 +67,13 @@ export default async function ChecklistPage() {
     historico,
     semanaItens,
     refeicoesPuladas,
+    metas,
+    resumoMetas,
   ] = await Promise.all([
     habitosAtivos(user.id),
     itensFeitosNoDia(user.id, hoje),
     percentualMensalHabitos(user.id, hoje),
-    resumoSemanalRotina(user.id, 7, hoje),
+    resumoSemanalRotina(user.id, 14, hoje),
     sessoesDoDia(user.id, hoje),
     categoriasEstudo(user.id),
     rotinasParaPlano(user.id),
@@ -80,6 +90,8 @@ export default async function ChecklistPage() {
     historicoDiaRegistros(user.id),
     semanaMontada(user.id, hoje),
     refeicoesPuladasDoDia(user.id, hoje),
+    metasDoDia(user.id, hoje),
+    resumoMetasDia(user.id, hoje),
   ]);
 
   // Um item pode morar na lista do dia ou no bloco de Hábitos — a diferença é
@@ -187,23 +199,7 @@ export default async function ChecklistPage() {
             </Card>
 
             <Card className="col-span-12 lg:col-span-4">
-              <CardLabel>Últimos 7 dias</CardLabel>
-              <div className="mt-5 flex items-end justify-between gap-1.5" style={{ height: 60 }}>
-                {semana.map((d) => (
-                  <div key={d.key} className="flex flex-1 flex-col items-center gap-1.5">
-                    <div className="flex h-full w-full items-end">
-                      <div
-                        className={cn(
-                          "w-full rounded-t-[4px]",
-                          d.key === hojeKey ? "bg-mint" : "bg-surface-2"
-                        )}
-                        style={{ height: `${Math.max(4, d.pct)}%` }}
-                      />
-                    </div>
-                    <span className="text-[10px] text-steel">{d.label.slice(0, 2)}</span>
-                  </div>
-                ))}
-              </div>
+              <UltimosDias dias={semana} hojeKey={hojeKey} />
             </Card>
 
             <Card className="col-span-12">
@@ -239,6 +235,10 @@ export default async function ChecklistPage() {
                 agua={agua}
                 hoje={hojeKey}
               />
+            </Card>
+
+            <Card className="col-span-12">
+              <MetasDoDia metas={metas} resumo={resumoMetas} dia={hojeKey} />
             </Card>
 
             <DiaRegistroCard

@@ -5,8 +5,9 @@ import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { tagUsuario } from "@/lib/cache-tags";
 import { marcarDiaAtivo } from "@/lib/streak";
-import { fmtSP, refDoDiaSP, spStartOfDay } from "@/lib/dates";
-import type { Rrule } from "@/lib/recurrence";
+import { dayKeySP, fmtSP, refDoDiaSP, spStartOfDay } from "@/lib/dates";
+import { parseRrule, type Rrule } from "@/lib/recurrence";
+import { diasDoItem } from "@/lib/rotina-dias";
 import { diagnosticarTemplate, type ItemDiagnostico } from "@/lib/rotina-helpers";
 import {
   TIPOS_ROTINA,
@@ -369,6 +370,7 @@ export async function duplicarRotinaTemplate(id: string): Promise<RotinaTemplate
     local: copia.local === "habitos" ? "habitos" : "checklist",
     horaInicio: copia.horaInicio,
     horaFim: copia.horaFim,
+    dataInicio: dayKeySP(copia.dataInicio),
     rrule: copia.rrule,
     exdates: [],
     ordem: copia.ordem,
@@ -386,6 +388,46 @@ export async function duplicarRotinaTemplate(id: string): Promise<RotinaTemplate
 export async function excluirRotinaTemplate(id: string) {
   const { id: userId } = await requireUser();
   await db.rotinaTemplate.update({ where: { id, userId }, data: { ativo: false } });
+  revalidar(userId);
+}
+
+/** Exclui vários itens de uma vez (o "apagar tudo" do Gerenciar). */
+export async function excluirRotinaTemplates(ids: string[]) {
+  const { id: userId } = await requireUser();
+  if (ids.length === 0) return;
+  await db.rotinaTemplate.updateMany({
+    where: { id: { in: ids }, userId },
+    data: { ativo: false },
+  });
+  revalidar(userId);
+}
+
+/**
+ * Tira o item só de um dia da semana (0=dom..6=sáb), mantendo os outros: um
+ * item "seg, ter, qua" apagado na terça vira "seg, qua". Se era o último dia
+ * (ou ocorrência única), o item inteiro é excluído.
+ */
+async function removerDia(userId: string, id: string, dia: number) {
+  const t = await db.rotinaTemplate.findFirst({
+    where: { id, userId, ativo: true },
+    select: { rrule: true, dataInicio: true },
+  });
+  if (!t) return;
+  const restantes = diasDoItem(t.rrule, dayKeySP(t.dataInicio)).filter((d) => d !== dia);
+  if (restantes.length === 0) {
+    await db.rotinaTemplate.update({ where: { id }, data: { ativo: false } });
+    return;
+  }
+  const atual = parseRrule(t.rrule);
+  const rrule: Rrule = { freq: "weekly", byday: restantes };
+  if (atual?.until) rrule.until = atual.until;
+  await db.rotinaTemplate.update({ where: { id }, data: { rrule: JSON.stringify(rrule) } });
+}
+
+/** Aplica `removerDia` a vários pares item+dia (seleção em massa "só neste dia"). */
+export async function removerRotinaDias(alvos: { id: string; dia: number }[]) {
+  const { id: userId } = await requireUser();
+  for (const a of alvos) await removerDia(userId, a.id, a.dia);
   revalidar(userId);
 }
 

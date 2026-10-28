@@ -139,13 +139,23 @@ export async function rotinasDoDia(userId: string, dia: Date): Promise<RotinaOco
   }));
 }
 
-export type DiaResumoRotina = { key: string; label: string; pct: number };
+export type DiaResumoRotina = {
+  key: string;
+  /** "seg", "ter"… */
+  label: string;
+  /** Dia do mês, "28". */
+  dia: string;
+  pct: number;
+  feitos: number;
+  total: number;
+};
 
 /**
- * % de itens da Minha Rotina concluídos por dia, últimos N dias (para o
- * resumo semanal do checklist). Expande a recorrência de cada template
- * ativo contra cada dia da janela — mesma lógica de `rotinasDoDia`, mas em
- * lote para os N dias em vez de um único dia.
+ * % do checklist concluído por dia, últimos N dias. Usa a MESMA conta do card
+ * "Progresso de hoje": itens da rotina que caem no dia (respeitando o plano
+ * A/B/C escolhido naquele dia, sem refeição) + variáveis ativas + água
+ * (meta batida). Assim o último ponto do gráfico sempre bate com o card.
+ * Tudo em lote (6 queries para N dias) — sem loop de query por dia.
  */
 export async function resumoSemanalRotina(
   userId: string,
@@ -162,23 +172,45 @@ async function resumoSemanalRotinaDoDia(
 ): Promise<DiaResumoRotina[]> {
   "use cache";
   cacheTag(tagUsuario(userId, "checklist"));
+  cacheTag(tagUsuario(userId, "dieta"));
+  cacheTag(tagUsuario(userId, "settings"));
   cacheLife("usuario");
 
   const ref = refDoDiaSP(dia);
   const de = spStartOfDay(subDays(ref, dias - 1));
   const ate = spEndOfDay(ref);
 
-  const [todosTemplates, checks] = await Promise.all([
-    templatesAtivos(userId),
-    db.rotinaCheckDia.findMany({
-      where: { userId, data: { gte: de, lte: ate } },
-      select: { rotinaId: true, data: true },
-    }),
-  ]);
+  const [todosTemplates, checks, escolhasPlano, planoPadrao, variaveis, checksVar, logsDieta, metaAgua] =
+    await Promise.all([
+      templatesAtivos(userId),
+      db.rotinaCheckDia.findMany({
+        where: { userId, data: { gte: de, lte: ate } },
+        select: { rotinaId: true, data: true },
+      }),
+      db.rotinaDiaPlano.findMany({
+        where: { userId, data: { gte: de, lte: ate } },
+        select: { planoId: true, data: true },
+      }),
+      db.rotinaPlano.findFirst({
+        where: { userId, ativo: true, padrao: true },
+        select: { id: true },
+      }),
+      db.variavel.findMany({ where: { userId, ativo: true }, select: { id: true } }),
+      db.variavelCheckDia.findMany({
+        where: { userId, data: { gte: de, lte: ate } },
+        select: { variavelId: true, data: true },
+      }),
+      db.dietDayLog.findMany({
+        where: { userId, data: { gte: de, lte: ate } },
+        select: { aguaMl: true, data: true },
+      }),
+      db.setting.findUnique({ where: { userId_key: { userId, key: "meta_agua_ml" } } }),
+    ]);
+
   // Item de refeição não tem RotinaCheckDia — o "feito" mora no DietDayLog (ver
-  // rotinasDoDia). Contá-lo aqui deixaria o % da semana permanentemente abaixo
-  // do real, porque ele nunca apareceria como concluído.
+  // rotinasDoDia). Fica fora do % de propósito, igual ao card de hoje.
   const templates = todosTemplates.filter((t) => t.tipo !== "refeicao");
+  const metaAguaMl = Number(metaAgua?.value ?? 3000) || 3000;
 
   const checksPorDia = new Map<string, Set<string>>();
   for (const c of checks) {
@@ -187,27 +219,46 @@ async function resumoSemanalRotinaDoDia(
     set.add(c.rotinaId);
     checksPorDia.set(key, set);
   }
+  const planoPorDia = new Map(escolhasPlano.map((e) => [dayKeySP(e.data), e.planoId]));
+  const varFeitasPorDia = new Map<string, number>();
+  const varIds = new Set(variaveis.map((v) => v.id));
+  for (const c of checksVar) {
+    if (!varIds.has(c.variavelId)) continue;
+    const key = dayKeySP(c.data);
+    varFeitasPorDia.set(key, (varFeitasPorDia.get(key) ?? 0) + 1);
+  }
+  const aguaPorDia = new Map(logsDieta.map((l) => [dayKeySP(l.data), l.aguaMl]));
 
-  const ocorrenciasPorDia = new Map<string, string[]>();
+  // 1 expansão por template na janela inteira; depois só agrupa por dia.
+  const ocorrenciasPorDia = new Map<string, { id: string; planoId: string | null }[]>();
   for (const t of templates) {
-    const ocorrencias = expandEvent(templateParaEventLike(t), de, ate);
-    for (const oc of ocorrencias) {
-      const key = oc.dayKey;
-      const lista = ocorrenciasPorDia.get(key) ?? [];
-      lista.push(t.id);
-      ocorrenciasPorDia.set(key, lista);
+    for (const oc of expandEvent(templateParaEventLike(t), de, ate)) {
+      const lista = ocorrenciasPorDia.get(oc.dayKey) ?? [];
+      lista.push({ id: t.id, planoId: t.planoId });
+      ocorrenciasPorDia.set(oc.dayKey, lista);
     }
   }
 
   return eachDayOfInterval({ start: de, end: ate }).map((d) => {
     const key = dayKeySP(d);
-    const ids = ocorrenciasPorDia.get(key) ?? [];
+    const planoAtivo = planoPorDia.get(key) ?? planoPadrao?.id ?? null;
+    const doDia = (ocorrenciasPorDia.get(key) ?? []).filter(
+      (o) => o.planoId === null || o.planoId === planoAtivo
+    );
     const feitos = checksPorDia.get(key) ?? new Set<string>();
-    const totalFeitos = ids.filter((id) => feitos.has(id)).length;
+    const aguaOk = (aguaPorDia.get(key) ?? 0) >= metaAguaMl;
+    const total = doDia.length + variaveis.length + 1;
+    const feitosTotal =
+      doDia.filter((o) => feitos.has(o.id)).length +
+      Math.min(varFeitasPorDia.get(key) ?? 0, variaveis.length) +
+      (aguaOk ? 1 : 0);
     return {
       key,
-      label: shortDate(d),
-      pct: ids.length > 0 ? (totalFeitos / ids.length) * 100 : 0,
+      label: fmtSP(d, "EEE").replace(".", ""),
+      dia: fmtSP(d, "d"),
+      pct: (feitosTotal / total) * 100,
+      feitos: feitosTotal,
+      total,
     };
   });
 }
@@ -343,6 +394,8 @@ export type RotinaTemplateView = {
   local: LocalItem;
   horaInicio: string | null;
   horaFim: string | null;
+  /** yyyy-MM-dd — âncora da recorrência (e o dia, se for ocorrência única) */
+  dataInicio: string;
   rrule: string | null;
   exdates: string[];
   ordem: number;
@@ -366,6 +419,7 @@ export async function rotinaTemplates(userId: string): Promise<RotinaTemplateVie
     local: (t.local === "habitos" ? "habitos" : "checklist") as LocalItem,
     horaInicio: t.horaInicio,
     horaFim: t.horaFim,
+    dataInicio: dayKeySP(t.dataInicio),
     rrule: t.rrule,
     exdates: safeArray(t.exdates),
     ordem: t.ordem,

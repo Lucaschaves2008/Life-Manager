@@ -1250,3 +1250,20 @@ model Profile {
   revisarPesoACada   Int?
   proximaRevisaoPeso DateTime?
 }
+
+/// Meta pontual de UM dia ("fechar o cliente X", "entregar Y"). Não repete e não
+/// vira rotina: nasce e morre no próprio dia. prioridade 1 = muito importante,
+/// 2 = importante, 3 = pouco importante. A métrica "metas cumpridas" é derivada
+/// de feita (sem tabela de histórico à parte).
+model MetaDia {
+  id         String    @id @default(cuid())
+  userId     String
+  data       DateTime // início do dia em SP
+  titulo     String
+  prioridade Int       @default(2)
+  feita      Boolean   @default(false)
+  feitaEm    DateTime?
+  criadoEm   DateTime  @default(now())
+
+  @@index([userId, data])
+}

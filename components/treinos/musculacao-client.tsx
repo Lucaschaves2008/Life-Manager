@@ -312,11 +312,18 @@ export function MusculacaoClient({
                       label: "Excluir",
                       icon: Trash2,
                       destructive: true,
-                      onSelect: () =>
+                      onSelect: () => {
+                        if (
+                          !window.confirm(
+                            `Excluir "${ficha.nome}"? Isso apaga os exercícios de TODAS as semanas desta ficha — não pode ser desfeito.`
+                          )
+                        )
+                          return;
                         executar(async () => {
                           await deleteRoutine(ficha.id);
                           toast.success("Ficha excluída");
-                        }),
+                        });
+                      },
                     },
                   ]}
                 />
