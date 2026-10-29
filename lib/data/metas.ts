@@ -2,21 +2,25 @@ import {
   cacheLife,
   cacheTag,
 } from "next/cache";
-import { eachMonthOfInterval, subMonths } from "date-fns";
+import { eachMonthOfInterval, subDays, subMonths } from "date-fns";
 import { db } from "@/lib/db";
 import { tagUsuario } from "@/lib/cache-tags";
 import {
   dayKeySP,
   monthName,
   refDoDiaSP,
+  spEndOfDay,
   spEndOfMonth,
+  spStartOfDay,
   spStartOfMonth,
   toSP,
 } from "@/lib/dates";
 import { formatBRL, formatBRLCompact } from "@/lib/money";
-import { resumoCarteira } from "@/lib/data/investimentos";
+import { parseJSON } from "@/lib/utils";
+import { fluxoDeCaixa } from "@/lib/data/financas";
+import { evolucaoPatrimonio, resumoCarteira } from "@/lib/data/investimentos";
 import { resumoTreinos } from "@/lib/data/treinos";
-import { aderencia7d, evolucaoPeso } from "@/lib/data/dieta";
+import { evolucaoPeso } from "@/lib/data/dieta";
 import { dashboardEstudos } from "@/lib/data/estudos";
 
 // Painel "Evolução do mês" na página de Metas. Cada área expõe o MESMO formato
@@ -73,45 +77,37 @@ function variacao(atual: number, anterior: number): number | null {
 
 // ---------- Finanças: gasto do mês (6 meses de série) ----------
 
-async function areaFinancas(userId: string, ref: Date): Promise<AreaEvolucaoView> {
-  const meses = eachMonthOfInterval({
-    start: spStartOfMonth(subMonths(toSP(ref), 5)),
-    end: spStartOfMonth(ref),
-  });
-  const inicioTotal = spStartOfMonth(meses[0]);
-  const fimTotal = spEndOfMonth(ref);
-
-  // 1 query cobrindo os 6 meses (em vez de 1 aggregate por mês) — bucketiza em memória.
-  const [despesas, assinaturas] = await Promise.all([
+async function areaFinancas(
+  contaFinanceiraId: string,
+  ref: Date
+): Promise<AreaEvolucaoView> {
+  // série = mesma conta da página de Finanças (conta ativa, sem "compromisso")
+  const [fluxo, despesas, assinaturas] = await Promise.all([
+    fluxoDeCaixa(contaFinanceiraId, 6, ref),
     db.transaction.findMany({
-      where: { userId, tipo: "despesa", data: { gte: inicioTotal, lte: fimTotal } },
-      select: { valor: true, data: true, categoryId: true },
+      where: {
+        contaFinanceiraId,
+        tipo: "despesa",
+        natureza: "despesa",
+        data: { gte: spStartOfMonth(ref), lte: spEndOfMonth(ref) },
+      },
+      select: { valor: true, categoryId: true },
     }),
     db.subscription.findMany({
-      where: { userId, status: "ativa" },
+      where: { contaFinanceiraId, status: "ativa" },
       select: { valor: true },
     }),
   ]);
 
   const assinaturasMes = assinaturas.reduce((s, a) => s + a.valor, 0);
-  const serie = meses.map((m) => {
-    const inicio = spStartOfMonth(m);
-    const fim = spEndOfMonth(m);
-    const soma = despesas
-      .filter((d) => d.data >= inicio && d.data <= fim)
-      .reduce((s, d) => s + d.valor, 0);
-    return soma + assinaturasMes;
-  });
+  const serie = fluxo.map((f) => f.despesa);
   const atual = serie.at(-1) ?? 0;
   const anterior = serie.at(-2) ?? 0;
 
-  // categorias do mês de referência p/ o detalhamento (a partir do mesmo lote já buscado)
-  const inicioRef = spStartOfMonth(ref);
-  const fimRef = spEndOfMonth(ref);
+  // categorias do mês de referência p/ o detalhamento
   const somaPorCategoria = new Map<string, number>();
   for (const d of despesas) {
     if (!d.categoryId) continue;
-    if (d.data < inicioRef || d.data > fimRef) continue;
     somaPorCategoria.set(d.categoryId, (somaPorCategoria.get(d.categoryId) ?? 0) + d.valor);
   }
   const catAgg = [...somaPorCategoria.entries()]
@@ -119,7 +115,10 @@ async function areaFinancas(userId: string, ref: Date): Promise<AreaEvolucaoView
     .sort((a, b) => b._sum.valor - a._sum.valor)
     .slice(0, 4);
   const cats = await db.category.findMany({
-    where: { id: { in: catAgg.map((c) => c.categoryId).filter(Boolean) as string[] } },
+    where: {
+      id: { in: catAgg.map((c) => c.categoryId).filter(Boolean) as string[] },
+      contaFinanceiraId,
+    },
   });
   const catMap = new Map(cats.map((c) => [c.id, c]));
   const detalhe: LinhaDetalhe[] = catAgg
@@ -245,14 +244,39 @@ async function areaTreinos(userId: string, ref: Date): Promise<AreaEvolucaoView>
 // ---------- Dieta: aderência 7d + peso ----------
 
 async function areaDieta(userId: string, ref: Date): Promise<AreaEvolucaoView> {
-  const [aderencia, peso] = await Promise.all([
-    aderencia7d(userId, ref),
+  const [dieta, logs, peso] = await Promise.all([
+    db.diet.findFirst({
+      where: { userId, ativa: true },
+      select: { _count: { select: { meals: true } } },
+    }),
+    db.dietDayLog.findMany({
+      where: {
+        userId,
+        data: { gte: spStartOfDay(subDays(toSP(ref), 13)), lte: spEndOfDay(ref) },
+      },
+      select: { data: true, refeicoesCumpridas: true },
+    }),
     evolucaoPeso(userId, ref),
   ]);
 
-  // série de aderência aproximada: usa a curva de peso não faz sentido aqui;
-  // mostramos a aderência como barra única e o peso como contexto rico.
-  const seriePeso = peso.pontos.slice(-8).map((p) => p.peso);
+  // aderência diária dos últimos 14 dias — mesma conta de aderencia7d()
+  const refeicoes = dieta?._count.meals ?? 0;
+  const cumpridasPorDia = new Map<string, number>();
+  for (const log of logs) {
+    const dia = dayKeySP(log.data);
+    cumpridasPorDia.set(
+      dia,
+      (cumpridasPorDia.get(dia) ?? 0) + parseJSON<string[]>(log.refeicoesCumpridas, []).length
+    );
+  }
+  const porDia = Array.from({ length: 14 }, (_, i) => {
+    const dia = dayKeySP(subDays(toSP(ref), 13 - i));
+    return refeicoes > 0 ? ((cumpridasPorDia.get(dia) ?? 0) / refeicoes) * 100 : 0;
+  });
+  const media = (xs: number[]) => xs.reduce((s, x) => s + x, 0) / xs.length;
+  const serie = porDia.slice(7);
+  const aderencia = media(serie);
+  const aderenciaAnterior = media(porDia.slice(0, 7));
 
   const detalhe: LinhaDetalhe[] = [
     {
@@ -285,11 +309,9 @@ async function areaDieta(userId: string, ref: Date): Promise<AreaEvolucaoView> {
     cor: "var(--color-mint)",
     valor: `${Math.round(aderencia)}%`,
     contexto: "aderência · últimos 7 dias",
-    // variação de peso nos 30 dias como sinal (perder peso ↘ é bom aqui)
-    pct: peso.variacao30d,
-    upIsBad: true,
-    serie: seriePeso.length > 1 ? seriePeso : [aderencia],
-    descricao: "Refeições cumpridas nos últimos 7 dias e evolução do seu peso.",
+    pct: variacao(aderencia, aderenciaAnterior),
+    serie,
+    descricao: "Refeições cumpridas nos últimos 7 dias (vs. os 7 anteriores) e seu peso.",
     detalhe,
     total:
       peso.atual != null
@@ -358,12 +380,15 @@ async function areaEstudos(userId: string, ref: Date): Promise<AreaEvolucaoView>
 // ---------- Investimentos: patrimônio + rendimento do mês ----------
 
 async function areaInvestimentos(
-  userId: string,
+  contaFinanceiraId: string,
   ref: Date
 ): Promise<AreaEvolucaoView> {
-  const carteira = await resumoCarteira(userId, ref);
+  const [carteira, evolucao] = await Promise.all([
+    resumoCarteira(contaFinanceiraId, ref),
+    evolucaoPatrimonio(contaFinanceiraId, 6, ref),
+  ]);
 
-  const serie = carteira.porClasse.map((c) => c.valor); // proporção por classe
+  const serie = evolucao.map((p) => p.valor); // patrimônio no fim de cada mês
   const detalhe: LinhaDetalhe[] = [
     {
       label: "Patrimônio",
@@ -407,7 +432,7 @@ async function areaInvestimentos(
     valor: formatBRLCompact(carteira.patrimonio),
     contexto: "patrimônio investido",
     pct: carteira.pctRendimentoMes,
-    serie: serie.length > 1 ? serie : [carteira.patrimonio],
+    serie,
     descricao: "Total investido e o rendimento acumulado no mês.",
     detalhe,
     total: { label: "Patrimônio", valor: formatBRL(carteira.patrimonio) },
@@ -421,22 +446,25 @@ async function areaInvestimentos(
  */
 export async function evolucaoAreas(
   userId: string,
+  contaFinanceiraId: string,
   ref: Date = new Date()
 ): Promise<AreaEvolucaoView[]> {
-  return evolucaoAreasDoDia(userId, dayKeySP(ref));
+  return evolucaoAreasDoDia(userId, contaFinanceiraId, dayKeySP(ref));
 }
 
 async function evolucaoAreasDoDia(
   userId: string,
+  contaFinanceiraId: string,
   dia: string
 ): Promise<AreaEvolucaoView[]> {
   "use cache";
+  // finanças/investimentos são invalidados pela conta financeira, não pelo usuário
   cacheTag(
-    tagUsuario(userId, "financas"),
+    tagUsuario(contaFinanceiraId, "financas"),
     tagUsuario(userId, "treinos"),
     tagUsuario(userId, "dieta"),
     tagUsuario(userId, "estudos"),
-    tagUsuario(userId, "investimentos"),
+    tagUsuario(contaFinanceiraId, "investimentos"),
     tagUsuario(userId, "settings"),
     tagUsuario(userId, "metas")
   );
@@ -444,11 +472,11 @@ async function evolucaoAreasDoDia(
 
   const ref = refDoDiaSP(dia);
   return Promise.all([
-    areaFinancas(userId, ref),
+    areaFinancas(contaFinanceiraId, ref),
     areaTreinos(userId, ref),
     areaDieta(userId, ref),
     areaEstudos(userId, ref),
-    areaInvestimentos(userId, ref),
+    areaInvestimentos(contaFinanceiraId, ref),
   ]);
 }
 

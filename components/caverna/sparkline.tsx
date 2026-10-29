@@ -3,11 +3,7 @@ export function Sparkline({ serie, cor }: { serie: number[]; cor: string }) {
   const w = 100;
   const h = 28;
   if (serie.length < 2) {
-    return (
-      <div className="h-[28px] w-full rounded-full bg-surface-2">
-        <div className="h-full rounded-full opacity-40" style={{ width: "100%", background: cor }} />
-      </div>
-    );
+    return <div className="h-[28px] w-full" aria-hidden />;
   }
   const min = Math.min(...serie);
   const max = Math.max(...serie);

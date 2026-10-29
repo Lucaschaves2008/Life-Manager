@@ -14,6 +14,7 @@ import { variaveisAtivas } from "@/lib/data/variaveis";
 import { dayKeySP, monthKeySP, monthYear, nowSP } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import { getCurrentUser } from "@/lib/auth";
+import { getContaAtiva } from "@/lib/conta-ativa";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,10 @@ export default async function Page({
   searchParams: Promise<{ mes?: string }>;
 }) {
   const user = await getCurrentUser();
-  const { mes: mesParam } = await searchParams;
+  const [{ mes: mesParam }, { id: contaFinanceiraId }] = await Promise.all([
+    searchParams,
+    getContaAtiva(user.id),
+  ]);
   const agora = nowSP();
   const hojeMes = monthKeySP(agora);
   const mes = /^\d{4}-\d{2}$/.test(mesParam ?? "") ? mesParam! : hojeMes;
@@ -45,7 +49,7 @@ export default async function Page({
       select: { mes: true, feito: true },
     }),
     // painel de evolução: só faz sentido no mês corrente (dados "de agora")
-    ehMesAtual ? evolucaoAreas(user.id, agora) : Promise.resolve([]),
+    ehMesAtual ? evolucaoAreas(user.id, contaFinanceiraId, agora) : Promise.resolve([]),
     // metas quantitativas: sempre "de agora", período próprio de cada meta
     metasQuantitativas(user.id, agora),
     variaveisAtivas(user.id),

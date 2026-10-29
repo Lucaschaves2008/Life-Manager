@@ -49,19 +49,24 @@ export async function somaDespesas(
 
 // ---------- Assinaturas como despesa mensal ----------
 
-type AssinaturaAtiva = { valor: number; diaCobranca: number };
+type AssinaturaAtiva = { valor: number; diaCobranca: number; criadoEm: Date };
 
 /**
  * Assinaturas ativas contam como despesa mensal em todas as agregações de
  * gastos (resumo, ritmo, heatmap, fluxo de caixa), mesmo sem existirem como
  * Transaction: uma cobrança por mês, no diaCobranca (limitado ao último dia
- * em meses mais curtos).
+ * em meses mais curtos), só a partir do mês em que foram criadas.
  */
 async function assinaturasAtivas(contaFinanceiraId: string): Promise<AssinaturaAtiva[]> {
   return db.subscription.findMany({
     where: { contaFinanceiraId, status: "ativa" },
-    select: { valor: true, diaCobranca: true },
+    select: { valor: true, diaCobranca: true, criadoEm: true },
   });
+}
+
+/** Só as assinaturas que já existiam até `fim` — não inventa cobrança em mês passado. */
+function vigentesAte(assinaturas: AssinaturaAtiva[], fim: Date): AssinaturaAtiva[] {
+  return assinaturas.filter((a) => a.criadoEm <= fim);
 }
 
 /** Soma das cobranças do mês; com `ateDia`, só as que caem até esse dia. */
@@ -136,13 +141,14 @@ async function resumoDoDia(contaFinanceiraId: string, dia: string): Promise<Resu
   const diasMes = getDaysInMonth(toSP(ref));
   const diasMesAnterior = getDaysInMonth(refAnterior);
   const gastoMes = gastoTx + somaAssinaturas(assinaturas, diasMes);
+  const assinaturasAnt = vigentesAte(assinaturas, fimAnt);
   const gastoMesAnterior =
-    gastoTxAnterior + somaAssinaturas(assinaturas, diasMesAnterior);
+    gastoTxAnterior + somaAssinaturas(assinaturasAnt, diasMesAnterior);
   const acumuladoHoje = gastoTx + somaAssinaturas(assinaturas, diasMes, diaHoje);
   const acumuladoAnteriorMesmoDia =
     acumuladoTxAnterior +
     somaAssinaturas(
-      assinaturas,
+      assinaturasAnt,
       diasMesAnterior,
       Math.min(diaHoje, diasMesAnterior)
     );
@@ -242,9 +248,11 @@ async function ritmoDoDia(
   const diaAtual = porDia(txAtual);
   const diaAnterior = porDia(txAnterior);
 
+  const fimAnterior = spEndOfMonth(refAnterior);
   for (const a of assinaturas) {
     const dAtual = Math.min(a.diaCobranca, diasAtual);
     diaAtual.set(dAtual, (diaAtual.get(dAtual) ?? 0) + a.valor);
+    if (a.criadoEm > fimAnterior) continue;
     const dAnt = Math.min(a.diaCobranca, diasAnterior);
     diaAnterior.set(dAnt, (diaAnterior.get(dAnt) ?? 0) + a.valor);
   }
@@ -550,7 +558,7 @@ export type FluxoMes = {
 
 /**
  * Receita × despesa dos últimos N meses (inclui o mês de referência).
- * Assinaturas ativas entram como despesa em todos os meses da janela.
+ * Assinaturas ativas entram como despesa a partir do mês em que foram criadas.
  */
 export async function fluxoDeCaixa(
   contaFinanceiraId: string,
@@ -586,7 +594,6 @@ async function fluxoDeCaixaDoMes(
     }),
     assinaturasAtivas(contaFinanceiraId),
   ]);
-  const totalAssinaturas = somaAssinaturas(assinaturas, 31);
 
   // uma passada: totais por mês, com a chave calculada 1x por transação
   const porMes = new Map<string, { receita: number; despesa: number }>();
@@ -605,6 +612,10 @@ async function fluxoDeCaixaDoMes(
       receita: 0,
       despesa: 0,
     };
+    const totalAssinaturas = somaAssinaturas(
+      vigentesAte(assinaturas, spEndOfMonth(mesRef)),
+      31
+    );
     out.push({
       label: monthName(mesRef).slice(0, 3),
       receita,
