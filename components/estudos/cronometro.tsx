@@ -29,23 +29,26 @@ import { cn } from "@/lib/utils";
 
 type Tempos = { bruto: number; pausado: number; liquido: number };
 
-function segDaPausa(
+function msDaPausa(
   p: { startedAt: string; endedAt: string | null },
   agoraMs: number
 ): number {
   const ini = Date.parse(p.startedAt);
   const fim = p.endedAt ? Date.parse(p.endedAt) : agoraMs;
-  return Math.max(0, Math.round((fim - ini) / 1000));
+  return Math.max(0, fim - ini);
 }
 
 function calcular(s: SessaoView, agoraMs: number): Tempos {
-  const ini = Date.parse(s.startedAt);
-  // floor (não round): um cronômetro conta segundos COMPLETOS decorridos —
-  // "00" de 0 a 0.999s, "01" de 1 a 1.999s. Com round, o display saltava pra
-  // "1" já aos 0.5s e a defasagem de fase entre clique e tick fazia pular o 1.
-  const bruto = Math.max(0, Math.floor((agoraMs - ini) / 1000));
-  const pausado = s.pausas.reduce((t, p) => t + segDaPausa(p, agoraMs), 0);
-  return { bruto, pausado, liquido: Math.max(0, bruto - pausado) };
+  // tudo em ms e só arredonda no fim (floor = segundos COMPLETOS). Subtrair
+  // segundos já arredondados (bruto floor − pausas round) deslocava a fase do
+  // líquido a cada pausa: o display pulava ou segurava um segundo.
+  const brutoMs = Math.max(0, agoraMs - Date.parse(s.startedAt));
+  const pausadoMs = s.pausas.reduce((t, p) => t + msDaPausa(p, agoraMs), 0);
+  return {
+    bruto: Math.floor(brutoMs / 1000),
+    pausado: Math.floor(pausadoMs / 1000),
+    liquido: Math.floor(Math.max(0, brutoMs - pausadoMs) / 1000),
+  };
 }
 
 const METAS = [
@@ -93,41 +96,51 @@ export function Cronometro({
     if (emVoo.current !== 0) return;
     setLocal((prev) => {
       if (!sessaoInicial) return sessaoInicial;
-      // mesma sessão: preserva o `startedAt` do clique (instante em que o
-      // usuário apertou) em vez do gravado no servidor, que fica 1-3s depois
-      // por causa da latência e faria o cronômetro pular/recuar ao chegar
+      // mesma sessão: preserva os instantes dos CLIQUES (início, pausas,
+      // retomadas) em vez dos gravados no servidor, que ficam 1-3s depois por
+      // causa da latência e faziam o cronômetro pular/travar ao chegar
       if (prev && prev.id === sessaoInicial.id) {
         const iniLocal = Date.parse(prev.startedAt);
         const iniServidor = Date.parse(sessaoInicial.startedAt);
-        return iniLocal < iniServidor
-          ? { ...sessaoInicial, startedAt: prev.startedAt }
-          : sessaoInicial;
+        return {
+          ...sessaoInicial,
+          startedAt: iniLocal < iniServidor ? prev.startedAt : sessaoInicial.startedAt,
+          pausas: sessaoInicial.pausas.map((p, i) => {
+            const l = prev.pausas[i];
+            if (!l) return p;
+            return {
+              ...p,
+              startedAt: l.startedAt,
+              endedAt: p.endedAt ? (l.endedAt ?? p.endedAt) : null,
+            };
+          }),
+        };
       }
       return sessaoInicial;
     });
   }, [sessaoInicial]);
 
-  // tique alinhado à BORDA do segundo do startedAt: sem isso, um setInterval
-  // com fase aleatória atualizaria `agora` no meio do segundo e a virada do
-  // display atrasaria até ~1s. Aqui o 1º timeout leva exatamente ao próximo
-  // múltiplo de 1s desde o início; daí em diante o interval mantém a fase.
-  // Depende só de startedAt (string estável), não de `local` (muda a cada
-  // tick/pausa e recriaria o timer, reintroduzindo defasagem).
-  const inicioMs = local ? Date.parse(local.startedAt) : null;
+  // tique por frame: setInterval deriva e acorda fora de fase (o segundo
+  // virava atrasado, segurava ou pulava). Aqui cada frame recalcula a partir
+  // do relógio real e só re-renderiza quando algum segundo exibido muda —
+  // a virada cai na borda exata do segundo, sempre no mesmo ritmo.
   useEffect(() => {
-    if (inicioMs == null) return;
-    let intervalo: ReturnType<typeof setInterval>;
-    const desdeInicio = Date.now() - inicioMs;
-    const ateProximoSegundo = 1000 - (((desdeInicio % 1000) + 1000) % 1000);
-    const timeout = setTimeout(() => {
-      setAgora(Date.now());
-      intervalo = setInterval(() => setAgora(Date.now()), 1000);
-    }, ateProximoSegundo);
-    return () => {
-      clearTimeout(timeout);
-      if (intervalo) clearInterval(intervalo);
+    if (!local) return;
+    let raf = 0;
+    let ultimo = "";
+    const frame = () => {
+      const agoraMs = Date.now();
+      const t = calcular(local, agoraMs);
+      const chave = `${t.bruto}|${t.pausado}`;
+      if (chave !== ultimo) {
+        ultimo = chave;
+        setAgora(agoraMs);
+      }
+      raf = requestAnimationFrame(frame);
     };
-  }, [inicioMs]);
+    raf = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(raf);
+  }, [local]);
 
   const tempos = useMemo(
     () => (local ? calcular(local, agora) : null),
@@ -369,7 +382,7 @@ export function Cronometro({
         <div className="relative">
           <FlipTime
             segundos={liquido}
-            size="clamp(46px, 8vw, 82px)"
+            size="clamp(60px, 14vw, 128px)"
             sempreHoras={liquido >= 3600}
           />
           {rodando && (
@@ -434,7 +447,11 @@ export function Cronometro({
                             : "border-stroke text-mist hover:border-[rgba(143,169,205,.22)]"
                         )}
                       >
-                        <span>{c.emoji}</span>
+                        <span
+                          aria-hidden
+                          className="h-2 w-2 rounded-full"
+                          style={{ background: c.cor }}
+                        />
                         {c.nome}
                       </button>
                     );
@@ -499,7 +516,7 @@ export function Cronometro({
       {cheio &&
         typeof document !== "undefined" &&
         createPortal(
-          <div className="fixed inset-0 z-[60] flex animate-[fade-in_220ms_ease-out] flex-col items-center justify-center gap-10 bg-bg">
+          <div className="fixed inset-0 z-[60] flex animate-[fade-in_220ms_ease-out] flex-col items-center justify-center gap-10 bg-black">
             <div className="flex flex-col items-center gap-3">
               <span
                 className={cn(
@@ -524,7 +541,7 @@ export function Cronometro({
 
             <FlipTime
               segundos={liquido}
-              size="clamp(64px, min(15vw, 22vh), 190px)"
+              size={liquido >= 3600 ? "min(25vw, 50vh)" : "min(36vw, 50vh)"}
               sempreHoras={liquido >= 3600}
             />
 

@@ -8,6 +8,7 @@ import { ESTUDOS_TABS } from "@/components/estudos/tabs";
 import { formatHoras, rotuloDesde, topicosEstudo } from "@/lib/data/estudos";
 import { fullDate, nowSP } from "@/lib/dates";
 import { getCurrentUser } from "@/lib/auth";
+import { MarcaCategoria } from "@/components/estudos/marca-categoria";
 
 export const dynamic = "force-dynamic";
 
@@ -78,12 +79,11 @@ export default async function EstudosTopicosPage() {
               <Link key={t.id} href={`/estudos/topicos/${t.id}`} className="block">
                 <Card className="group flex h-full flex-col gap-4 p-5">
                   <div className="flex items-start gap-3">
-                    <span
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] text-[17px]"
-                      style={{ background: `color-mix(in srgb, ${t.cor} 14%, transparent)` }}
-                    >
-                      {t.emoji}
-                    </span>
+                    <MarcaCategoria
+                      nome={t.nome}
+                      cor={t.cor}
+                      className="h-9 w-9 rounded-[12px] text-[15px]"
+                    />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[14.5px] text-paper">{t.nome}</p>
                       <p className="text-[11.5px] text-steel">

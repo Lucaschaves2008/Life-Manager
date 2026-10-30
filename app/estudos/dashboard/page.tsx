@@ -139,7 +139,6 @@ export default async function EstudosDashboardPage() {
                 />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[13.5px] text-ice">
-                    <span className="mr-1.5">{t.emoji}</span>
                     {t.nome}
                   </p>
                   <p className="text-[11.5px] text-steel">

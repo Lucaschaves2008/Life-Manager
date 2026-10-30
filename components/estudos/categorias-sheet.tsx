@@ -6,9 +6,9 @@ import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
-import { EmojiPicker } from "@/components/ui/emoji-picker";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { DotsMenu } from "@/components/caverna/dots-menu";
+import { MarcaCategoria } from "@/components/estudos/marca-categoria";
 import {
   atualizarCategoria,
   criarCategoria,
@@ -78,12 +78,11 @@ export function CategoriasSheet({
                 key={c.id}
                 className="flex items-center gap-2.5 rounded-[14px] border border-stroke bg-surface-2 px-3 py-2.5"
               >
-                <span
-                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[14px]"
-                  style={{ backgroundColor: `${c.cor}22` }}
-                >
-                  {c.emoji}
-                </span>
+                <MarcaCategoria
+                  nome={c.nome}
+                  cor={c.cor}
+                  className="h-7 w-7 rounded-[9px] text-[12.5px]"
+                />
                 <span className="flex-1 text-[13px] text-ice">{c.nome}</span>
                 <DotsMenu
                   items={[
@@ -112,14 +111,11 @@ export function CategoriasSheet({
           <div className="flex flex-col gap-3 rounded-[14px] border border-stroke bg-surface-2/50 p-4">
             <p className="microlabel">{form.id ? "Editar categoria" : "Nova categoria"}</p>
             <div className="flex items-end gap-2">
-              <div className="w-16">
-                <Label>Emoji</Label>
-                <EmojiPicker
-                  value={form.emoji}
-                  onChange={(emoji) => setForm((f) => ({ ...f, emoji }))}
-                  ariaLabel="Escolher emoji da categoria"
-                />
-              </div>
+              <MarcaCategoria
+                nome={form.nome}
+                cor={form.cor}
+                className="h-10 w-10 rounded-[12px] text-[16px]"
+              />
               <div className="flex-1">
                 <Label>Nome</Label>
                 <Input

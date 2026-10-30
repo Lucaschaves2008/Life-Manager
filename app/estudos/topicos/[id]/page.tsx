@@ -11,6 +11,7 @@ import { SessoesTopico } from "@/components/estudos/sessoes-topico";
 import { detalheTopico, formatHoras, rotuloDesde } from "@/lib/data/estudos";
 import { mediumDate, nowSP } from "@/lib/dates";
 import { getCurrentUser } from "@/lib/auth";
+import { MarcaCategoria } from "@/components/estudos/marca-categoria";
 
 export const dynamic = "force-dynamic";
 
@@ -38,12 +39,11 @@ export default async function TopicoPage({
           Tópicos
         </Link>
         <div className="mt-3 flex items-center gap-3.5">
-          <span
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[16px] text-[24px]"
-            style={{ background: `color-mix(in srgb, ${t.cor} 14%, transparent)` }}
-          >
-            {t.emoji}
-          </span>
+          <MarcaCategoria
+            nome={t.nome}
+            cor={t.cor}
+            className="h-12 w-12 rounded-[16px] text-[20px]"
+          />
           <div className="min-w-0">
             <h1 className="display truncate text-[30px] leading-none text-paper md:text-[36px]">
               {t.nome}

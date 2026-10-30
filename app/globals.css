@@ -334,16 +334,46 @@ body {
 }
 
 /* ---------- Flip clock (3.5.12) ---------- */
-/* O tamanho é dirigido pelo font-size do .flip-panel: tudo abaixo é em em. */
+/* Estilo "fliqlo": painel grafite sobre preto, dígito condensado cinza-claro
+   e a fenda preta cruzando o painel inteiro. Tamanho = font-size (tudo em em). */
 
 .flip-panel {
-  --flip-h: 1.34em;
+  --flip-h: 1.1em;
+  --flip-bg: #141414;
+  --flip-fg: #bdbdbd;
+  --flip-r: 0.09em;
   position: relative;
-  width: 1.5em;
+  width: 1.16em;
   height: var(--flip-h);
-  border-radius: 0.14em;
-  perspective: 500px;
-  background: var(--color-elevated);
+  border-radius: var(--flip-r);
+  perspective: 3.2em;
+  background: var(--flip-bg);
+}
+
+/* a fenda: por cima de tudo, inclusive das metades animadas */
+.flip-panel::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: max(2px, 0.014em);
+  transform: translateY(-50%);
+  background: #000;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.flip-label {
+  position: absolute;
+  top: 0.1em;
+  left: 0.09em;
+  z-index: 6;
+  font-size: 0.13em;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: var(--flip-fg);
 }
 
 .flip-half {
@@ -354,8 +384,9 @@ body {
   overflow: hidden;
   display: flex;
   justify-content: center;
-  background: var(--color-elevated);
+  background: var(--flip-bg);
   backface-visibility: hidden;
+  will-change: transform;
 }
 
 /* O span tem a altura CHEIA do painel e centraliza o dígito nele; cada metade
@@ -367,49 +398,53 @@ body {
   height: var(--flip-h);
   width: 100%;
   line-height: 1;
-  /* compensa o vão do descendente: sem isso o número fica alto no painel */
-  padding-top: 0.06em;
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  color: var(--color-paper);
+  /* o desenho do Oswald senta baixo na caixa: sobe pra centralizar no painel */
+  padding-bottom: 0.07em;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--flip-fg);
   font-variant-numeric: tabular-nums;
 }
 
 .flip-half-top {
   top: 0;
   align-items: flex-start;
-  border-radius: 0.16em 0.16em 0 0;
-  /* a dobradiça: fenda escura no meio do painel */
-  border-bottom: 1px solid var(--color-bg);
+  border-radius: var(--flip-r) var(--flip-r) 0 0;
   transform-origin: bottom;
 }
 
 .flip-half-bottom {
   bottom: 0;
   align-items: flex-end;
-  border-radius: 0 0 0.16em 0.16em;
+  border-radius: 0 0 var(--flip-r) var(--flip-r);
   transform-origin: top;
 }
 
-/* metades animadas ficam por cima das estáticas */
-.flip-anim-top,
-.flip-anim-bottom {
+/* metades animadas ficam por cima das estáticas. A de cima tomba acelerando
+   (gravidade), a de baixo assenta desacelerando: um movimento contínuo, sem
+   pausa na dobradiça. A sombra escurece a folha conforme ela deita. */
+/* camada das folhas animadas: a perspectiva tem que estar no PAI DIRETO
+   delas, senão o rotateX vira um achatamento plano em vez de virada 3D */
+.flip-anim {
+  position: absolute;
+  inset: 0;
   z-index: 2;
+  perspective: 3.2em;
 }
 .flip-anim-top {
-  animation: flip-top 260ms ease-in both;
+  animation: flip-top 240ms cubic-bezier(0.55, 0, 0.9, 0.45) both;
 }
 .flip-anim-bottom {
-  animation: flip-bottom 260ms ease-out 260ms both;
+  animation: flip-bottom 240ms cubic-bezier(0.1, 0.55, 0.45, 1) 240ms both;
 }
 
 @keyframes flip-top {
-  from { transform: rotateX(0deg); }
-  to { transform: rotateX(-90deg); }
+  from { transform: rotateX(0deg); filter: brightness(1); }
+  to { transform: rotateX(-90deg); filter: brightness(0.55); }
 }
 @keyframes flip-bottom {
-  from { transform: rotateX(90deg); }
-  to { transform: rotateX(0deg); }
+  from { transform: rotateX(90deg); filter: brightness(0.55); }
+  to { transform: rotateX(0deg); filter: brightness(1); }
 }
 
 @media (prefers-reduced-motion: reduce) {

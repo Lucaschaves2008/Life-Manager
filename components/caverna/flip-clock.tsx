@@ -1,9 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { Oswald } from "next/font/google";
 import { TZDate } from "@date-fns/tz";
 import { TIMEZONE } from "@/lib/dates";
 import { cn } from "@/lib/utils";
+
+// condensado bold, o mesmo desenho dos relógios flip estilo "fliqlo"
+const fonteFlip = Oswald({ subsets: ["latin"], weight: "600", display: "swap" });
+
+/** duração total da virada (as duas metades do CSS, 240ms cada) */
+const VIRADA_MS = 480;
 
 /**
  * Painel de dois dígitos que "vira" quando o valor muda.
@@ -17,15 +24,13 @@ export function FlipPanel({ value, label }: { value: string; label?: string }) {
     anterior: value,
     virando: false,
   });
-  // a primeira troca é só o placeholder "--" virando hora: não anima
-  const primeiraTroca = useRef(true);
 
   useEffect(() => {
     setEstado((e) => {
       if (e.atual === value) return e;
-      const semAnimacao = primeiraTroca.current;
-      primeiraTroca.current = false;
-      return { atual: value, anterior: e.atual, virando: !semAnimacao };
+      // só o placeholder "--" virando hora não anima; qualquer outra troca
+      // (inclusive o 1º segundo do cronômetro, 00 → 01) vira
+      return { atual: value, anterior: e.atual, virando: e.atual !== "--" };
     });
   }, [value]);
 
@@ -35,7 +40,7 @@ export function FlipPanel({ value, label }: { value: string; label?: string }) {
     if (!estado.virando) return;
     const t = setTimeout(
       () => setEstado((e) => ({ ...e, virando: false })),
-      520
+      VIRADA_MS
     );
     return () => clearTimeout(t);
   }, [estado.virando, estado.atual]);
@@ -43,31 +48,27 @@ export function FlipPanel({ value, label }: { value: string; label?: string }) {
   const { atual, anterior, virando } = estado;
 
   return (
-    <div className="flex flex-col items-center gap-[0.14em]">
-      <div className="flip-panel" aria-hidden>
-        <div className="flip-half flip-half-top">
-          <span>{atual}</span>
-        </div>
-        <div className="flip-half flip-half-bottom">
-          <span>{virando ? anterior : atual}</span>
-        </div>
-
-        {/* key = valor novo: remonta as metades e reinicia a animação */}
-        {virando && (
-          <div key={atual}>
-            <div className="flip-half flip-half-top flip-anim-top">
-              <span>{anterior}</span>
-            </div>
-            <div className="flip-half flip-half-bottom flip-anim-bottom">
-              <span>{atual}</span>
-            </div>
-          </div>
-        )}
+    <div className="flip-panel" aria-hidden>
+      {label && <span className="flip-label">{label}</span>}
+      {/* servidor e cliente renderizam em instantes diferentes: com sessão
+          rodando o segundo difere, e isso é esperado */}
+      <div className="flip-half flip-half-top">
+        <span suppressHydrationWarning>{atual}</span>
       </div>
-      {label && (
-        <span className="text-[0.13em] uppercase tracking-[0.18em] text-steel">
-          {label}
-        </span>
+      <div className="flip-half flip-half-bottom">
+        <span suppressHydrationWarning>{virando ? anterior : atual}</span>
+      </div>
+
+      {/* key = valor novo: remonta as metades e reinicia a animação */}
+      {virando && (
+        <div key={atual} className="flip-anim">
+          <div className="flip-half flip-half-top flip-anim-top">
+            <span>{anterior}</span>
+          </div>
+          <div className="flip-half flip-half-bottom flip-anim-bottom">
+            <span>{atual}</span>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -76,7 +77,7 @@ export function FlipPanel({ value, label }: { value: string; label?: string }) {
 export type FlipClockProps = {
   /** font-size do painel — comanda todo o tamanho do relógio */
   size?: string;
-  /** rótulos "horas"/"minutos" sob os painéis */
+  /** rótulos "h"/"min" no canto do painel */
   labels?: boolean;
   segundos?: boolean;
   className?: string;
@@ -108,16 +109,16 @@ export function FlipClock({
 
   return (
     <div
-      className={cn("flex items-start gap-[0.12em]", className)}
-      style={{ fontSize: size }}
+      className={cn("flex items-start", fonteFlip.className, className)}
+      style={{ fontSize: size, gap: "0.08em" }}
       role="timer"
       aria-label={agora ? `Agora são ${hora}:${minuto}` : "Carregando o relógio"}
       suppressHydrationWarning
     >
-      <FlipPanel value={hora} label={labels ? "horas" : undefined} />
-      <FlipPanel value={minuto} label={labels ? "minutos" : undefined} />
+      <FlipPanel value={hora} label={labels ? "h" : undefined} />
+      <FlipPanel value={minuto} label={labels ? "min" : undefined} />
       {segundos && (
-        <FlipPanel value={segundo} label={labels ? "segundos" : undefined} />
+        <FlipPanel value={segundo} label={labels ? "seg" : undefined} />
       )}
     </div>
   );
@@ -125,19 +126,6 @@ export function FlipClock({
 
 function dois(n: number) {
   return String(Math.floor(Math.abs(n))).padStart(2, "0");
-}
-
-/** Separador ":" entre painéis, na mesma escala. */
-function Separador() {
-  return (
-    <span
-      className="flex h-[1.34em] items-center justify-center font-bold leading-none text-steel"
-      style={{ width: "0.4em" }}
-      aria-hidden
-    >
-      :
-    </span>
-  );
 }
 
 export type FlipTimeProps = {
@@ -170,19 +158,15 @@ export function FlipTime({
 
   return (
     <div
-      className={cn("flex items-start", className)}
-      style={{ fontSize: size, gap: "0.12em" }}
+      className={cn("flex items-start", fonteFlip.className, className)}
+      style={{ fontSize: size, gap: "0.08em" }}
       role="timer"
       aria-label={`${h}h ${m}min ${s}s`}
     >
       {mostraHoras && (
-        <>
-          <FlipPanel value={dois(h)} label={labels ? "horas" : undefined} />
-          <Separador />
-        </>
+        <FlipPanel value={dois(h)} label={labels ? "h" : undefined} />
       )}
       <FlipPanel value={dois(m)} label={labels ? "min" : undefined} />
-      <Separador />
       <FlipPanel value={dois(s)} label={labels ? "seg" : undefined} />
     </div>
   );

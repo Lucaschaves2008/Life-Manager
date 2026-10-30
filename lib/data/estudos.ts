@@ -226,8 +226,8 @@ export async function dashboardEstudos(
   userId: string,
   hoje: Date
 ): Promise<DashboardEstudos> {
-  // o fetch (parte cara) é cacheado por dia; a agregação roda fora do cache
-  // porque sessão em andamento conta segundos "até agora" (snapshotSessao)
+  // o fetch (parte cara) é cacheado por dia. Sessão em andamento NÃO entra:
+  // o tempo só soma no total quando o usuário clica em Finalizar
   const agora = new Date();
   const sessoes = await sessoesDashboardDb(userId, dayKeySP(hoje));
 
@@ -319,22 +319,12 @@ async function sessoesDashboardDb(userId: string, dia: string): Promise<SessaoDb
   cacheTag(tagUsuario(userId, "estudos"));
   cacheLife("usuario");
   const desde = spStartOfDay(addDays(refDoDiaSP(dia), -55)); // ~8 semanas de histórico
-  // pausas só influenciam o snapshot de sessões em andamento; nas finalizadas
-  // os totais vêm de totalSeconds/netSeconds — evita carregar ~8 semanas de pausas
-  const [finalizadas, abertas] = await Promise.all([
-    db.studySession.findMany({
-      where: { userId, startedAt: { gte: desde }, endedAt: { not: null } },
-      orderBy: { startedAt: "asc" },
-    }),
-    db.studySession.findMany({
-      where: { userId, startedAt: { gte: desde }, endedAt: null },
-      include: includePausas,
-    }),
-  ]);
-  return [
-    ...finalizadas.map((s) => ({ ...s, pauses: [] })),
-    ...(abertas as SessaoDb[]),
-  ];
+  // só finalizadas: os totais vêm de totalSeconds/netSeconds, sem pausas
+  const finalizadas = await db.studySession.findMany({
+    where: { userId, startedAt: { gte: desde }, endedAt: { not: null } },
+    orderBy: { startedAt: "asc" },
+  });
+  return finalizadas.map((s) => ({ ...s, pauses: [] }));
 }
 
 // ---------- Tópicos (categoria = tópico, assunto = subtópico) ----------
