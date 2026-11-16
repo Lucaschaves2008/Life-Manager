@@ -1,5 +1,6 @@
 import { Input, Label } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
+import { BotaoEnviar } from "@/components/auth/botao-enviar";
+import { PainelMarca } from "@/components/auth/painel-marca";
 import { LcLogo } from "@/components/shell/lc-logo";
 import { signIn } from "@/app/actions/auth";
 import Link from "next/link";
@@ -58,9 +59,7 @@ export default async function LoginPage({
               />
             </div>
 
-            <Button type="submit" variant="primary" size="md" className="w-full !h-10.5 mt-2">
-              Entrar
-            </Button>
+            <BotaoEnviar pendente="Entrando…">Entrar</BotaoEnviar>
           </form>
 
           <p className="mt-8 text-center text-[12px] text-steel">
@@ -72,54 +71,7 @@ export default async function LoginPage({
         </div>
       </div>
 
-      {/* Coluna visual */}
-      <div className="relative hidden flex-1 overflow-hidden bg-bg lg:block">
-        <div
-          className="absolute inset-0"
-          style={{
-            background:
-              "radial-gradient(120% 90% at 15% 12%, rgba(13,110,253,.22), transparent 55%), radial-gradient(90% 70% at 85% 88%, rgba(78,201,192,.12), transparent 50%), var(--color-bg)",
-          }}
-        />
-        <svg
-          className="absolute inset-0 h-full w-full opacity-[0.07]"
-          aria-hidden="true"
-        >
-          <defs>
-            <pattern id="grid" width="44" height="44" patternUnits="userSpaceOnUse">
-              <path d="M 44 0 L 0 0 0 44" fill="none" stroke="var(--color-ice)" strokeWidth="1" />
-            </pattern>
-          </defs>
-          <rect width="100%" height="100%" fill="url(#grid)" />
-        </svg>
-
-        <div className="relative flex h-full flex-col justify-between p-14">
-          <div />
-
-          <div className="max-w-md">
-            <LcLogo className="h-8 text-paper opacity-90" />
-            <p className="display mt-6 text-[30px] leading-[1.25] text-paper">
-              Finanças, saúde e rotina em um único painel.
-            </p>
-            <p className="mt-4 text-[14px] leading-relaxed text-mist">
-              Acompanhe cartões, investimentos, dieta, treinos e agenda com uma
-              visão clara e centralizada do seu dia a dia.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-6 text-[12px] text-steel">
-            <span className="tabular">Finanças</span>
-            <span className="h-1 w-1 rounded-full bg-stroke" />
-            <span className="tabular">Investimentos</span>
-            <span className="h-1 w-1 rounded-full bg-stroke" />
-            <span className="tabular">Dieta</span>
-            <span className="h-1 w-1 rounded-full bg-stroke" />
-            <span className="tabular">Treinos</span>
-            <span className="h-1 w-1 rounded-full bg-stroke" />
-            <span className="tabular">Agenda</span>
-          </div>
-        </div>
-      </div>
+      <PainelMarca />
     </div>
   );
 }

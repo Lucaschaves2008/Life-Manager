@@ -131,7 +131,13 @@ export async function signIn(formData: FormData) {
   const { error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error) {
-    redirect(`/login?erro=${encodeURIComponent("Email ou senha inválidos.")}`);
+    // Sem status / 5xx = Auth fora do ar ou rede caiu; não é senha errada.
+    const foraDoAr = !error.status || error.status >= 500;
+    if (foraDoAr) console.error("[login] Supabase Auth indisponível:", error.message);
+    const msg = foraDoAr
+      ? "Serviço de login indisponível no momento. Tente de novo em alguns minutos."
+      : "Email ou senha inválidos.";
+    redirect(`/login?erro=${encodeURIComponent(msg)}`);
   }
 
   redirect(next || "/");
